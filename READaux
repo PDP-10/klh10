@@ -1,0 +1,78 @@
+/* READaux - README file for KLH10 Auxiliary Distribution
+*/
+/* $Id: klh10aux.rdm,v 2.1 2001/11/10 10:38:16 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**
+** This file is part of and describes the "Auxiliary Distribution"
+** package, built and released as a companion to the KLH10 Distribution.
+** The legal text is contained below.
+*/
+
+		----------------------------
+
+The KLH10 Auxiliary Distribution consists of all the components (both
+software and documentation) residing in the "contrib" and "run"
+directories of a typical installation of the KLH10 Distribution.
+
+The KLH10 Distribution license does NOT apply to these components.
+They are derived from several sources, each of which may have its own
+licensing terms.  They are included solely for the convenience of
+users, and in order to avoid licensing conflicts have been made
+available in the form of a separate "Auxiliary Distribution" package.
+They are subject to removal if their inclusion causes any legal
+problems.
+
+The Auxiliary Distribution package includes the following specific
+components:
+
+[1] PDP-10 software (bootstrap and diagnostic binaries) from Digital
+    Equipment Corporation (now Compaq Corporation).  These may be used
+    only with a valid Digital license such as the "Home Hobbyist License"
+    (see <http://pdp-10.trailing-edge.com/#license>).
+    The specific components are identified by various README files in
+    the following subdirectories.
+
+	run/dfkfb/  - Digital (KL10) DFKFB timing test diagnostic binary
+	run/klnic/  - Digital (KL10 SRI-NIC) bootstrap binaries
+	run/klt10/  - Digital (KL10 TOPS-10) bootstrap binaries
+	run/klt20/  - Digital (KL10 TOPS-20) bootstrap binaries
+	run/kst10/  - Digital (KS10 TOPS-10) bootstrap binaries
+	run/kst20/  - Digital (KS10 TOPS-20) bootstrap binaries
+
+
+[2] PDP-10 software derived from the MIT ITS systems.  These are
+    believed to be usable on terms similar to those of the GNU Public
+    License.
+    The specific components are listed in the file "run/ksits/README".
+
+	run/ksits/  - MIT (KS10 ITS) system binaries
+
+
+[3] Utility software from other contributors, where terms were not
+    specifically stated but are believed to be similar to those of
+    the "BSD" style licenses (e.g. FreeBSD, NetBSD).
+    More detail is provided in the file "contrib/README" and the
+    individual subdirectories.
+
+	contrib/supdup/ - Unix SUPDUP client and server
+	contrib/read20/ - Unix DUMPER tape image reader
+
+
+Disclaimer:
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL KENNETH L. HARRENSTIEN BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+    THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+		----------------------------
+
+To reiterate: If there is any likelihood that your intended use may
+violate any of the licensing terms of the separate components, you
+should NOT use them.  If any of the original copyright holders object
+to this packaging, I will remove the offending components or simply
+stop providing the Auxiliary Distribution altogether.

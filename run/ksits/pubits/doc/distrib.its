@@ -1,0 +1,823 @@
+ITS distribution notes:
+
+Lots of random stuff in random order, some old, some new.  Most of it
+was personal notes to myself, only vaguely intended for publication,
+which I never had time to clean up.
+
+As you read through this stuff, you should be thinking in the back of
+your head, "How can we get all this (%*@(%!# crap to work better?"
+
+Here's one suggestion.
+
+Ideally there would be a single file containing all of the runtime
+site-dependent config stuff (hostname, address, params for various
+progs, etc).  Can maintain numerous configs in a single directory
+called SYSCNF with a link pointing from the default of "@ DEFS" to
+to the file actually in effect, which would be SYSCNF;<machname> <ver>.
+
+ITS would then check this default file on startup for its identity.
+Can also force use of a specific config file by depositing something
+with DDT in an otherwize zero location prior to startup (its machname
+for example, from which the SYSCNF file can be found).  This location
+can even be known and set by the KLH10 init file!
+
+
+Notes on system-dependent config stuff:
+
+	If you are generating a NEW instance of ITS with a new name,
+	there are a lot of things you have to do.  Read through this
+	whole section!
+
+To rebuild ITS, do:
+	:MIDAS SYSTEM;_ITS
+    and then type the desired machine name, in UPPERCASE.
+    There are a lot of undefined symbols in EVSYMS at the end;
+    these can be ignored.
+
+    You may want to rename the resulting ITS BIN to ITS <ver><name>, eg
+	:rename its bin, its 645pi
+    in order to avoid clobbering it with the next assembly.
+
+To get a KLH10-loadable executable from that:
+	Extract it from ITS with either:
+	   [a] FTP it out (use image mode) to a file, eg "itsbin.645pi"
+	   [b] Virtual magtape (copy to MT0:, uses coredump mode)
+		KLH10: devmount mta0 tapeout rw fmt=raw
+		ITS:   :copy system;its 645pi, mt0:
+			(If get RH11 ERROR, ignore and try again)
+		KLH10: devunmount mta0
+	Convert to format of choice, normally U36, with one of:
+	    FTP:  ./wfconv -fu < itsbin.645pi > itsbin.645pi-u
+	    Tape: ./wfconv -cu < tapeout.tpr  > itsbin.645pi-u
+	In a fresh KLH10, no config needed:
+		./kn10-ks /dev/null
+		load @.ddt-u
+		load @.nsalv-260-u
+		load itsbin.645pi-u
+		dump @.its-645pi-u
+		quit
+	Thereafter you can just load @.its-whatever and go.
+
+
+NEW SYSTEM
+==========
+
+	Things that must be edited for each new ITS system/machine.
+
+ITS MACHINE NAME:
+	Pick a good one.
+	Historically all ITS machine names have been exactly two characters.
+	Someday we may have a list of just what things actually depend on
+	this or some other limit, as well as whether digits are permitted.
+	@DEV  - requires 2 characters for other ITSes.
+	MLDEV - requires 2 characters for other ITSes.
+	LISP  - requires 3 characters due to CAIE checks.  Code could
+		easily be fixed for 6.
+
+Build new ITS
+-------------
+	Modify these files and then rebuild ITS per above instructions.
+
+    SET NAME:
+	The ITS machine name, two characters.
+	SYSTEM;CONFIG >	- define chunk of params for each name.
+	SYSTEM;ITS >	- add to comment at start?  Not really needed.
+
+    SET NET ADDRESS:
+	SYSTEM;CONFIG >
+		IMPUS3 - the IP address.
+		NM%IMP - Subnet mask for IMPUS3.
+		IMPUS  - old IMP address.  Set it to low-order byte of IMPUS3
+			to avoid breaking any old semi-working stuff..
+    TTY TABLE:
+	SYSTEM;TTYTYP >
+		Machine-name conditionalized; must have machine-specific
+		entries for hard-wired terminal lines.
+
+
+Build user config files and programs
+------------------------------------
+
+    HOSTNAME: Very important -- COMSAT and other things will break if
+	they can't find their own system name in the host tables!
+
+	First edit this file to add hostname(s):
+		SYSHST;H3TEXT >
+		Although this used to be dynamically generated, it must now
+		be done by hand.
+	Then run:
+		SYSHST;H3MAKE BIN
+	which snarfs up H3TEXT and compiles it into SYSBIN;HOSTS3 >.
+	This can take quite a while depending on how large H3TEXT is.
+
+    TELSER:	SYSNET;TELSER >
+	TELSER has hard-coded greeting messages based on hostname.  If
+	it doesn't recognize its own hostname, it uses "Unknown ITS PDP-10".
+	This can be modified if desired (just before TCPOL:) for hack value.
+	:MIDAS SYSBIN;_SYSNET;TELSER
+
+    MLDEV: SYSEN2:MLDEV >
+	There are two places in this program which have a hardcoded list
+	of ITS machines.  The name of the new ITS must be added here
+	if you wish to use the MLDEV device to access the filesystems
+	of other machines.
+	These names must exist in HOSTS3 as it uses NETWRK"HSTLOOK to find
+	the corresponding IP addresses.
+	Also set DEVICE;JOBDEV <name> symlinked to DEVICE;ATSIGN MLDEV.
+
+    MLDEV/MLSLV and known job devices in general:
+	The maximum size of a device name is 6 SIXBIT characters, although
+		very old programs sometimes assume 3.
+	Whenever a program uses a device name that ITS doesn't have
+		built in, the system runs the "unknown device handler"
+		which is SYS;ATSIGN DEVICE (source SYSENG;@DEV >).
+		(Note the binary is a SBLK file -- it exists too briefly)
+	It then processes this device name as follows:
+	If "<" or ">"	- Returns "No such device" error.
+	If DSK:DEVICE;JOBDEV <dev> exists - loads and starts that program.
+		This overrides all the rest of this stuff and is the
+		preferable way of configuring things.
+	Otherwise @DEV goes through a lot of trouble to figure out a plausible
+	interpretation of the device name, using a semi-built-in table of
+	known "foreign filesystems" and DIR device names, that it checks to
+	map the device into one of four possible devices:
+		DSK:DEVICE;ATSIGN DIRDEV	- SYSENG;DIRDEV >
+		DSK:DEVICE;ATSIGN MLDEV		- SYSEN2;MLDEV >
+		DSK:DEVICE;ATSIGN R.I.P.	- SYSEN2;RIPDEV >
+		DSK:DEVICE;ATSIGN RMTDEV	- GZ;RMTDEV >
+		(All are or should be PDUMPed binaries)
+	These tables are checked as follows:
+	If either table contains an exact match, use that.
+	Else if the first 2 chars of the name match something in the foreign
+		filesys table (here's one 2-char dependency!), it tries
+		DEVICE;JOBDEV <ffsys>, then DEVICE;ATSIGN MLDEV.
+		The foreign system will presumably interpret the rest of
+		the device name (typically DIR or ARC, etc).
+	The other table is mostly DIR<foo> where <foo> is one of
+		<ffsys>,DSK,SYS,COM,DIR,DNR.
+	If there's still no match, it checks for a secondary pack name
+		using a table of machine names (AI and MX for now) and
+		a subtable of pack names for each.  This seems to be only
+		for the purpose of returning a "Pack not mounted" error
+		if the pack is known to normally exist, as opposed to
+		a "no such device" error.
+	If still no match, it checks the last letter -- if it's a digit,
+		it strips it off and starts all over again.
+	FINALLY, it checks to see whether the request is to open the
+		directory of a known non-directory device (ie if the
+		FN1 and FN2 are ".FILE. (DIR)") and cobbles together
+		a simple reply if so.  The known devices for this hack are:
+			lpt,ptr,ptp,plt,cod,dis,nvd,pdp,tab,stk
+
+	MLDEV, when invoked, checks its real device name and performs
+		some additional munching.  It knows about a list of
+		ITS systems, and for each <ff> in the list:
+			X<ff> is transformed into <ff>.
+			DIR<ff> is transformed into <ff>DIR (for consistency?)
+		The 1st 2 chars (another dependency!) are then checked
+		and if they match a <ff>, that system is contacted.
+		<ff> list: AI ML DM MC MX MD KL KS
+		If there's no match to any of these, then MLDEV tries one
+		more table before giving up.  If the full device name is
+		one of the following, it substitutes a <ff>dev:
+			XGP => AIXGP
+			GLP => MXGLP
+			DVR => MCDVR
+			DVS => MCDVS
+			TPL => MLTPL
+		Otherwise, it returns "no such device".  This means no
+			foreign filesystem can be contacted unless it IS IN
+			THE HARDWIRED TABLE of MLDEV!
+		If <ff> is known, then it uses NETWRK"HSTLOOK to find the
+			IP address and proceeds to make a connection.
+
+OTHER:
+    Various programs automatically re-init and PDUMP themselves out when
+	they detect that the machine name or system version has changed
+	since the last binary was created.  Among these are:
+	SYS;TS NAME
+	SYS;TS PEEK
+	SYS;TS PROBE
+	SYS1;TS METER
+	SYS1;TS PRUFD
+	SYS1;TS SYSMSG
+	SYS2;TS XXFILE
+	SYSBIN;FIDO BIN
+
+Other programs that don't automatically repurify themselves, but need to
+	be invoked properly after assembling:
+	SYS;TS MIDAS (sblk orig in SYSBIN;MIDAS *BIN, start at PURIFY)
+	.MAIL.;COMSAT LAUNCH (orig in SYSNET;COMSAT BIN, start at PURIFY)
+
+
+DUMP remembers the name of the machine it was assembled on, and
+	complains if the current system isn't it.  Just rebuild.
+	This can be bypassed by setting variable WRONG back to zero
+	after it's started up.
+	DUMP needs SYSENG;FSDEFS > and SYSNET;NETWRK > to assemble.
+	DUMP hacks the file SYSENG;MACRO TAPES.
+		Also hacks .TAPE0; etc??
+
+FTPS is patched so it doesn't try (and fail) to look up its own host name.
+	MAINIT+25/ MOVEI A,[ASCIZ /MIT-NX.US.ORACLE.COM/] ? NOP
+
+	Patched in SYSBIN;FTPS BIN.
+	Original binary in SYSBIN;FTPS ORGBIN.
+
+	This patch is unnecessary if the NETWRK hostname lookup software
+	is working (see HOSTS3 below), but the NETHST syscall is buggy
+	cuz it returns the value of IMPUS, not IMPUS3.  Before fixing this,
+	have to be sure nothing else will break!  Sigh!
+
+SYS;NET MAIL - Telnet/supdup server announcement.
+	Revised for NX, original in NET OMAIL.
+	Note: there is a long-standing bug in the TELSER/STY interaction such
+	that the initial %TDORS for a supdup connection happens halfway through
+	a longish greeting message (NET MAIL) and wipes the rest out after
+	the 105th char.  Note 23 chars in machine greeting, plus a CRLF
+	or so, to make 130 chars.  This may be STY buffer size?	
+
+SYS;SYSTEM MAIL - universal DDT startup announcement, if any.
+	Flushed, original in SYSTEM OMAIL.
+
+SYS;RECORD TIME - Checked & updated to see how long ITS has run.
+
+Various programs that check machine name specially:
+	DUMP (as noted above)
+	SYSEN1;PWORD - has table of per-machine specs
+	INQUIR;INQUIR - similar check
+	MACLSP - tries to map predefined atom or something, at UDIRSE.
+			Checks for AI,ML,MC,MD,MX.
+	MLDEV - checks for known machines using 2-char assumption.
+	SYSNET;TELSER - Checks machine name to select greeting header.
+	SYSEN1;SENDER - Checks machine name to see if sending to a known ITS
+		or not. (Doesn't bother to use host table to check sys type!)
+
+ITS edits or patches:
+
+	See also "modlog" which may have more details.
+
+    FIXED in SYSTEM;ITS 1646
+	Quantum timer patch:
+		This is an ITS bug that skews the quantum counter timing.
+		UTRNTR+2/ LDB A, [
+			125603/   SETZ Q,UPQUAN(U)   044000,,UPQUAN(u)
+				]
+    FIXED in SYSTEM;IMP 367
+	NETHST patch:
+		ANETH2+3/ MOVE B,NIFIPA (from MOVEI B,IMPUS)
+
+    Not a bugfix, just a crude firewall patch:
+		TCPO4+23/ JRST OPNL6 (from CALL PKTGFI)
+	(prevents outbound TCP opens)
+
+
+    FIXED in SYSTEM;TIME 951
+	Y2K patch.  Replace:
+	CLCQDT+2/
+		PUSH P,E-1
+		PUSH P,E
+		MOVE E-1,FYEAR
+		IDIVI E-1,100.
+		DPB E,[330700,,QDATE]   ;YEAR
+		POP P,E
+		POP P,E-1
+	with:
+		PUSH P,E
+		MOVE E,FYEAR
+		SUBI E,1900.
+		DPB E,[331000,,QDATE]   ;YEAR
+		POP P,E
+
+NSALV bug:
+	This code in NSALV (part of the INIT startup) is sorta buggy
+	in that when NDRIVE is 1 it is asking for a reverse BLT...
+
+	SETOM DRIVE		;For now, assume all drives on-line.
+	MOVE A,[DRIVE,,DRIVE+1]
+	BLT A,DRIVE+NDRIVE-1
+
+DSKDMP bug:
+	I forget where this is but am making a note so I remember to
+	someday come back and document it.
+	There is a race condition on booting where DSKDMP initiates a
+	disk transfer that clobbers the code it is about to execute
+	next.  It works on a real machine because the CPU is much
+	faster than the disk.
+	Patched, but not really needed now that KLH10 can load ITS directly.
+
+
+DIRECTORY STATUS
+================
+		(NNF = No New Files since final AI/MC snapshot)
+
+OK .		- Boot load files.  See "bootload.files" for more info.
+			Most of old AI stuff flushed as useless.
+OK .INFO.	- NNF, restore all
+OK .MAIL.	- Empty, must fill for COMSAT (and flush old useless files)
+OK .MSGS.	- Empty, old msgs all obsolete & discarded.
+OK .TAPE0	- Empty is OK; contains some gubbish from KLH dumps.
+OK .TECO.	- NNF, restore all
+OK .TEMP.	- NNF, restore all (empty except for a -READ- -THIS- file)
+
+?  C		- only partially restored
+OK CHANNA	- NNF, Restore all
+OK CRASH 	- Empty.  Note COMSAT crashes will leave a BURNUP file here,
+			and each use of CRTSTY adds one line to CRTSTY LOG.
+OK DEVICE	- NNF, Restore all (but not all are needed)
+	However, file CHAOS HOST# isn't present in Alan's snapshot.
+OK DRAGON	- NNF, Restore (but not all are needed; lots of junk!)
+OK EMACS 	- NNF, Restore all
+OK GREN		- PERSONAL, NX-only.  Flushed from distrib.
+?  HACK  	- New, retain for NX, not needed for distrib
+		  (but update or remove messages)
+OK INFO  	- NNF, Restore all
+OK INQUIR	- NNF, Restore all
+OK JLV   	- PERSONAL, NX-only.  Flushed from distrib.
+OK KLH   	- PERSONAL, NX-only, but may be a few sources that need
+		  to be included for distrib: OUT,NUUOS,OUTDOC,MACROS.
+		  Move to KSC.
+		  (problem; need to update .INSRTs of other progs?)
+OK KSC   	- NNF, restore all.
+?  KSHACK	- Mostly new files.  Perhaps restore others?
+		  Note the DEC ucode source is proprietary; exclude it?
+OK LISP 	- NNF, Restore all (needed for INQUIR, sigh)
+OK MAINT 	- NNF, Restore all
+		  This contains DEC diagnostic binaries but leave it for now.
+OK MIDAS 	- NNF except for bugfix: TSRTNS 234
+OK MRC		- PERSONAL, NX-only.  Flushed from distrib.
+OK SYS		- Mostly NNF, restore all.  Lots of possibly superfluous
+		large PURQIO files, ugh.  But don't know which progs might
+		use which of them...
+OK SYS1  	- NNF, Restore all
+OK SYS2  	- NNF, Restore all
+OK SYS3  	- NNF, Restore all
+OK SYSBIN	- Mostly NNF, restore.  Lots of OBINs that could flush.
+OK SYSDOC	- NNF, restore all
+OK SYSEN1	- NNF, restore all
+OK SYSEN2	- NNF, restore all
+OK SYSENG	- NNF, restore all except for MACRO TAPES (site-specific)
+OK SYSHST	- Mostly NNF, restore all (new versions of H3TEXT).
+OK SYSNET	- Mostly NNF, restore all (new version of TELSER).
+OK SYSTEM	- Several new files; should clean out old versions.
+
+FILE UPDATES AND CHANGES:
+========================
+
+This list contains all files added or modified since NX first came up
+from the original AI/MC snapshot, with descriptive notes.  It does NOT
+contain links; many links have a creation time postdating this but
+they are almost certainly artifacts of the way link restoral was done.
+
+See "nxmodfiles" for a complete list of all files or links that
+postdate the creation of NX.
+
+NX:C;
+NX:CHANNA;
+NX:CRASH;
+  0   CRTSTY LOG      0 +333  ! 9/24/99 18:46:17  (9/24/99) KLH
+NX:DEVICE;
+NX:DRAGON;
+  0   DRAGON HOARD    4  +90  ! 6/11/92 02:56:32  (15/31/127) -??-
+  0   RAKASH PFTHMG   4 +578  ! 6/11/92 02:56:32  (10/23/99) -??-
+NX:EMACS;
+NX:GREN;
+  0   GREN   LOGIN    0 +489  ! 7/23/93 18:50:26  (8/17/93) 
+  0   GREN   OSENDS   0  +44  ! 7/23/93 18:55:38  (7/23/93) 
+  0   GREN   PLAN     0   +8  ! 7/29/93 12:10:33  (8/17/93) 
+NX:HACK;
+  0   KLH10  MSG      3 +157  ! 11/8/92 01:46:07  (11/10/92) -??-
+  0   KLH10  NEWS     0 +660  ! 5/25/93 15:52:15  (5/25/93) KLH
+  0   NX     NEWS     0 +275  ! 5/3/93 14:24:31   (7/22/93) KLH
+NX:INFO;
+NX:INQUIR;
+NX:KLH;
+  0   COM    INFO     0 +229  ! 1/29/93 00:31:09  (5/20/93) 
+  0   CONFIG 1        7   +1  ! 11/7/92 13:41:12  (9/24/99) -??-
+  0   CONFIG 2        7   +1  ! 9/24/99 04:04:03  (9/24/99) 
+  0   CONFIG 3        6+1016  ! 9/24/99 04:07:38  (9/24/99) 
+  0   DDT    NBIN     3 +458  ! 1/5/93 17:15:15   (5/20/93) 
+  0   DDT    NEW      3 +449  ! 1/5/93 17:08:04   (5/20/93) 
+  0   DDT    TORIG    3 +458  ! 1/5/93 17:08:45   (4/5/93)  
+  0   FIRST  EMACS    0   +3  ! 11/8/92 01:29:21  (10/3/99) 
+  0   ITS    BIN     56 +346  ! 10/28/93 11:35:05 (10/28/93) 
+  0   KLH    MAIL     1  +86  ! 7/23/93 18:45:00  (10/24/99) .MAIL.
+  0   KLH10  ARCHIV   0 +866  ! 5/25/93 16:00:15  (10/3/99) .MAIL.
+  0   KLH10  PEOPLE   0 +384  ! 8/5/93 12:29:21   (8/23/93) 
+  0   MAIL   FRMHQM   0  +22  ! 11/9/92 20:42:04  (5/20/93) -??-
+  0   TEMP   FILE     0  +13  ! 7/19/92 10:40:14  (11/8/92) 
+  0   WALL   1        5 +152  ! 12/23/92 15:09:31 (12/23/92) 
+  0   WALL   2        0       ! 1/14/93 00:44:45  (1/14/93) 
+  0   WALL   3        8  +15  ! 1/14/93 00:54:11  (1/14/93) 
+  0   WALL   4        8  +15  ! 1/14/93 03:41:59  (1/14/93) 
+  0   WALL   5        0 +133  ! 1/16/93 06:13:50  (1/16/93) 
+  0   WALL   6        7 +992  ! 1/16/93 06:16:51  (1/16/93) 
+  0   WALL   7        7 +992  ! 1/16/93 06:43:49  (1/16/93) 
+  0   XLINKS 1        2  +12  ! 11/8/92 01:20:54  (12/9/92) -??-
+  0   _FTPU_ OUTPUT   0       ! 1/28/93 17:58:51  (1/28/93) 
+
+NX:KSC;
+	TS ZOTZ - New, just a ZOTZ BIN patched for 50K (not 500K) loop count
+  0   TS     ZOTZ     3 +317  ! 12/16/92 16:51:33 (9/24/99) KLH
+NX:KSHACK;
+  0   NSALV  BIN     11 +437  ! 7/20/92 04:35:29  (7/20/92) KLH
+  0   NXBOOT ALLFS    0  +22  ! 1/16/93 06:16:18  (4/9/93)  KLH
+  0   NXBOOT FILES    0  +42  ! 1/16/93 06:11:07  (4/9/93)  KLH
+NX:MAINT;
+
+NX:MIDAS;
+  0   TS     NMIDAS  22 +357  ! 6/23/92 15:10:28  (4/9/93)  -??-
+  0   TSRTNS 234     27 +612  ! 6/23/92 17:23:37  (4/9/93)  -??-
+
+NX:MRC;
+
+NX:SYS;
+	NET MAIL - Telnet/supdup server announcement.  Revised for NX,
+		original in NET OMAIL.
+	:MSGS TIMES - Used by DDT's :MSGS command to remember the last
+		time each user invoked it; data file of uname/datim pairs.
+	TS MIDAS - New, version 458.  Old version (433) renamed to TS OMIDAS.
+  0   :MSGS  TIMES    4       ! 10/24/99 01:53:05 (10/24/99) KLH
+  0   NET    MAIL     0  +16  ! 5/3/93 14:28:10   (10/24/99) KLH
+  0   RECORD TIME     0       ! 6/19/92 17:19:49  (9/24/99) KLH
+  0   TS     MIDAS   22 +357  ! 4/9/93 21:36:42   (9/24/99) KLH
+  0   TS     NAME    16 +108  ! 4/15/93 19:07:13  (10/3/99) KLH
+  0   TS     PEEK    14 +726  ! 4/7/93 19:03:07   (10/24/99) KLH
+  0   TS     PROBE    7   +8  ! 7/23/93 18:54:38  (7/23/93) GREN
+NX:SYS1;
+  0   TS     METER    3 +398  ! 5/19/93 19:12:17  (5/20/93) MRC
+  0   TS     PRUFD    0 +506  ! 4/6/93 17:23:25   (4/6/93)  KLH
+  0   TS     SYSMSG   2 +568  ! 6/7/93 13:04:43   (6/21/93) KLH
+NX:SYS2;
+  0   TS     XXFILE   5 +982  ! 4/5/93 19:59:23   (4/5/93)  KLH
+NX:SYS3;
+
+NX:SYSBIN;
+	FTPS   BIN	Patched with new IP address; orig is FTPS ORGBIN.
+	MIDAS 458BIN	New version, latest.
+  0   FIDO   BIN      3 +430  ! 5/11/93 13:39:52  (5/11/93) KLH
+  0   FTPS   BIN     10 +367  ! 11/7/92 13:40:41  (5/19/93) KLH
+  0   HOSTS3 2002    68 +757  ! 5/19/93 12:51:50  (10/24/99) KLH
+  0   MIDAS  458BIN  17 +108  ! 4/9/93 21:26:11   (4/9/93)  KLH
+  0   TELSER BIN      3  +87  ! 5/3/93 13:53:46   (10/24/99) KLH
+	New version (TELSER 173) with NX greeting.
+	Old file renamed to TELSER AIBIN.
+
+NX:SYSDOC;
+NX:SYSEN1;
+NX:SYSEN2;
+
+NX:SYSENG;
+	Must flush this site-specific weirdo; it will conflict with version
+	from dump!  DUMP maintains this as a directory of all macro tapes
+	written on the system.
+ 	 0   MACRO  TAPES  40 ! 3/1/93 21:43:22
+  0   MACRO  TAPES   39  +64  ! 9/24/99 04:32:12  (9/24/99) KLH
+
+NX:SYSHST;
+	New versions of H3TEXT >.
+  0   H3TEXT 2000    82 +412  ! 5/17/93 18:36:38  (5/17/93) -??-
+  0   H3TEXT 2002    74  +35  ! 5/17/93 19:33:08  (5/19/93) KLH
+
+NX:SYSNET;
+  0   TELSER 173      7 +886  ! 5/3/93 13:53:31   (5/3/93)  KLH
+	New version with NX greeting.
+
+NX:SYSTEM;
+	Several new files; should clean out old versions.
+  0   CHAOS  289     16 +328  ! 7/19/92 09:31:21  (7/19/92) KLH
+  0   CONFIG 197      6+1008  ! 7/19/92 11:00:02  (9/24/99) KLH
+  0   CONFIG 198      6+1016  ! 9/24/99 04:07:38  (9/24/99) KLH
+  0   DDT    BIN      3 +671  ! 7/19/92 13:53:44  (7/19/92) KLH
+  0   DSKDMP 216      9 +809  ! 7/19/92 13:56:53  (4/21/93) KLH
+  0   DSKDMP BIN      2 +296  ! 7/20/92 04:35:00  (7/20/92) KLH
+  0   DSKDMP BT       0 +885  ! 7/20/92 04:35:16  (7/20/92) KLH
+  0   IMP    366      6 +216  ! 7/20/92 04:20:41  (9/24/99) KLH
+  0   INET   139      9 +838  ! 7/20/92 04:58:30  (9/24/99) KLH
+  0   ITS    1645   118 +583  ! 7/19/92 06:12:26  (9/24/99) KLH
+  0   ITS    645BIN  56 +345  ! 7/20/92 04:30:13  (11/23/92) KLH
+  0   ITS    645NX   56 +346  ! 9/24/99 04:09:48  (9/24/99) KLH
+  0   ITS    BIN     56 +346  ! 9/24/99 19:00:59  (9/24/99) KLH
+  0   ITS    OBIN    56 +345  ! 1/28/93 00:16:44  (1/28/93) KLH
+  0   NET    33       2 +725  ! 7/19/92 06:06:21  (9/24/99) KLH
+  0   TM03S  DEFS5    1  +65  ! 7/20/92 04:23:56  (9/24/99) KLH
+  0   TTYTYP 315      3  +69  ! 7/19/92 11:45:53  (9/24/99) KLH
+
+NX:.;
+  0   @      AI-ITS  58  +29  ! 12/17/92 17:04:48 (4/9/93)  -??-
+  0   @      ITS     62 +464  ! 12/17/92 17:05:37 (1/14/93) -??-
+  0   @      NSALV   12 +675  ! 12/17/92 17:05:03 (4/19/93) -??-
+  0   @      SALV38  12 +540  ! 6/4/92 12:32:09   (1/14/93) -??-
+  0   DDT    068BIN   3 +671  ! 7/19/92 13:53:44  (4/9/93)  -??-
+  0   DSKDMP 216BIN   2 +296  ! 7/20/92 04:35:00  (4/9/93)  -??-
+  0   DSKDMP 216BT    0 +885  ! 7/20/92 04:35:16  (4/9/93)  -??-
+  0   ITS    645BIN  52 +240  ! 7/20/92 04:34:15  (4/9/93)  -??-
+  0   NSALV  260BIN  11 +437  ! 7/20/92 04:35:29  (4/19/93) -??-
+NX:.INFO.;
+
+NX:.MAIL.;
+	Empty until COMSAT launched for first time.
+	Most of the old files were useless, but some saved
+	for posterity.
+  0       ID 14       0       ! 5/19/93 18:45:58  (7/23/93) KLH
+  0     LIST    EQV   2 +191  ! 5/24/93 15:58:39  (7/23/93) 
+  0     LIST  QUEUE   0 +203  ! 5/24/93 15:58:39  (5/24/93) 
+  0     LIST MASTER   0 +203  ! 5/24/93 15:58:39  (8/20/93) 
+  0     LIST REMIND   0 +201  ! 5/19/93 18:45:58  (5/24/93) KLH
+  0    LISTS   MSGS   0       ! 5/19/93 18:45:58  (5/24/93) KLH
+  0   COMSAT LAUNCH  32 +463  ! 5/19/93 18:45:44  (10/23/99) KLH
+  0   NAMED  ERR000   0   +8  ! 5/19/93 18:46:00  (5/19/93) KLH
+  0   NAMED  ERR001   0   +8  ! 5/24/93 15:58:39  (5/24/93) 
+  0   NAMES  2000     1  +32  ! 5/19/93 17:03:19  (5/24/93) KLH
+  0   NAMES  2001     1  +59  ! 5/24/93 15:56:18  (8/20/93) KLH
+  0   STATS  1        1 +738  ! 10/23/99 00:29:02 (10/23/99) -??-
+  0   XLIST     EQV   2 +137  ! 5/19/93 17:04:49  (5/19/93) KLH
+  0   XLIST    MSGS   0 +201  ! 5/19/93 17:07:49  (5/19/93) 
+  0   XLIST   QUEUE   0 +201  ! 5/19/93 17:23:04  (5/19/93) KLH
+  0   XLIST  MASTER   0 +203  ! 5/19/93 17:23:04  (5/19/93) KLH
+  0   XLIST  REMIND   0 +201  ! 5/19/93 17:04:47  (5/19/93) KLH
+  0   XNAMED ERR064   0   +9  ! 5/19/93 16:13:18  (5/19/93) KLH
+  0   XNAMED ERR065   0   +9  ! 5/19/93 17:04:49  (5/19/93) KLH
+  L   XNAMES 1062     .MAIL.;NAMES 1062    5/17/93 14:55:27  (5/17/93) KLH
+  0   XNAMES 1064     0 +391  ! 5/17/93 16:53:36  (5/19/93) KLH
+  0   XNAMES 1065     1  +32  ! 5/19/93 17:03:19  (5/19/93) KLH
+  0   XSTATS 1        3 +166  ! 5/19/93 18:31:57  (5/19/93) KLH
+NX:.TAPE0;
+  L   LAST   USE      KLH;LIST 990924      9/24/99 04:32:19  (9/24/99) KLH
+  0   TAPE   0        0  +46  ! 9/24/99 04:32:13  (9/24/99) KLH
+  0   TAPE   1        0  +10  ! 4/19/93 18:47:27  (4/19/93) -??-
+  0   TAPE   2        3 +687  ! 4/19/93 18:35:28  (4/19/93) -??-
+  0   TAPE   3        0 +484  ! 4/21/93 21:07:36  (4/21/93) -??-
+NX:.TECO.;
+NX:.TEMP.;
+
+Note fucking DUMP gubbish to do FS save/restore properly:
+
+	To save stuff, use:
+		DUMP FULL LINKS
+
+	To restore stuff, use:
+		RELOAD LINKS CRDIR SORRY	???
+		(Don't use LOAD, use RELOAD!!!)
+
+	Fucking DUMP also appears to lose when loading up a new dir when the
+	first file is a link, even if the CRDIR option is set!!!
+	Need to create the dir by hand, then continue.
+
+
+Idea for new DUMP format to preserve stuff better:
+
+	Extend file header to 9 words.
+	Move Dump-check and don't-reap bits to LH of link,,pack#
+	Add sixbit author name at end.
+
+Must modify:
+	NSALV - to handle bits and potentially convert author to index.
+		Potentially store MFD if found, use to generate new
+		UFDs as needed.
+	DUMP - to output and read in extended format.
+	ITS - add new syscall to read/write bytesize and file length?
+		RFSIZE, SFSIZE	arg1 - bytesize, arg2 - # bytes
+
+		For SFSIZE, # bytes must be within last word or at start of
+		next, else error.
+			if (BS <= 0 || 36 < BS) error;
+			BPW = 36/BS;
+			if (((# + BPW-1) / BPW) != FILLEN) error;
+
+
+Date: Wed, 21 Apr 93 19:10:33 -0400
+From: Alan Bawden <Alan@lcs.mit.edu>
+To: klh@us
+Subject: ITS Turist Tips 
+
+   Date: Wed, 21 Apr 1993 9:34:08 BST
+   From: Ken Harrenstien <klh@us.oracle.com>
+       Sure, but why not run it?  The statistics are sometimes interesting.
+       Also PFTHMG runs hourly, daily, monthly and yearly batch jobs, which
+       is a useful service in general...
+
+   I guess.  Now you have to explain what those various batch jobs are
+   doing there...
+
+Let's see...  (Wow, there seem to be more of these than I remember!)
+On AI, hourly we have:
+
+  DRAGON;HOURLY CNAVRL ==> .MAIL.;COMSAT LAUNCH
+
+Just makes sure COMSAT doesn't stay dead for long.
+
+  DRAGON;HOURLY GCMAIL
+
+This is something SRA wrote to garbage collect files from the .MAIL.
+directory.  I don't remember exactly what it does -- perhaps it deletes
+OSTATS files that are older than a few days or something.  I do remember
+that there was some disagreement about how aggressive this should be.
+Penny didn't want it as aggressive as SRA did.  Penny won.
+
+  DRAGON;HOURLY H3GET
+
+This is something I wrote that keeps the host tables on all the ITS
+machines in sync.  It checks the host tables on other ITS machines, and if
+it finds one that is newer than the local copy, it sucks it over.
+
+  DRAGON;HOURLY MODEMS ==> CHANNA;TS MODEMS
+
+This does the same thing as CHANNA;RAKASH MODEMS, this way the damn things
+only stay broken for at most an hour.
+
+  DRAGON;HOURLY TMPKIL ==> SYS2;TS TMPKIL
+
+I think this has something to do with cleaning up the files on .TEMP. -- I
+don't know its algorithm.
+
+  DRAGON;HOURLY UPTIME ==> BAWDEN;UPTIME BIN
+
+This is just a little personal hack I wrote to keep track of system uptime.
+It just stores the current system uptime in the creation date of some file
+on my directory.
+
+Then every night soon after midnight we run:
+
+  DRAGON;DAILY BDAY
+
+This mails out the daily birthday greetings mail.
+
+  DRAGON;DAILY EXPIRE ==> SYS2;TS GMSGS
+
+This cleans out the expired system messages on .MSGS..
+
+  DRAGON;DAILY NO.TS
+
+This searches for files named GUEST*;TS * and USER*;TS * and deletes them.
+(People sharing a directory shouldn't create TS files for each other to
+trip over by accident.)
+
+On the first of the month, and the first of the year we run:
+
+  DRAGON;MNTHLY MNTHLY ==> DRAGON;YEARLY YEARLY
+  DRAGON;YEARLY YEARLY
+
+This just sends mail to Alan to let him know that Puff has actually run the
+monthly and yearly batch jobs, even though normally these are the only
+entries.
+
+On MC, we also have HOURLY DIGEST, which is the mailing list digestifier
+(and maybe some others I don't remember).
+
+   And what's PANDA?
+
+RWK;TS PANDA is the administrator's interface to PWORD.  Its lets you turn
+people's accounts on and off and stuff like that.  Since you aren't going
+to run PWORD, you don't need it.
+
+
+Host table madness:
+
+Several programs will die on startup if they cannot find their own
+host address or look up their name using this address.
+Amongst them are FTPS.
+
+SYSHST;H3MAKE >	- source for a small program that DRAGON is supposed to run
+	periodically.  It invokes
+		SYSHST;HOSTS3 BIN	(compiled from SYSHST;HOSTS3 >)
+	with appropriate non-trivial args that cause it to snarf up the file
+		SYSHST;H3TEXT >
+	and compile it into the binary-format file
+		SYSBIN;HOSTS3 >
+	which is used by everything else on ITS to look up host names
+	via this package:
+		SYSNET;NETWRK >
+
+Note that COMSAT uses a new roundabout mechanism.  Instead of the NETWRK
+	library it now uses
+		SYSNET;RESOLV >
+	which replaces all NETWRK calls and invokes the DQ device, installed as
+		DEVICE;JOBDEV DQ
+	compiled from
+		SYSNET;DQXDEV >
+	which itself uses NETWRK to look up HOSTS3 information.  This DQ
+	device was intended to be a temporary but more reliable replacement
+	for
+		SYSNET;DQDEV >
+	which is a CSTACY product attempting to do real DNS lookups via UDP.
+
+MIT-NX changes:
+	A new H3TEXT > was pulled over from
+		lcs.mit.edu:/hosts/.misc/hosts3.txt
+	This file is generated automatically by a batch job.
+	It was edited to remove X-terminals and chaosnet hosts, and
+	some NX-local names added.
+
+COMSAT configuration:
+
+	Must eventually flush its HN$ symbols.
+
+	At BUGHST/ must put the IP address of the host that deals with
+			(BUG RANDOM-PROGRAM) messages.
+
+	At DOMGAT/ must put the IP address of a mail relay host.  This
+		host will receive all mail for addresses that we can't
+		resolve ourselves.
+
+	At TCPGAT/ can put IP address of a mail relay to handle *all*
+		external TCP/IP traffic.  This is needed when there is
+		a firewall host like gatekeeper.us.oracle.com, sigh.
+
+NX   .MAIL.
+FREE BLOCKS #0=18478 
+  0       ID 703539 0 ! 4/23/85 10:27:26	FLUSHED
+  0       ID 723380 0 ! 4/23/85 10:27:26	FLUSHED
+  0     LIST    EQV 15 ! 4/19/90 17:41:08	FLUSHED
+  0     LIST  QUEUE 2 ! 4/20/90 11:07:06	FLUSHED
+  0     LIST MASTER 5 ! 4/20/90 11:05:48	FLUSHED
+  0     LIST REMIND 1 ! 11/19/85 18:46:42	FLUSHED
+  0    LISTS   MSGS 361 ! 4/20/90 11:05:47	FLUSHED
+  0    LOCK  UNIQUE 1 ! 4/23/85 10:27:24
+  0   *MSG   EXP    2 ! 1/30/90 20:26:07
+  0   -READ- -THIS- 1 ! 12/19/86 13:47:38
+  0   .AIOLD NAMES  17 ! 7/27/85 16:35:38
+  0   .DM    NAMES  3 ! 7/22/83 13:31:25
+  0   .MCNEW NAMES  19 ! 5/17/86 00:45:39
+  0   .MCOLD NAMES  24 ! 5/5/86 13:41:19
+  0   .MLOLD NAMES  9 ! 2/21/84 00:53:15
+  0   BBOARD INFO   1 ! 4/29/84 18:01:28
+  0   COMSAT BIN    31 ! 12/23/89 16:01:35
+  0   COMSAT LAUNCH				Patched with:
+							BUGHST/ self
+							DOMGAT,TCPGAT/gateway
+  0   COMSAT LUNCH  33 ! 9/19/90 16:17:58	AI Original
+  0   COMSAT OBIN   28 ! 11/10/89 17:55:53
+  0   COMSAT OLAUNC 33 ! 11/10/89 17:56:40	FLUSHED (pure version of OBIN)
+  0   FAILED STUFF  24 ! 3/29/90 22:36:45	FLUSHED
+  0   MAIL   1      1 ! 9/20/90 18:15:55	FLUSHED (random ALAN stuff)
+  0   MAIL   2      1 ! 9/20/90 18:15:55	FLUSHED
+  0   MAILIN 1      1 ! 4/20/90 11:16:56	FLUSHED
+  0   NAMED  ERR094 1 ! 4/5/90 22:19:22		FLUSHED
+  0   NAMED  ERR096 1 ! 4/14/90 02:10:28	FLUSHED
+  0   NAMED  ERR097 1 ! 4/19/90 17:41:08	FLUSHED
+  0   NAMES  1096   7 ! 4/14/90 02:06:27	FLUSHED
+  0   NAMES  1097   7 ! 4/19/90 17:36:00	Renamed to .AIKS NAMES
+  0   NAMES  INFO   3 ! 7/24/89 23:41:25
+  0   OSTATS 1634   51 ! 4/18/90 16:31:55	FLUSHED
+  0   OSTATS 1635   51 ! 4/19/90 23:07:52	FLUSHED
+  0   XID    22     0 ! 10/30/89 19:12:43	FLUSHED
+  0   XLIST     EQV 1 ! 10/30/89 22:30:30	FLUSHED
+  0   XLIST    MSGS 0 ! 10/31/89 01:40:09	FLUSHED
+  0   XLIST   QUEUE 1 ! 12/23/89 16:08:06	FLUSHED
+  0   XLIST  MASTER 1 ! 12/23/89 16:08:06	FLUSHED
+  0   XLIST  REMIND 1 ! 10/30/89 19:18:24	FLUSHED
+  0   XLOCK  UNIQUE 1 ! 10/30/89 19:12:40	FLUSHED
+  0   XNAMED ERR062 1 ! 10/30/89 19:20:18	FLUSHED
+  0   XNAMED ERR063 1 ! 10/30/89 22:30:29
+  L   XNAMES 1062   .MAIL. NAMES 1062
+  0   XNAMES 1063   1 ! 10/30/89 22:23:34
+  0   XSTATS 1      3 ! 12/23/89 16:18:39
+
+NX   SYSBIN
+FREE BLOCKS #0=18565 
+  0      BIG   0DAT 15 ! 4/20/90 11:26:41
+  L   -READ- -THIS- SYSENG -READ- -THIS- 
+  0   AP     BIN    1 ! 3/13/84 05:25:26
+  0   BOLIO  174    63 ! 12/13/82 20:16:15
+  0   BOLIO  177    67 ! 12/7/83 03:56:14
+  0   BOLIOP 191.1  1 ! 1/25/83 03:34:24
+  0   BOLIOP 191.2  1 ! 4/7/83 00:20:25
+  0   BOLIOP 191.3  1 ! 6/7/83 20:05:15
+  0   BOLIOP 191PAT 1 ! 6/7/83 20:06:01
+  0   BOLIOP 195PAT 1 ! 12/7/83 03:55:56
+  0   BRANDX 45     58 ! 12/20/82 18:05:01
+  0   BX45   (PDIR) 1 ! 12/20/82 18:04:59
+  0   BXL23  (PDIR) 1 ! 8/31/81 01:52:02
+  0   BXLSB  30     92 ! 12/20/82 18:20:08
+  0   CHTN   BIN    4 ! 10/22/86 22:02:55
+  0   CNVRT  BIN    2 ! 9/29/76 02:35:32
+  0   CRTSTY BIN    30 ! 8/2/89 20:58:34
+  0   CRTSTY OBIN   27 ! 7/22/85 13:18:43
+  0   CTN    BIN    28 ! 12/31/84 11:07:05
+  0   CTN    OBIN   28 ! 12/31/83 08:42:22
+  0   CTN    SCRTST 25 ! 3/17/82 04:28:57
+  0   DDT    545BIN 27 ! 11/26/88 16:04:38
+  0   DUMP   420BIN 14 ! 6/2/88 17:59:35
+  0   DUMP   422BIN 14 ! 9/20/88 14:46:06
+  0   DUMP   442BIN 14 ! 8/4/89 15:17:23
+  L   DUMP   BIN    SYSBIN DUMP >
+  0   FIDO   BIN    4 ! 5/11/93 13:39:52
+  0   FILE   BIN    8 ! 12/19/86 17:12:14
+  0   FILE   NBIN   8 ! 2/20/89 18:08:25
+  0   FTPS   BIN    11 ! 11/7/92 13:40:41
+  0   FTPS   OBIN   12 ! 8/2/89 21:16:07
+  0   FTPS   ORGBIN 11 ! 11/27/89 00:33:06
+  0   FTPU   BIN    11 ! 8/2/89 21:12:42
+  0   FTPU   OBIN   11 ! 3/5/89 15:00:03
+  0   GMSGS  OBIN   3 ! 2/17/89 03:02:49
+  0   HOST1  OLD548 3 ! 3/15/83 19:00:48
+  0   HOSTS2 29     23 ! 5/2/85 19:22:53
+  0   HOSTS2 31     24 ! 6/16/85 01:54:29
+  0   HOSTS3 1560   72 ! 4/16/90 05:44:54	FLUSHED
+  0   HOSTS3 1561   72 ! 4/18/90 05:16:33	FLUSHED
+  0   HOSTS3 1562   72 ! 4/20/90 05:31:08	Renamed to HOSTS3 AI1562
+  0   HOSTS3 OLD    82 ! 2/24/89 04:48:23
+  0   HOSTS3 OLDOLD 71 ! 4/21/87 19:51:20
+  0   HST3BD 2      53 ! 8/23/85 01:48:56
+

@@ -1,0 +1,9 @@
+
+In order to test PI ITS configured for its future home, need to
+add explicit routing table entries:
+
+On ITS.JOSS.COM:
+	# route add -net 192.168.0.0 -interface 199.34.53.50
+
+On other machines:
+	# route add -net 199.34.53.0 -interface 192.168.0.xx (own address)

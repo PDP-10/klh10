@@ -1,0 +1,32 @@
+This file contains information on know problems, bugs, and misfeatures of
+supdup, as well as any other random pieces of information that need to
+be somewhere.
+
+SUPDUPD needs a new /bin/login because the standard login trashes the
+environment.  The /bin/login that we use is included.  The only
+requirement is that the TERMCAP (and TERMINFO if you're using it) gets
+passed through as well as the TERM environment variable.
+
+The server should do the same optimization with character insert and
+delete that it does with line insert and delete.
+
+I probably should make use of scroll regions.  But this is a pain.
+
+If TTYLOC is defined, then the SUPDUP location feature uses Romkey's
+ttyloc code.  This could easily be replaced by whatever your
+particular machine does about tty location, or left out all together
+of course.  The user supdup doesn't yet send TTYLOC information.
+
+The banner should tell you to turn off overstrike if necessary.
+
+3600's have this bug where if you position the cursor at the beginning
+of the line and do a newline, the first character of the line is erased.
+I have programmed around this bug to some extent, but it sometimes
+reappears.  They also have a bug that if you type a meta character the
+character that gets sent is shifted and if you type meta shift character
+it sends a lowercase character.  There is nothing I can do about this.
+
+For some reason talk, amoung a few other things, core dumps when
+supduping in from a lisp machine (either a 3600 or a cadr).  I've seen
+the same bug a BBN bitgraph.  It seems to be a bug with programs which
+use curses and is evoked by large screen sizes.

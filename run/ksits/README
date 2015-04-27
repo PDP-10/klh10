@@ -1,0 +1,18 @@
+The following files are derived from MIT ITS software and subject to
+their licensing requirements:
+
+	@.ddt-u			(DDT standalone)
+	@.nsalv-260-u		(NSALV standalone)
+	@.its-647pi-u		(PI ITS monitor bootstrap)
+	@.its-647kn-u		(KN ITS monitor bootstrap)
+	@.its-647md-u		(MD ITS monitor bootstrap)
+	itsbin.647pi-u		(PI ITS alone, no DDT or SALV)
+	itsbin.647kn-u		(KN ITS alone, no DDT or SALV)
+	itsbin.647md-u		(MD ITS alone, no DDT or SALV)
+
+The "pubits" directory contains various notes left over from the
+Public ITS project.  One file in particular has been updated:
+
+	pubits/doc/distrib.its	- various notes on bringing up a new ITS
+
+Read it!

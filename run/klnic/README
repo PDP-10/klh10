@@ -1,0 +1,6 @@
+The following files are derived from Digital software and subject to
+Digital licensing requirements:
+
+	boot-nic.sav		(disk bootstrap)
+	mtboot-nic.sav		(tape bootstrap)
+

@@ -1,0 +1,10 @@
+The following directories contain programs of uncertain lineage where
+the original authors gave no explicit instructions as to the terms of
+use or redistribution.
+
+Based on history and e-mail exchanges I believe that "BSD" style
+licensing terms are probably what was intended, but could be wrong.
+
+	supdup/   (Unix C version of ITS SUPDUP)
+	read20/   (Unix utility to read TOPS-20 DUMPER tape images)
+

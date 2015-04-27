@@ -1,0 +1,5 @@
+The following files are derived from Digital software and subject to
+Digital licensing requirements:
+
+	ksbddt.exe		(bootstrap with DDT)
+	ksboot.exe		(disk/tape bootstrap)

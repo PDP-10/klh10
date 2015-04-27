@@ -1,0 +1,28 @@
+Date: Wed, 03 Oct 2001 14:17:49 -0400
+From: dab@froghouse.org
+To: klh@alum.mit.edu
+Message-ID: <87y9msy4du.wl@ariki.froghouse.org>
+
+At Wed, 3 Oct 2001 11:43:45 EDT,
+Ken Harrenstien <klh@panix.com> wrote:
+
+> Dave, any problems with redistributing this code, or some version of
+> supdup, along with the KLH10 distribution?  You have the original
+> copyright even if it's not explicitly stated.  It is probably a good
+> idea to add something that clearly says what rights others have (GPL
+> or whatever).  I can send you the latest if you like.
+
+If I'd thought about it at the time I probably would have used the old
+MIT copyright, the same that we put on PC/IP and the C Gateway.
+From what I hear, not having actually looked into any of this, the BSD
+copyright is pretty much the same thing.
+
+Anyway, you're certainly welcome to redistribute the code as far as
+I'm concerned.
+
+Oh, I remember now why I didn't put a copyright on it.  It was because
+I used the BSD telnet sources as a starting point for the supdup
+programs and the BSD code was not free at the time.  Not very much
+telnet code survived in the end but it is where I started from.
+
+ -Dave

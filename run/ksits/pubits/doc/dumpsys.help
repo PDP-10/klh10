@@ -1,0 +1,40 @@
+Instructions for making a system-boot dump tape for ITS:
+
+[0] Remember to write-mount a tape-file name with the KLH10 "W" command.
+
+[1] After starting up DUMP in ITS, patch it so the variable WRONG is 0.
+    This allows writing on the tape.  Sigh.
+
+    dump^K!
+    DUMP  .442   
+    *** WRONG VERSION OF DUMP--ASSEMBLED FOR AI     BUT RUNNING ON NX     ***
+    *** CERTAIN TAPE OPERATIONS WON'T BE ALLOWED ***
+    _
+    6146)   .IOT 5,1   $^K
+    *wrong/'DUMPER$:   -1   0
+    $p
+
+[2] Give the command:
+	DUMP LIST,LINKS  ; Make a WALL > listing, and include links.
+    At the first FILE= prompt, type "KSHACK;NXBOOT FILES ^F".
+    This should read in a list of files to dump.  (also see note below)
+
+[3] Type RETURN and RETURN to start it going.
+
+[4] When done, do a REWIND, to ensure the tape-file is finalized.
+
+
+NOTE:
+    If ^F doesn't work or the file "NXBOOT FILES" doesn't exist, enter the
+    following directories in response to "FILE=":
+	.
+	SYS, SYS1, SYS2, SYS3, SYSBIN
+	KSHACK, SYSTEM, MIDAS
+	SYSENG, CHANNA, DEVICE, DRAGON
+	MAINT  (the file MAINT;PART A is a good test program)
+
+    If creating a general "core system" dump and not just a minimal boot
+    set, also add these directories:
+	EMACS, INFO, INQUIR, KSC
+	SYSDOC, SYSEN1, SYSEN2, SYSHST, SYSNET
+

@@ -1,0 +1,21 @@
+
+# Per RFC 1918, there are 3 IP address space blocks assigned for private nets,
+# which will never (and can never) be used on the external Internet:
+#	10.0.0.0    - 10.255.255.255  (10/8 prefix)	    1 class A net
+#	172.16.0.0  - 172.31.255.255  (172.16/12 prefix)   16 class B nets
+#	192.168.0.0 - 192.168.255.255 (192.168/16 prefix) 256 class C nets
+#
+# IP conventions:
+#	0 and 255 reserved for broadcast (IP standard)
+
+# Addresses for setup of Public ITS in Doug Humphrey's co-location facility.
+# Reserved 8-address block from 199.34.53.48-55 inclusive.
+#        .48	# Old bcast
+#        .49	# Router/Gateway
+199.34.53.50	its.joss.com	its	# Native system
+199.34.53.51	pi.its.os.org	pi	# Public ITS (virtual)
+199.34.53.52	dx.its.os.org	dx	# Digex ITS (virtual)
+199.34.53.53	du.its.os.org	du	# Hack ITS (virtual)
+199.34.53.54	unknown.its.os.org	# Reserved
+#        .55	# Subnet broadcast
+

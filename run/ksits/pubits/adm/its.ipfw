@@ -1,0 +1,188 @@
+#!/bin/sh -
+
+# Paranoid ipfw configuration for its.os.org box
+
+[ -f /etc/rc.conf ] && . /etc/rc.conf
+ipfw="/sbin/ipfw"
+[ "x$firewall_quiet" = "xYES" ] && ipfw="$ipfw -q"
+
+#### configure ####
+
+#	199.34.53.48/29
+#	255.255.255.248	<netmask>
+#		 .48	<reserved (old bcast?)>
+#	199.34.53.49	<gateway>
+#	199.34.53.50    its.joss.com	(NATIVE SYSTEM)
+#	199.34.53.51    pi.its.os.org	(VIRTUAL ITS)
+#	199.34.53.52    dx.its.os.org	(VIRTUAL ITS)
+#	199.34.53.53    du.its.os.org	(VIRTUAL ITS)
+#	199.34.53.54    ??.its.os.org	(VIRTUAL ITS)
+#		 .55	<reserved for bcast>
+#
+
+# Addresses.  "me" is its.joss.com
+#
+us=199.34.53.48/29
+b0=199.34.53.48
+gw=199.34.53.49
+me=199.34.53.50
+pi=199.34.53.51
+dx=199.34.53.52
+du=199.34.53.53
+qq=199.34.53.54
+b1=199.34.53.55
+
+# Name of our interface to the outside world (ethernet, presumably)
+#
+if=de0
+
+###################
+
+# Clean slate
+#
+$ipfw -f flush
+
+# Do not accept source routed traffic under any circumstances
+#
+$ipfw add deny log all from any to any ipoptions ssrr,lsrr,rr
+
+# Allow everything on loopback interface
+#
+$ipfw add pass all from any to any via lo0
+
+## IP rules ##
+
+# Loopback addresses on non-loopback interfaces are spoofed
+#
+$ipfw add deny log all from any to 127.0.0.0/8
+$ipfw add deny log all from 127.0.0.0/8 to any
+
+# As far as I know there is no reason for any traffic to or from
+# any kind of broadcast, class D, class E, or RFC-1597 private
+# address to appear on this subnet.
+#
+# Tuez les tous, Dieu reconnaitra les siens.
+#
+$ipfw add deny log all from $b0 to any
+$ipfw add deny log all from $b1 to any
+$ipfw add deny log all from 0.0.0.0 to any
+$ipfw add deny log all from 224.0.0.0/3 to any
+$ipfw add deny log all from 255.255.255.255 to any
+$ipfw add deny log all from any to $b0
+$ipfw add deny log all from any to $b1
+$ipfw add deny log all from any to 0.0.0.0
+$ipfw add deny log all from any to 224.0.0.0/3
+$ipfw add deny log all from any to 255.255.255.255
+$ipfw add deny log all from 10.0.0.0/8 to any
+$ipfw add deny log all from 172.16.0.0/12 to any
+$ipfw add deny log all from 192.168.0.0/16 to any
+$ipfw add deny log all from any to 10.0.0.0/8
+$ipfw add deny log all from any to 172.16.0.0/12
+$ipfw add deny log all from any to 192.168.0.0/16
+
+# Don't let anybody else pretend to be this unix machine
+#
+$ipfw add deny log all from $me to any in recv any
+
+# If anybody actually figures out how to hack ITS into spoofing, we
+# probably ought to sign that person up on the spot, but just in case
+# some total loser gets lucky, let's make it a little harder for
+# spoofed packets to escape from ITS
+# Note: this also prevents a misconfigured ITS from causing trouble.
+#
+$ipfw add deny log all from not $us to any in recv 'tun*'
+$ipfw add deny log all from $gw to any in recv 'tun*'
+
+# Last, a little protection in case our first-hop router isn't checking
+# addresses as carefully as we are
+#
+$ipfw add deny log all from any to not $us in recv $if
+$ipfw add deny log all from $pi to any in recv $if
+$ipfw add deny log all from $dx to any in recv $if
+$ipfw add deny log all from $du to any in recv $if
+$ipfw add deny log all from $qq to any in recv $if
+
+# Add any other rules to discard known bogus addresses here
+
+## TCP rules
+
+# We do our TCP connection checking on setup, so just let
+# any established connection go through
+# Most TCP traffic matches this rule, so put it as early as possible
+#
+$ipfw add pass tcp from any to any established
+
+# Allow TELNET and FTP into the ITS machines
+# Don't allow TELNET or FTP to the unix machine
+# ITS doesn't support PASV FTP, so neither do we
+#
+$ipfw add reset log tcp from any to $me telnet,ftp setup
+$ipfw add pass  tcp from any to any telnet,ftp setup 
+
+# Allow SSH & SMTP into the unix box
+#
+$ipfw add pass tcp from any to $me ssh,smtp setup
+
+# Any connection initiated by the unix machine is ok
+#
+$ipfw add pass tcp from $me to any setup
+
+# Don't allow any other connections to the unix machine
+#
+$ipfw add reset log from any to $me setup
+
+# ITS machines are not allowed to initiate connections to the outside world
+# Anything else coming from an ITS machine is ok
+#
+$ipfw add reset log tcp from any to any setup out recv 'tun*' xmit $if
+$ipfw add pass tcp from any to any setup recv 'tun*'
+
+# Silently drop IDENT traffic
+# (Gee, Dr. Bernstein, let's launch a denial-of-service attack on ourselves!)
+#
+$ipfw add reset tcp from any to any ident setup
+
+# No other TCP connections allowed
+#
+$ipfw add reset log tcp from any to any setup
+
+# Please don't even think about turning on SunRPC or NFS
+#
+$ipfw add deny log udp from any to any sunrpc,nfs
+
+# Don't accept inbound syslog from the outside world
+# (no known useful purpose, so don't let bozos fill our log directory)
+#
+$ipfw add deny log udp from any to any syslog in recv $if
+
+# We need DNS and NTP
+#
+$ipfw add pass udp from any dns,ntp to any
+$ipfw add pass udp from any to any dns,ntp
+
+# Allow useful cases of syslog.  Heck, maybe ITS should use it
+#
+$ipfw add pass udp from $us to $us syslog
+
+# Allow the useful ICMP messages:
+#  Echo (types 0 & 8, for ping and traceroute)
+#  Destination Unreachable (type 3)
+#  Time Exceeded (type 11, primarily for traceroute)
+#
+# We should NOT accept ICMP Redirects (we're a router)
+$ipfw add pass icmp from any to any icmptypes 0,3,8,11
+$ipfw add deny icmp from any to any out recv $if xmit 'tun*'
+$ipfw add pass icmp from any to any out xmit 'tun*'
+
+# Silently discard ICMP Router Discovery strobes
+#
+$ipfw add deny icmp from any to any icmptypes 10
+
+# Deny and log everything else.  If this turns out to be too
+# verbose, consider adding rules to silently drop stuff that
+# we understand but don't want.  Anything we don't understand
+# probably ought to be logged.
+#
+# If you don't understand it, it's dangerous.
+#
+$ipfw add deny log all from any to any
