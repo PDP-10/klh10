@@ -21,7 +21,7 @@
 
 # Build definitions
 SRC = ../../src
-CFLAGS = -c -g3 -O3
+CFLAGS = -c -g3 -O3 -ggdb
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wstrict-prototypes -Wmissing-prototypes \
 		-Wmissing-declarations -Wredundant-decls

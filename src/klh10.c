@@ -337,6 +337,7 @@ CMDDEF(cd_lights,  fc_lights,   CMRF_TLIN,	"<hexaddr>",
 KEYSBEGIN(fectbkeys)
     KEYDEF("?",		cd_ques)
     KEYDEF("help",	cd_help)
+    KEYDEF("exit",	cd_quit)
     KEYDEF("quit",	cd_quit)
     KEYDEF("load",	cd_load)
     KEYDEF("dump",	cd_dump)
@@ -2765,6 +2766,7 @@ fc_dump(struct cmd_s *cm)
 static void
 fc_lights(struct cmd_s *cm)
 {
+#if KLH10_DEV_LITES		/* Moby conditional for entire file */
     unsigned long port = 0;
     int c;
     char *sloc = cm->cmd_arglin;
@@ -2783,6 +2785,7 @@ fc_lights(struct cmd_s *cm)
 	}
     }
     printf("?Bad address\n");
+#endif /* KLH10_DEV_LITES */
 }
 
 /* Instruction printing routines */

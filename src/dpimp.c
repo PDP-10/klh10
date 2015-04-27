@@ -228,6 +228,10 @@ default for every OS that implements /dev/tun.
 #include <sys/resource.h>	/* For setpriority() */
 #include <sys/mman.h>		/* For mlockall() */
 
+#if CENV_SYS_NETBSD
+#include <poll.h>
+#endif
+
 #include "dpimp.h"	/* DPIMP specific defs, grabs DPSUP if needed */
 
 #ifdef RCSID
