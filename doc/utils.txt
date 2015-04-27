@@ -1,0 +1,245 @@
+/* UTILS.TXT - KLH10 Utilities
+*/
+/* $Id: utils.txt,v 2.2 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+This file attempts to provide a quick guide to the various utility
+programs provided with this Distribution (or its Auxiliary
+Distribution).  There are no man pages nor GnuEmacs INFO files.
+
+In rough order of utility:
+
+wxtest   - Test word10.h macros (used only to verify build configuration)
+wfconv   - 36-bit Word File conversion
+tapedd   - Tape copy & conversion (real or virtual)
+vdkfmt   - Virtual Disk initialization and conversion
+enaddr   - Ethernet interface configuration
+read20   - (TOPS-20) Read & extract DUMPER format tapes & tape images
+uexbconv - (TOPS-20) Convert .EXB files to .SAV format
+udlconv  - (ITS) Convert Alan's DIR.LIST into an ITSDUMP virtual tape
+supdup   - (ITS) SUPDUP client and server for Unix
+
+More details, in alphabetical order:
+
+ENADDR
+------
+
+Usage: enaddr [-v] [<ifc> [default | <ifaddr>] [+<addmcast>] [-<delmcast>]]
+    -v      Outputs debug and config info for all interfaces
+   <ifc>    Specific interface to read or modify
+   default  Reset ether addr to HW default, if known
+   <ifaddr> Set ether addr to this (form x:x:x:x:x:x)
+   +<mcast> Add    multicast addr  (same form)
+   -<mcast> Delete multicast addr  (same form)
+
+	This program exists primarily to help test and verify the
+operation of some basic osdnet.c code while porting.  In theory it is
+not needed to run a correctly configured KN10 if the osdnet.c
+implementation is correct, but is provided as a utility because its
+manual functions have been useful in the past, especially when getting
+non-IP protocols like DECNET to work.
+
+This can be built individually with "make enaddr".
+
+READ20
+------
+
+Usage: read20 [switches] [patterns]
+ Switches must be separated.
+ Patterns are simple substrings of the filenames to select.
+    -f <file>   Specify tapefile. '-' uses stdin.  Default is /dev/rmt8
+    -x          Extract files
+    -t          List contents (one of -t or -x must be given)
+    -tl         Show tape locations in listing
+    -S <n>      Only process saveset <n>
+    -e <regexp> Only process filenames matching <regexp> (one -e only)
+    -F <n> ...  Only process files numbered <n> ...
+    -V          Show FDB info for files extracted or listed
+    -s <loc>    Start reading at this byte loc in tapefile (seeks)
+    -q          Say using QIC (1/4") cartridge tape
+    -v          Verbose feedback
+    -g          Keep generation # in extracted filename
+    -n <n>      Use numeric filenames for extracts, starting with <n>
+    -W          Treat all files as 36-bit.  Otherwise, 7-bit files
+                  are treated as ascii, 8-bit as 8-bit binary, and
+                  all others as 36-bit (direct copy of tape data).
+    -T          Treat 0 or 36-bit files as 7-bit ascii
+    -B          Treat 0 or 36-bit files as 8-bit binary
+    -c          Keep CRs in CRLF pairs for ascii files
+    -d<n>       Debug level (>0,>5,>10,>99) (default 0)
+
+	This program is part of the Auxiliary Distribution and the
+source lives in the "contrib" directory.  It appears to have
+originated with Jim Guyton and was further modified by Jay Lepreau,
+Charles Hedrick, Stu Grossman, and possibly others before undergoing a
+substantial upgrade by Ken Harrenstien.  Other versions may still
+exist.
+
+READ20 is used to list and extract files on Unix from a TOPS-20 DUMPER
+tape image.  This can be either a real tape, read directly as a
+sequence of records, or a virtual tape image using the KLH10 RAW
+format.  It does NOT directly handle any other virtual tape formats,
+but could do so indirectly by using the TAPEDD utility as an input
+filter. 
+
+No Makefile is provided; just compile read20.c with your
+favorite C invocation and install the binary.  e.g.
+
+	cc -O -o read20 read20.c
+
+SUPDUP
+------
+
+	This is of interest mainly to ITS users.  SUPDUP is a protocol
+similar to TELNET which was primarily supported by ITS.  However, at
+least one Unix server was written.
+
+	This program is part of the Auxiliary Distribution and the
+source lives in the "contrib" directory.  It was originally written
+by David Bridgham and modified by a few people since then.
+
+I have only used the client program from this package, not the server.
+You will have to hope that the Makefile included with it works for you,
+or modify it to suit.
+
+TAPEDD
+------
+
+Usage: tapedd <params>
+  itX=<path>    (Required) Input Tape device, where 'X' is optional
+                drive spec: (defaults to 'h')
+                     h - Half-inch magtape drive (default)
+                     q - QIC (quarter-inch cartridge) drive
+                     8 - 8mm drive
+                     4 - 4mm DAT drive
+                    vF - Virtual tape & drive, where 'F' is optional
+                        format spec: (defaults based on file extension)
+                           r - Raw format, paired with control file
+                           s - TPS format
+                           e - TPE format
+                           c - TPC format
+                           i - (read-only) ITS DUMP tapedir
+  otX=<path>    (Required) Output Tape device, X as above
+  {i,o}c=<path> alternate tape Control file (old id=,od=)
+  {i,o}f=<path> alternate raw data file
+  {i,o,}bs=<n>  Block size (record length)
+  log=<path>    Log filespec (defaults to stderr)
+  rskip=<#>     Skip # input records
+  fskip=<#>     Skip # input files/tapemarks
+  rcnt=<#>      Max # records to write
+  Fcnt=<#>      Max # files/tapemarks to write
+  peot          Use physical EOT, ignore logical EOT (double tapemark)
+  test          Parse control file, output result to stdout
+  verbose       Verbose
+
+	TAPEDD is a tape version of DD, used to copy magtapes.
+Normally it will convert them from one format to another in the
+process; for example, from a physical magtape to a virtual tape image,
+in a variety of formats.
+
+This can be built individually with "make tapedd".
+
+UDLCONV
+-------
+
+Usage: ./udlconv [switches] < DIR.LIST > DIR.tpk
+        -p <prefixpath>  - Prefix this path to all host filenames
+
+	This is of interest only to ITS users.
+
+Standard input is assumed to be a DIR.LIST file from Alan Bawden's ITS
+archives.  The resulting standard output is a tape-control (.tpk) file
+in ITSDUMP format, suitable for mounting as a virtual tape.
+
+The reason this is far preferable to unpacking the files and FTPing them
+into ITS is because this method preserves all of the available file
+meta-information (symlinks, creation timestamps, authors, etc).
+
+Note that the output can be fed into TAPEDD to generate a tape image
+in some other format, if desired.
+
+This can be built individually with "make udlconv".
+
+UEXBCONV 
+--------
+
+Usage: uexbconv [-v] < infile.exb > outfile.sav
+	(input file must be in core-dump (C36) format, as the
+	output file will be.)
+
+	The KL10 FE is a PDP-11 that stores its PDP-10 binaries,
+particularly the bootstraps "boot.exe" and "mtboot.exe", in a format
+called "RSX-BINARY".  These files sometimes exist on the KL filesystem
+with the extension .EXB.
+
+The KL10 program RSXFMT.EXE converts from .SAV to .EXB but does not
+furnish the opposite conversion; hence this utility, which was used to
+obtain some of the KL10 bootstrap images.
+
+This can be built individually with "make uexbconv".
+
+VDKFMT
+------
+
+Usage: vdkfmt <params>
+  ip=<path>     Input disk device/file:
+  op=<path>     Output disk device
+  ifmt=<fmt>    format of input pack data
+  ofmt=<fmt>    format of output pack data
+  dt=<type>     Type of drive (RP06, etc)
+  log=<path>    Log filespec (optional, defaults to stderr)
+  verbose       Verbose (optional)
+
+	This utility is similar to TAPEDD; it is used to copy virtual
+disk images from one format to another.  It is rarely needed, but a
+lifesaver when it is.
+
+This can be built individually with "make vdkfmt".
+
+WFCONV
+------
+
+Usage: wfconv -io <infile >outfile
+  where 'i' and 'o' are chars specifying the input and output formats:
+    c   - Core-dump  (std tape format, 4 8-bit, 1 4-bit bytes = 36 bits)
+    h   - High-density (FTP 36-bit image, 9 8-bit bytes = 72 bits)
+    a,7 - Ansi-Ascii (4 7-bit, 1 8-bit byte = 36 bits)
+    s,6 - Sixbit     (6 6-bit bytes = 36 bits)
+    u   - Unixified  (Alan Bawden format, various = 36 bits)
+    t   - Text-Newline (CRLF-NL conversion; 5 7-bit bytes = 35 bits ONLY)
+    d   - Debug (output only - show word values)
+    D   - Debug (like -d with offsets)
+  Note: EOF on input always zero-pads up to a PDP-10 word boundary.
+
+	This is one of the handiest utilities, used to convert PDP-10
+word data from one representation to another.  No filenames are given;
+it always reads from standard input and writes to standard output.
+
+The format names are similar to those for magtape formats.
+
+This can be built individually with "make wfconv".
+
+WXTEST
+------
+
+Usage: wxtest -[qvh]
+    -q  Quiet
+    -v  Verbose
+    -h  Help (this stuff)
+
+	This "utility" is actually a diagnostic used to verify that a
+particular port configuration is correctly defining the macros used to
+manipulate PDP-10 words.  While most people will never need to worry
+about such things, this is an extremely useful regression test when
+porting to a new machine architecture or trying out a new method of
+representing a PDP-10 word.
+
+This can be built individually with "make wxtest".

@@ -1,0 +1,167 @@
+/* INTRO.TXT - Introduction to the KLH10
+*/
+/* $Id: Intro.txt,v 2.4 2001/11/19 12:11:30 klh Exp $
+*/
+/*  Copyright © 1997,2001 Kenneth L. Harrenstien
+**  All Rights Reserved.
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+
+CONTENTS
+========
+
+	All KLH10 documentation is online in ASCII text files for
+simplicity and portability.  The contents, in suggested order of
+perusal, are as follows:
+
+	Intro.txt    - General intro
+	news.txt     - Changes from previous versions
+	install.txt  - Build, install, & configuration instructions
+	usage.txt    - General usage instructions
+
+	klt20.txt    - KL10 TOPS-20 installation and startup
+	klt10.txt    - KL10 TOPS-10 installation and startup
+	kst20.txt    - KS10 TOPS-20 installation and startup
+	kst10.txt    - KS10 TOPS-10 installation and startup
+	ksits.txt    - KS10 ITS     installation and startup
+
+	backgrnd.txt - Background comments
+	coding.txt   - Coding guidelines
+	cmdref.txt   - Command reference
+	cmdsum.txt   - Command summary cheat sheet
+	dfkfb.txt    - KL10 timing diagnostic
+	dvhost.txt   - Special host device
+	history.txt  - Historical notes
+	kldiff.txt   - Differences from real KL10
+	utils.txt    - KLH10 Utilities
+	vtape.txt    - Virtual tape details
+
+
+GENERAL INFORMATION
+===================
+
+	"KLH10" is an emulator for the PDP-10 series of machines from
+Digital Equipment Corporation.  The most important thing to know is
+that this is a MACHINE emulator.  It emulates a specific PDP-10 CPU
+and all necessary I/O devices, running a site's existing operating
+system (monitor) binary without change -- which then runs user-mode
+application programs just as if they were on a real PDP-10.  Even
+floating-point results are bit-identical.
+
+	This means sites must continue to manage the virtual system in
+the same way as a real one, without the old hardware.  However, the
+emulator doesn't monopolize the actual platform, and runs as a set of
+simple user processes that co-exist with other software on the native
+system.  It is possible to configure it so that no actual CPU time is
+used while the virtual system is idle.
+
+	The KLH10 emulator is extremely portable and flexible -- it is
+written in ANSI C so that it can be ported to new platforms quickly,
+and new "virtual hardware" can readily be added.  The following
+describes the currently supported versions:
+
+    Emulation Target: KL
+	CPU:	KL10B with extended addressing
+	Memory:	4MW MF20 (22 bits - 8192 pages of 512 words)
+	Microcode: v.442 (supports final versions of TOPS-10 or TOPS-20)
+	Devices available:
+		DTE - one CTY
+		RH20 - up to 8 (7 if using a NI20)
+		Disk - 8 RP06 or RP07 drives per RH20
+		Tape - 8 TM02/3 formatters per RH20, with one TU45/TU77 each
+		Network - one NI20 (KLNI/NIA20) ethernet interface
+
+    Emulation Target: KS
+	CPU:	KS10
+	Memory:	512KW (19 bits - 1024 pages of 512 words)
+	Microcode: ITS v.262 (supports final version of KS10 ITS)
+		   DEC v.130 (supports final versions of KS TOPS-10/20)
+	Devices available:
+		FE - one CTY
+		RH11 - up to 2
+		Disk - 8 RP06 or RP07 drives per RH11
+		Tape - 8 TM02/3 formatters per RH11, with one TU45/TU77 each
+		Network - one "ACC LH-DH" IMP interface (ITS only)
+
+
+    Supported Host Platforms:
+	Compaq/DEC Alpha with Tru64 (formerly Digital Unix, formerly OSF/1)
+	SUN Sparc with Solaris
+	Any x86   with FreeBSD, NetBSD, or Linux
+	Plus: Any system providing equivalents to basic Unix system calls.
+	      WNT/W2K ports are possible.
+
+    Requirements:
+	Memory:  KL: 35MB (3MB program, 32MB emulated PDP-10 memory)
+		 KS:  6MB (2MB program,  4MB emulated PDP-10 memory)
+	Disk:    .2-.3 GB per RP06, .5-.9 GB per RP07, 50+GB per dynamic RPxx
+	Tape:    optional, can use any variable-record-length drive
+	Network: optional, LAN interface advised (can share single interface
+			with native OS, but a second may be desirable)
+
+    Performance:
+	Varies with job mix and platform architecture, but general
+	observations suggest the following ratios relative to a
+	real PDP-10 (where 1.0 = KL10 speed):
+		SPARC: (MHz / 200)
+		Alpha: (MHz / 250)
+		x86:   (MHz / 200)
+	Thus, a 450MHz x86 would provide slightly over 2x KL speed.
+
+
+IMPLEMENTATION
+==============
+
+	The KLH10 internals are organized in a fashion roughly similar
+to that of actual hardware.  There is a "KN10" process equivalent to a
+KS10 or KL10 processor that carries out all CPU operations and is
+continuously running, except when the KLH10 user-interface command
+parser has control.  Most importantly, each hardware device is
+implemented as a separate subprocess, with optional direct access to
+main PDP-10 memory for data transfers.
+
+This architecture has several advantages:
+
+  - It can take advantage of multi-processor host platforms.
+  - The emulated CPU never needs to wait for I/O.  This considerably speeds
+	up operation, compared to a non-threaded emulator which must
+	block on disk I/O. 
+  - It can directly use very slow physical devices such as magtape drives
+	(half-inch, 8mm, 4mm, DLT, etc).  Virtual tapes (i.e. tape images
+	on disk) are also supported.
+  - The sub-process implementation is more portable and robust than
+	a threaded implementation.
+  - Device failures need not be fatal.  The NIA20 network device for example
+	can be reloaded and restarted without stopping the KN10 or the
+	TOPS monitor.
+
+
+TERMINOLOGY
+===========
+
+	There are two terms used in the documentation and source that
+may cause confusion: KLH10 and KN10.
+
+"KLH10" refers to the entire software product covered by the license.
+	This is theoretically a proper name ("KLH10 has") but is
+	often used as an object name ("the KLH10 has").
+
+"KN10" refers to the virtual PDP-10 created at runtime by the
+	"kn10" executable image.  It is specifically intended to
+	serve as an object name alongside the physical PDP-10s
+	KA10, KI10, KL10, and KS10.
+
+Nearly all software products are referred to like people (ITS, Emacs,
+Oracle, Solaris, etc) and the same can be done with "KLH10".  However,
+to emphasize that it emulates a hardware device, it is often still
+referred to as an object -- "the KLH10".  In fact this objectification
+urge is so strong that it is actually difficult to avoid using the
+articles "the" and "a".  The term "KN10" was invented to help maintain
+the distinction between the product and the virtual machine/object.
+
+I will let others speculate on why English is this way.

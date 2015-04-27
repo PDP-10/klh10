@@ -1,0 +1,58 @@
+/* CMDSUM.TXT - KLH10 Command Summary
+*/
+/* $Id: cmdsum.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+This is a cheat-sheet summary of all KLH10 commands, grouped roughly
+by functional category.  See "cmdref.txt" for more details on each.
+
+BASIC:
+
+	help [<cmd>]	Shows help for all matching commands (defaults to all)
+	load <file>	Load binary into KN10, sets start-addr
+	go [<addr>]	Start KN10 at address (defaults to start-addr)
+	continue	Continue KN10 (resume execution after ^\ or halt)
+	shutdown	Halt OS gracefully (set loc 30 to -1, then continue)
+	quit		Quit emulator
+
+DEBUGGING:
+
+	set [<var>[=<val>]]	Set/show KLH10 variables (if no args, show all)
+	view			View KN10 status (PC, etc)
+	examine [<addr>]	Show word at address
+	next-examine		Show Next word
+	^-examine		Show Previous word
+	deposit <addr> <val>	Deposit value at address
+
+	breakpt <addr>		Set PC breakpoint to <addr>
+	1-step			Single-step KN10
+	proceed <#>		Single-step # instrs
+	trace-toggle		Toggle execution trace printout
+	continue		Continue KN10
+
+	dump <file>		Dump binary from KN10
+	halt			Halt KN10 immediately
+	reset			Reset KN10
+	zero			Zero first 256K memory
+
+DEVICE CONFIG/CONTROL:
+
+	devdefine <devid> <dev#> <driver> [<params>]	Define/init device
+	devshow [<devid>]			Show defined device info
+	devmount <devid> <path> [<options>]	Mount device media
+	devunmount <devid>			Unmount device media
+
+DEVICE MISC:
+
+	devdebug <devid> [<debugval>]		Set device debug value (0=off)
+	devevshow [<devid>]			Show device event reg info
+	dev <devid> <device-command-line>	Execute device-dep command
+	devload <driver> <path> <initsym> <comments>	Load DLL dev driver

@@ -1,0 +1,628 @@
+/* KLT20.TXT - KL TOPS-20 system installation on KLH10
+*/
+/* $Id: klt20.txt,v 2.5 2001/11/19 12:14:54 klh Exp $
+*/
+/*  Copyright © 1997, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+	Once you have installed the KLH10 binaries, you will need to
+install a PDP-10 operating system on the KN10's virtual disks.  This
+file documents the basic procedure for TOPS-20 on a KL10B.
+
+The TOPS-20 installation procedures are described in a Digital
+document titled "TOPS-20 KL Model B Installation Guide", available
+online as a file called "install.mem" from some sites.  Some of the
+steps on a KN10 (aside from the obvious lack of hardware) may be
+different, however.
+
+You will need an "installation" tape or tape image to get started, and
+almost certainly will want to install the accompanying sources and
+tools.  You should already have a valid TOPS-20 license (personal or
+otherwise) in order to use them.
+
+These are the tapes containing the last known DEC TOPS-20 distribution
+for the KL10B (DEC-2065), which was TOPS-20 V7.0:
+
+	BB-H137F-BM     TOPS-20 V7.0 INSTL 16MT9
+	BB-EV83B-BM     TCP/IP-20 V4.0 DISTR 16MT9
+	BB-H138F-BM     T20 V7.0 DIST 16MT9 TAPE 1OF2
+	BB-LW55A-BM     T20 V7.0 DIST 16MT9 TAPE 2OF2
+	BB-M780D-SM     TOPS-20 V7.0 MONITOR SRC 16MT
+	BB-GS97B-SM     TOPS-20 EXEC SRC 16MT9
+	BB-M080Z-SM     T20 V7.0 #04 MON SRC MOD 16MT
+	BB-M081Z-SM     T20 V7.0 #04 EXEC SRC MOD 16M
+	BB-PENEA-BM     TOPS-20 V7.0 TSU04 TP 1 OF 2
+	BB-KL11M-BM     TOPS-20 V7.0 TSU04 TP 2 OF 2
+	BB-M836D-BM     TOPS-20 V7.0 TOOLS 16MT9
+
+It should be possible to obtain these from www.trailing-edge.com.  In
+particular, start with the first of these, which is the installation
+tape:
+	ftp://ftp.trailing-edge.com/pub/pdp10/bb-h137f-bm.tap.gz
+
+The script that follows assumes you have uncompressed this into
+"bb-h137f-bm.tap" in your $KLH10_HOME.
+
+NOTE: the installation tape does not contain a TCP/IP monitor
+image.  Before you can use the network, you will need to also restore
+the files from the tape "BB-EV83B-BM TCP/IP-20 V4.0 DISTR 16MT9"
+(there was more than one version; only the latest has monitor
+images).
+
+In the transcript that follows, all notes are prefaced by triple
+semicolons (;;;), and user input is presented in lowercase where
+possible -- note that the monitor sometimes echoes typein in
+uppercase.  Where there might be some confusion, a note such as "Type
+CR" will identify what you need to type.
+
+	=====================================================
+
+QUICK SUMMARY:
+
+$ ./kn10-kl inst-klt20.ini	;;; Configure and load tape bootstrap
+KLH10> go
+MTBOOT>/l		;;; Load rest of monitor
+MTBOOT>/g143		;;; Start at FS-creation entry point
+	;;; After quiets down, ^C to get MEXEC, and carry on
+
+	;;; After installation finished:
+$ ./kn10-kl klt20.ini		;;; Configure and load disk bootstrap
+KLH10> go
+BOOT>				;;; Type CR to load and start MONITR.EXE
+
+	=====================================================
+
+FULL SCRIPT:
+
+	;;; Here we go... 
+	;;;
+$ ./kn10-kl inst-klt20.ini	;;; You type this
+KLH10 V2.0 beta (MyKL) built Nov 10 2001 02:14:29
+    Copyright © 2001 Kenneth L. Harrenstien -- All Rights Reserved.
+This program comes "AS IS" with ABSOLUTELY NO WARRANTY.
+
+Compiled for LINUX on I386 with word model USEHWD
+Emulated config:
+         CPU: KL10-extend   SYS: T20   Pager: KL  APRID: 1
+         Memory: 8192 pages of 512 words  (SHARED)
+         Time interval: INTRP   Base: OSGET
+         Interval default: 60Hz
+         Internal clock: OSINT
+         Other: MCA25 JPC DEBUG PCCACHE CTYINT EVHINT
+         Devices: DTE RH20 RPXX(DP) TM03(DP) NI20(DP)
+[MEM: Allocating 8192 pages shared memory, clearing...done]
+
+KLH10> ; Sample KLH10.INI for initial installation
+KLH10> 
+KLH10> ; Define basic device config - one DTE, one disk, one tape.
+KLH10> ; Use two RH20s because TOPS-10 doesn't like mixing disk and tape on
+KLH10> ; the same controller (TOPS-20 is fine).
+KLH10> 
+KLH10> devdef dte0 200   dte    master
+KLH10> devdef rh0  540   rh20
+KLH10> devdef rh1  544   rh20
+KLH10> devdef dsk0 rh0.0 rp     type=rp06 format=dbd9
+[Creating RP06 disk file "RH20.RP06.1"]
+KLH10> devdef mta0 rh1.0 tm03  type=tu45
+KLH10> 
+KLH10> ; Need KLNI to avoid LAPRBF BUGCHKs - use valid address if known
+KLH10> ;
+KLH10> devdef ni0 564 ni20 ipaddr=10.0.0.51
+KLH10> 
+KLH10> ; Mount installation tape (no ucode or boot to skip)
+KLH10> devmount mta0 bb-h137f-bm.tap
+Mount requested: "bb-h137f-bm.tap"
+KLH10> 
+KLH10> ; Load tape bootstrap directly
+KLH10> load mtboot.sav
+Using word format "c36"...
+Loaded "mtboot.sav":
+Format: DEC-CSAV
+Data: 4067, Symwds: 0, Low: 040000, High: 054641, Startaddress: 040000
+Entvec: JRST (120 ST: 0, 124 RE: 0, 137 VR: 0,,0)
+KLH10> 
+KLH10> ; Now ready to GO
+KLH10> [EOF on inst-klt20.ini]
+KLH10>
+[mta0: Tape online]		;;; Init file now done.
+KLH10> go			;;; Boot is loaded, type "go" to start KN10!
+Starting KN10 at loc 040000...
+
+BOOT V11.0(315)
+
+MTBOOT>/l			;;; Type "/l" to load monitor
+
+[BOOT: Loading] [OK]
+
+MTBOOT>/g143			;;; Now type "/g143" to start monitor
+				;;; at the filesystem-create entry address.
+				;;; Answer the following questions as shown,
+				;;; unless you know what you're doing.
+
+[FOR ADDITIONAL INFORMATION TYPE "?" TO ANY OF THE FOLLOWING QUESTIONS.]
+
+DO YOU WANT TO REPLACE THE FILE SYSTEM ON THE SYSTEM STRUCTURE? Y	;;;
+
+DO YOU WANT TO DEFINE THE SYSTEM STRUCTURE? Y				;;;
+
+HOW MANY PACKS ARE IN THIS STRUCTURE: 1					;;;
+
+ON WHICH "CHANNEL,CONTROLLER,UNIT" IS LOGICAL PACK # 0 MOUNTED? 0,-1,0	;;;
+
+DO YOU WANT THE DEFAULT SWAPPING SPACE? Y				;;;
+
+DO YOU WANT THE DEFAULT SIZE FRONT END FILE SYSTEM? Y			;;;
+
+DO YOU WANT THE DEFAULT SIZE BOOTSTRAP AREA? Y				;;;
+
+DO YOU WANT TO ENABLE PASSWORD ENCRYPTION FOR THE SYSTEM STRUCTURE? Y	;;;
+
+WHAT IS THE NAME OF THIS STRUCTURE? PS					;;;
+
+[STRUCTURE "PS" SUCCESSFULLY DEFINED]
+
+[PS MOUNTED]
+?PS UNIT 0 HAS NO BAT BLOCKS.
+DO YOU WANT TO WRITE A SET OF PROTOTYPE BAT BLOCKS? Y
+
+%%NO SETSPD.
+
+System restarting, wait...
+DATE AND TIME IS: SATURDAY, 29-SEPTEMBER-2001 10:40PM
+WHY RELOAD? NEW					;;; Type "new" or whatever.
+PROBLEM WITH <SYSTEM>ACCOUNTS-TABLE.BIN
+CANNOT FIND ERROR MESSAGE FILE - ACCOUNT VALIDATION IS DISABLED
+
+RUNNING DDMP
+
+
+NO SYSJOB
+			;;; Unless you have fixed up the NI20 definition
+			;;; in the klh10.ini file, you will probably see
+			;;; a few KNI BUGCHKs which are harmless at this
+			;;; point, such as the following:
+********************
+*BUGCHK "KNICFF" AT 29-SEP-2001 22:40:28
+*PHYKNI - CANNOT RELOAD THE KLNI
+*JOB:  0, USER: OPERATOR
+*ADDITIONAL DATA: 600104
+********************
+			;;; After you get "NO SYSJOB" you can type either
+			;;; a CR or ^C to get to the MEXEC prompt ("MX>").
+NO EXEC
+MX>GET FILE MTA0:	;;; Type just "g" then "mta0:" and CR.
+  ?			;;; Monitor will read an EOF and do nothing.
+MX>GET FILE MTA0:	;;; Repeat, to read EXEC.EXE from tape.
+MX>START		;;; Type just "s" then CR.
+
+ TOPS-20 Command processor 7(4143)
+@TER NO RAI		;;; Success!  Let's stop uppercasing our input,
+@ena			;;; and must get enabled.
+$run mta0:		;;; Now read and start DLUSER.EXE from tape.
+DLUSER>load mta0:	;;; Now read DLUSER data to set up directories.
+
+DONE.
+DLUSER>exit		;;; Get out.
+$run mta0:		;;; Now read and start DUMPER.EXE from tape.
+DUMPER>tape mta0:	;;; Point to tape drive and start restoring files!
+			;;; Note in the next command it is important to
+			;;; explicitly specify "<system>", otherwise the
+			;;; files will be restored into "<NEW-SYSTEM>".
+DUMPER>restore <*>*.*.* (TO) <system>*.*.* 
+Saveset "SYSTEM Files for TOPS-20 V7.0" 22-Jun-88 2035
+ Loading files into PS:<SYSTEM>
+ End of Saveset.
+
+
+ Total files restored:      26
+ Total pages restored:    1765
+			;;; Note in the next command it is important to
+			;;; explicitly specify "<subsys>", otherwise the
+			;;; files will be restored into "<NEW-SUBSYS>".
+DUMPER>restore <*>*.*.* (TO) <subsys>*.*.* 
+Saveset "SUBSYS Files for TOPS-20 V7.0" 22-Jun-88 2037
+ Loading files into PS:<SUBSYS>
+ End of Saveset.
+
+
+ Total files restored:     176
+ Total pages restored:    4535
+			;;; Note in the next command it is important to
+			;;; explicitly specify "<subsys>", otherwise it
+			;;; will try and fail to restore the files into
+			;;; "<GALAXY-SUBSYS>".
+DUMPER>restore <*>*.*.* (TO) <subsys>*.*.* 
+Saveset "GALAXY SUBSYS Files for TOPS-20 V7.0"  22-Jun-88 2043
+ Loading files into PS:<SUBSYS>
+ End of Saveset.
+
+
+ Total files restored:      25
+ Total pages restored:     586
+			;;; The last saveset is optional and can be skipped.
+			;;; If you want the UETP stuff, do:
+DUMPER>
+DUMPER>restore <*>*.*.* (TO) <*>*.*.*
+ Loading files into PS:<UETP.LIB>
+ End of Saveset.
+
+
+ Total files restored:      54
+ Total pages restored:     477
+
+DUMPER>exit			;;; Done, with or without UETP.
+$conn <system>
+$vdir				;;; Check out what we have in <SYSTEM>
+
+   PS:<SYSTEM>
+ 2060-MONBIG.EXE.1;P777752 597 305664(36) 26-May-88 17:05:33 BROOKS   
+ 2060-MONMAX.EXE.1;P777752 597 305664(36) 26-May-88 17:28:27 BROOKS   
+ 7-PTYCON.ATO.1;P777752     1 823(7)      2-Jun-88 22:29:16 BROOKS    
+ 7-SETSPD.EXE.1;P777752    14 7168(36)   28-May-88 02:21:05 BROOKS    
+ 7-SYSJOB.EXE.1;P777752     7 3584(36)   28-May-88 03:11:07 BROOKS    
+   .RUN.1;P777752           1 158(7)      2-Jun-88 21:41:35 BROOKS    
+ BOOT.EXB.1;P777752        12 11658(18)  27-May-88 21:36:22 BROOKS    
+ BUGS.MAC.1;P777752       155 395399(7)  23-May-88 18:14:48 BROOKS    
+ BUGSTRINGS.TXT.1;P777752  22 54680(7)   26-May-88 17:28:13 BROOKS    
+ CHECKD.EXE.1;P777752      22 11264(36)  27-May-88 21:42:19 BROOKS    
+ ERRMES.BIN.1;P777752      24 12013(36)  28-May-88 01:48:31 BROOKS    
+ EXEC.EXE.1;P777752       125 64000(36)  27-May-88 11:40:08 BROOKS    
+ FEDDT.EXE.1;P777752        9 4608(36)   14-Feb-79 20:37:17 BROOKS    
+ IPALOD.EXE.1;P777752      28 14336(36)  28-May-88 00:53:56 BROOKS    
+ KNILDR.EXE.1;P777752      26 13312(36)  28-May-88 00:58:59 BROOKS    
+ MTBOOT.EXB.1;P777752      11 10247(18)  27-May-88 21:37:31 BROOKS    
+ PROGRAM-NAME-CACHE.TXT.1;P777752   1 78(7)  9-Mar-81 15:24:00 BROOKS 
+ RP2DBT.EXB.1;P777752      18 17687(18)  27-May-88 21:38:15 BROOKS    
+ RP2MBT.EXB.1;P777752      16 16276(18)  27-May-88 21:39:26 BROOKS    
+ RSX20F.MAP.1;P777752      29 74007(7)   22-Mar-88 14:17:44 BROOKS    
+ SYSJOB.HLP.1;P777752       3 5679(7)    29-Mar-82 15:47:02 BROOKS    
+ SYSTEM.CMD.1;P777752       1 598(7)     24-Feb-84 20:01:23 BROOKS    
+ TGHA.EXE.1;P777752        29 14848(36)  28-May-88 03:20:32 BROOKS    
+   .HLP.1;P777752           1 214(7)     11-Nov-86 20:49:44 BROOKS    
+ TOPS20.BWR.1;P777752       3 1425(36)    1-Jun-88 18:17:20 BROOKS    
+   .DOC.1;P777752          13 6432(36)   21-Jun-88 15:25:11 LOMARTIRE 
+
+ Total of 1765 pages in 26 files
+$
+$			;;; For convenience, now is a good time to
+			;;; make MONITR.EXE be your desired monitor!
+$renAME (EXISTING FILE) 2060-monbig.EXE.* (TO BE) monitr.exe
+ 2060-MONBIG.EXE.1 => MONITR.EXE.1 [OK]
+$^Ecease now		;;; OK, now we can try a disk boot.
+ TOPS20 Will be shut down IMMEDIATELY 
+[Confirm]
+$
+[Timesharing is over]
+
+        OPERATOR - Wait for the message "Shutdown complete" before
+        entering commands to PARSER.
+
+Shutdown complete		;;; When you see this, type ^\ (CTRL-\)
+[HALTED: FE interrupt]		;;; to return to KLH10
+KLH10> shutdown			;;; Then give "shutdown" command.
+Continuing KN10 at loc 01047523...
+**HALTED**
+[HALTED: Program Halt, PC = 1050257]
+KLH10> q			;;; OK to quit KLH10 now!
+Are you sure you want to quit? [Confirm]
+Shutting down...Bye!
+$				;;; Back at unix shell prompt
+$
+$ ./kn10-kl klt20.ini		;;; Fire it up again, with different ini file
+KLH10 V2.0 beta (MyKL) built Nov 10 2001 02:14:29
+    Copyright © 2001 Kenneth L. Harrenstien -- All Rights Reserved.
+This program comes "AS IS" with ABSOLUTELY NO WARRANTY.
+
+Compiled for LINUX on I386 with word model USEHWD
+Emulated config:
+         CPU: KL10-extend   SYS: T20   Pager: KL  APRID: 1
+         Memory: 8192 pages of 512 words  (SHARED)
+         Time interval: INTRP   Base: OSGET
+         Interval default: 60Hz
+         Internal clock: OSINT
+         Other: MCA25 JPC DEBUG PCCACHE CTYINT EVHINT
+         Devices: DTE RH20 RPXX(DP) TM03(DP) NI20(DP)
+[MEM: Allocating 8192 pages shared memory, clearing...done]
+
+KLH10> ; Sample KLH10.INI for initial installation
+KLH10> 
+KLH10> ; Define basic device config - one DTE, one disk, one tape.
+KLH10> ; Use two RH20s because TOPS-10 doesn't like mixing disk and tape on
+KLH10> ; the same controller (TOPS-20 is fine).
+KLH10> 
+KLH10> devdef dte0 200   dte    master
+KLH10> devdef rh0  540   rh20
+KLH10> devdef rh1  544   rh20
+KLH10> devdef dsk0 rh0.0 rp     type=rp06 format=dbd9
+KLH10> devdef mta0 rh1.0 tm03       type=tu45
+KLH10> 
+KLH10> ; Need KLNI to avoid LAPRBF BUGCHKs - use valid address if known
+KLH10> ;
+KLH10> devdef ni0 564 ni20 ipaddr=10.0.0.51
+KLH10> 
+KLH10> ; Load disk bootstrap directly
+KLH10> load boot.sav
+Using word format "c36"...
+Loaded "boot.sav":
+Format: DEC-CSAV
+Data: 4630, Symwds: 0, Low: 040000, High: 054641, Startaddress: 040000
+Entvec: JRST (120 ST: 0, 124 RE: 0, 137 VR: 0,,0)
+KLH10> 
+KLH10> ; Now ready to GO
+KLH10> [EOF on klt20.ini]
+KLH10> go
+Starting KN10 at loc 040000...
+
+BOOT V11.0(315)
+
+BOOT>				;;; Type just CR, will default to MONITR.EXE
+
+[BOOT: Loading] [OK]
+
+
+[PS MOUNTED]
+
+System restarting, wait...
+DATE AND TIME IS: SATURDAY, 29-SEPTEMBER-2001 10:46PM
+WHY RELOAD? NEW	  		;;; Or whatever reason you want
+PROBLEM WITH <SYSTEM>ACCOUNTS-TABLE.BIN
+CANNOT GET A JFN FOR <SYSTEM>ACCOUNTS-TABLE.BIN - ACCOUNT VALIDATION IS 
+DISABLED
+RUN CHECKD? N			;;; Type "n".  Shouldn't be necessary yet.
+
+RUNNING DDMP
+
+
+SYSJOB 7(78) STARTED AT 29-SEP-2001 2246
+RUN SYS:INFO
+RUN SYS:MAPPER
+JOB 0 /LOG OPERATOR XX OPERATOR
+ENA
+^ESET LOGIN PSEUDO
+^ESET LOGIN CONSOLE
+^ESET OPERATOR
+PTYCON
+GET SYSTEM:7-PTYCON.ATO
+/
+SJ  0: @LOG OPERATOR OPERATOR
+SJ  0:  JOB 1 ON TTY172 29-SEP-2001 22:46:51, LAST LOGIN NEVER
+SJ  0:
+[dpni20: Using default interface "eth0"]
+[KNILDR: LOADING MICROCODE VERSION 1(172) INTO ETHERNET CHANNEL 0
+]
+ @ENA
+SJ  0: $^ESET LOGIN PSEUDO
+SJ  0: $^ESET LOGIN CONSOLE
+SJ  0: $^ESET OPERATOR
+SJ  0: $PTYCON
+SJ  0: PTYCON> GET SYSTEM:7-PTYCON.ATO
+SJ  0: PTYCON> SILENCE
+SJ  0: PTYCON> W ALL
+SJ  0: GAL(0)     2          OPERATOR   EXEC       TI         0:0:0
+SJ  0: BAT(1)     3          OPERATOR   EXEC       TI         0:0:0
+SJ  0: NEB(2)     4          OPERATOR   EXEC       TI         0:0:0
+SJ  0: OPR(3)     5          OPERATOR   EXEC       TI         0:0:0
+SJ  0: MAILS(4)   6          OPERATOR   MX         RN         0:0:0
+SJ  0: PTYCON> CONN OPR
+SJ  0: [CONNECTED TO SUBJOB OPR(3)]
+			;;; When things seem quiet, type CR to get an EXEC.
+
+ TOPS-20 Big System, TOPS-20 Monitor 7(21017)
+@TER NO RAI
+@log operator 		;;; Try logging in, pwd "DEC-20" 
+ Job 7 on TTY145 29-Sep-2001 22:47:24, Last Login 29-Sep-2001 22:46:57
+@ena
+$			;;; Now do whatever you wish...
+
+	=====================================================
+
+Other things you probably want to do at some point:
+
+
+$copy tty: monnam.txt		;;; Set the system name
+MyKL TOPS-20 System
+^Z
+$copy tty: 4-1-config.cmd	;;; Set timezone here for now
+timezone 8
+^Z
+$^Ecreate <operator>		;;; Change operator password
+$$password tqbfjotld		;;; (use something better)
+$$
+$^Ecreate <me>			;;; Create your account
+$$password nittfagmtc2taotp	;;; (or something better)
+$$wheel
+$$working 10000
+$$permanent 10000
+$$
+$
+
+There are large manuals devoted to TOPS-20 system maintenance, but
+this is enough to make you dangerous.
+
+TOPS-20 TCP/IP INSTALLATION
+===========================
+
+	This aspect is probably the one that many KLH10 users will be
+most interested in.  Unfortunately I ran out of time to provide a full
+script, but this should be enough to get you going:
+
+(1) Install all of the V7 install tape (as above)
+
+(2) Restore all files from the following tape:
+
+	BB-EV83B-BM     TCP/IP-20 V4.0 DISTR 16MT9
+
+    This one is a pain, because the DLUSER.DAT on the install tape doesn't
+    set up the necessary directories beforehand, so you will have to create
+    them all by hand (make sure they are files-only!).
+
+(3) Assign a valid IP address for your system, if you don't already have
+    one.  This should be something consistent with your physical subnet.
+
+(4) Create the file <SYSTEM>INTERNET.ADDRESS with either an editor or
+    a COPY from the TTY:, in the following format (replacing the
+    "192 168 0 201" with your desired IP address):
+
+$vd internET.*.* 
+
+   PS:<SYSTEM>
+ INTERNET.ADDRESS.1;P777752   1 57(7)     5-Oct-2001 22:06:55 OPERATOR  
+$ty internET.ADDRESS.1 
+IPNI#0,192 168 0 201,PACKET-SIZE:1500,DEFAULT,PREFERRED
+$
+    Keep the packet size at 1500.  I found it set to 1504 once and
+    that was breaking things.
+
+
+(4) Now reboot, with this devdefine added to your KLH10 config file:
+
+        devdef ni0 564 ni20 ipaddr=192.168.0.201
+
+    (Again, use your correct IP address here)
+
+
+(5) Manually specify this to the BOOT> prompt:
+
+        <NEW-SYSTEM>AN-MONMAX
+
+    Or you can just copy or rename that file to <SYSTEM>MONITR.EXE to
+    make it the default. 
+
+(6) After system comes up, telnet in from ANOTHER machine.  Depending on
+    your platform it's unlikely you will be able to telnet in from the
+    same host that the emulator is running on, unless you are using
+    a separate dedicated interface.
+
+    If this succeeds, take a break and have a <favorite beverage here>. 
+
+(7) About now you will start to get really annoyed by periodic bleats that
+    look like this:
+
+SJ  0:  [SCHEDULER]:        Waiting for UPS:
+SJ  0: **** OPR(3) 22:18:48 ****
+SJ  0: **** MAILS(4) 22:19:48 ****
+
+    This can be permanently turned off by removing its invocation from
+    the 7-PTYCON.ATO startup file, but a good temporary fix is simply
+    to kill the offending job.
+
+    Do a SYS to find the job called MX, then forcibly log it out:
+
+$sys
+ Fri 5-Oct-2001 23:05:45  Up 0:53:26
+ 0+8 Jobs   Load av   0.03   0.03   0.03
+
+ Job  Line Program  User              Origin
+   1   206  PTYCON  OPERATOR
+   2   207  EXEC    OPERATOR
+   3   210  EXEC    OPERATOR
+   4   211  EXEC    OPERATOR
+   5   212  EXEC    OPERATOR
+   6   213  MX      OPERATOR
+   7*  205  SYSTAT  OPERATOR
+   8   270  EXEC    OPERATOR          192.168.0.33(TCP)
+$
+$logo 6
+User OPERATOR on TTY213, running MX
+[Confirm]
+$
+
+TOPS-20 TCP/IP - OTHER NOTES
+============================
+
+These are miscellaneous notes from my files.  I have not verified
+whether they apply to the vanilla DEC TCP/IP system.
+
+
+SYSTEM:KNILDR.EXE -- utility that can be used to restart the NI20.
+    The useful commands are "HALT 0" and "START 0" which will stop and
+    start the KLNI in case something went wrong during startup (timing
+    races) or the KLH10 DPNI20 subprocess needs to be replaced with a new
+    version without bringing the system down.  Run this from the console,
+    or you'll saw off the branch you're sitting on.
+
+
+---- SYSTEM:INTERNET.ADDRESS -----
+---- Read on system startup; no provision I can see for re-reading any
+        other time.
+
+        ;;;Internet addresses for system
+        IPNI#0, 16 151 16 13,DEFAULT,PREFERRED,PACKET-SIZE:1504
+
+---- SYSTEM:INTERNET.GATEWAYS -----
+---- Read on system startup, also with "^Einit gateways"
+
+        ; IP addresses of local prime gateway; if only one, not clear if
+        ; its args matter, but provide something plausible.
+        PRIME 192 33 33 3, 128 18 1 1
+
+---- SYSTEM:HOSTS.TXT -----
+---- Read on system startup, also with "^Einit hosts"
+
+        ; Arbitrarily long, but basically defines local nets and hosts
+        ; we need to know about in absence of DNS (CHIVES) info.
+
+
+---- SYSTEM:HOSTNAME.TXT -----
+---- Can't find anything in the monitor that reads this file, but this
+---- should be similar to MONNAM.TXT except for containing the FULL domain
+---- name of the system.  E.g.:
+
+        BOOTSTRAP.SRI.COM
+
+---- SYSTEM:MONNAM.TXT -----
+---- Now *this* definitely is read on system startup.
+
+        BOOTSTRAP
+
+
+---- SYSTEM:INTERNET-ETHERNET-MAPPINGS.BIN
+---- Read on system startup; can also be reloaded by running IPHOST
+        with a command (ETHER INIT?)
+        This is apparently generated by the IPHOST program using the
+        command BUILD, which takes SYSTEM:INTERNET-ETHERNET-MAPPINGS.TXT
+        and translates it into .BIN.
+        TXT file format *appears* to be:
+                HOST xx-xx-xx-xx-xx-xx ddd.ddd.ddd.ddd [/ARP] [/NOARP]
+        BIN file format is documented in ANAUNV.MAC.
+
+        Current file is basically empty, contains one zero entry;
+        apparently this just makes everything use ARP.
+
+
+---- SYSTEM:NETSRV.RUN -----
+----	File of NETSRV commands, executed by NETSRV.EXE (started by SYSJOB)
+	This basically determines what TCP/IP servers will be started.
+	Note: NETSRV is not a DEC program; it is one of many non-DEC utilities
+	produced by the ARPANET user community, in this case Mark Crispin
+	and Kevin Paetzold.
+
+
+---- SYS:FTSCTT.EXE -----
+----	In a vanilla DEC setup this is the FTP server program.  You can
+	put the line "RUN SYS:FTSCTT" in <SYSTEM>7-SYSJOB.RUN to start it
+	up automatically.  You may also want to set the protection of
+	FTPSRT.EXE from 777700 to 777752 to allow general use.
+
+
+---- System:INTERNET-LOGIN-MESSAGE.TXT -----
+----	Contains initial login banner presented to users.  May be a feature
+	of the SRI-NIC EXEC only.
+
+
+General stuff, not network specific:
+
+
+SYSTEM:7-CONFIG.CMD
+	File of commands for SYSTEM:SETSPD.EXE, which is executed by
+	monitor at startup (prior to running SYSJOB).
+
+SYSTEM:SYSJOB.RUN
+	File of commands for SYSTEM:SYSJOB.EXE, which is also run by
+	monitor at startup.

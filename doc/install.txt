@@ -1,0 +1,1269 @@
+/* INSTALL.TXT - KLH10 Installation & Configuration
+*/
+/* $Id: install.txt,v 2.5 2001/11/19 12:12:06 klh Exp $
+*/
+/*  Copyright © 1994-2000, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+The first page of this file is a "quick reference" checklist and may
+be all you need.  If there are any steps you need more help with, see
+the appropriate sections that follow.
+
+The following applies to Unix ports only; procedures and documentation
+for other ports such as MacOS or Windows have not yet been written.
+
+[0] Extract distribution files.
+
+	$ cd <appropriate-place>
+	$ gzip -dc <distrib>.tgz    | tar xf - 
+	$ gzip -dc <distrib>aux.tgz | tar xf - 
+
+    Note that there are TWO distribution packages.
+    The first is the KLH10 Distribution with all KLH10 sources;
+    the second is the KLH10 Auxiliary Distribution, with useful but
+    optional non-KLH10 software.
+
+
+[1] Configure native platform (optional).
+
+    Depending on your platform or intended use, you may not need
+    to do anything here.  If you want your KN10 to use the network,
+    or run most efficiently, see the "Kernel Configuration" section
+    farther on.
+
+
+[2] Create $KLH10_HOME.
+
+	$ setenv KLH10_HOME /export/home/klh10	;;; (for example)
+	$ mkdir $KLH10_HOME
+
+    Create a directory to use as a home for the particular KN10 and
+    PDP-10 OS you plan to run, and make the environment variable
+    KLH10_HOME point to it.  It's best if this directory holds
+    nothing but files directly related to runtime operation.
+
+
+[3] Build a KN10 from sources.
+
+	$ cd <distrib>/bld/<platform>
+	$ make base-kl		;;; or base-ks or base-ks-its
+
+    Or see the "Building" section farther on.
+    Read "doc/dfkfb.txt" if you want to do a quick KL performance test now.
+
+
+[4] Install the binaries into $KLH10_HOME.
+
+	$ make install
+
+    If this doesn't work, you can do it by hand; just copy all of the
+    executable files to $KLH10_HOME (or establish symlinks to them).
+
+
+[5] Create a KLH10.INI startup configuration file (semi-optional).
+
+    If you are just starting out, the easiest thing is to use one of
+    the sample .ini files to begin with; go on to the next step.
+    Otherwise, see "KLH10 CONFIGURATION" farther on.
+
+
+[6] Install PDP-10 software.
+
+    At this point, you have a working KN10.  However, it will be rather
+    useless without some PDP-10 software to run on it!
+
+	$ cd <distrib>/run/klt20	;;; or klt10, ksits, etc.
+	$ cp -p * $KLH10_HOME		;;; Copy bootstraps, sample .ini
+
+    Read the appropriate documentation file, one of:
+
+	doc/klt20.txt	- KL TOPS-20
+	doc/klt10.txt	- KL TOPS-10
+	doc/kst20.txt	- KS TOPS-20
+	doc/kst10.txt	- KS TOPS-10
+	doc/ksits.txt	- KS ITS
+
+    Note: By the time you read this there may be auxiliary distributions
+    available to make this easier, eg to allow booting directly into a
+    ready-made filesystem.
+
+    Further note: not all configurations are equally well tested.
+    In order from most to least experience, they are:
+		KLT20, KSITS, KLT10, KST20, KST10.
+    This should change as people bang on them.
+
+
+[7] Run.
+
+	$ cd $KLH10_HOME
+	$ ./kn10-kl [<.ini file>]	;;; or ./kn10-ks
+
+    Normally $KLH10_HOME should be the current directory when the
+    KN10 starts up, because all default filename references assume this.
+
+    See the file "doc/usage.txt" for command line options, etc.
+
+
+KERNEL CONFIGURATION
+====================
+
+	Installation on most UNIX platforms is straightforward except
+for two special requirements of the KLH10 emulator, which sometimes
+require kernel reconfiguration.
+
+    [A] Shared memory; MANDATORY if running any device sub-processes.
+	The so-called SYSV "shm" system calls must be available, and
+	ideally should allow shared segments of up to 32MB for a KL10,
+	4MB for a KS10.  The configuration examples below assume a KL10
+	since it doesn't hurt even if a KS10 is all you will ever run.
+
+	If this support is lacking, you will get a warning similar to
+	the following:
+	    [os_mmcreate: shmget failed for 33554432 bytes - Invalid argument]
+	which is not necessarily fatal, but less efficient.
+
+    [B] Network interface access, if desired.  This is extremely
+	platform-specific.
+
+
+Compaq/DEC Tru64 (Digital Unix, OSF/1)
+--------------------------------------
+
+	The kernel will probably need to be reconfigured; see the
+OSF/1 "Guide to System Administration" for the procedure.  At least
+the following lines must be added to your config file:
+
+		shmmax          33554432
+		pseudo-device   packetfilter
+
+	The first allows shared memory segments of 32MB.  The second
+	adds support needed for access to the ethernet interface.
+	(Note: the default value of "shmseg" is 32.  This should suffice
+	unless you plan to define 30 or more emulator disk/tape drives.)
+
+SUN Solaris
+-----------
+	On Solaris you will almost certainly need to increase "shmmax".
+	Do this by editing /etc/system to add these 3 lines:
+
+	    * Settings needed to run the KLH10 emulator.
+	    * Main memory requires a shared segment of 32MB.
+	    set shmsys:shminfo_shmmax=0x2000000
+
+FreeBSD
+-------
+	See the online FreeBSD Handbook chapter on "Configuring the
+FreeBSD Kernel" for help, or the similar chapter in the "Complete
+FreeBSD" book.  At least the following lines must be added to your
+config file if they don't already exist (correct as of FreeBSD 4.2):
+
+	options 	SYSVSHM		# SYSV-style shared memory
+
+	# Defaults are too small for KLH10, which needs a 32M segment.
+	options	"SHMMAX=(32*1024*1024)"	#max shared mem segment size (bytes)
+	options		SHMMIN=2	#min shared mem segment size (bytes)
+	options		SHMMNI=67	#max number of shared mem ids
+	options		SHMSEG=17	#max shared mem segments per process
+	options	"SHMALL=((SHMMAX/PAGE_SIZE)*SHMMNI)" #max of all shared mem
+					# Note SHMALL is in PAGES, not bytes!
+	pseudo-device	bpf	 1	# Need at least one for NI20 or IMP
+	pseudo-device	tun	 1	# Need at least one for IMP
+
+
+Linux
+-----
+
+	For at least Red Hat and Debian (2.2 and 2.4 kernels), the
+file "/proc/sys/kernel/shmmax" controls the maximum shared memory
+segment size.  This may already be set to a default of 32M; obviously
+it depends on the exact flavor of Linux being used.
+
+Also, CONFIG_PACKET must be on to enable the PF_PACKET interface.
+So far this appears to normally be the case.
+
+
+MacOS 8,9
+---------
+
+	The KS-ITS version has been ported to MacOS 9 using Code
+Warrior to build and "Comm Toolbox" facilities to provide a VT
+console.  The additional files for this could not be integrated into
+the first release in time; if you want them and they are not yet in an
+auxiliary distribution, you should be able to find them on
+ftp://ftp.its.os.org/its/klh10/.
+
+
+BUILDING FROM SOURCES
+=====================
+
+    Connect to the appropriate distribution build subdirectory for your
+    platform, and type "make <kn10>" where <kn10> is one of
+    the following standard targets:
+
+		Target      Builds this emulator
+		------      --------------------
+		base-kl     kn10-kl (KL10B - runs TOPS-10/20)
+		base-ks     kn10-ks (KS10 - runs TOPS-10/20)
+		base-ks-its kn10-ks (KS10 - runs ITS)
+
+    Let's suppose the platform is FreeBSD-i386 for example:
+
+	$ cd <distrib>/bld/fbx86
+	$ make base-kl
+
+    This will compile everything necessary and leave all of the binaries
+    in the build directory.  The builds are separate from the sources
+    to make it easier to generate and maintain multiple flavors of KN10s.
+
+Notes:
+
+Solaris has two possible Makefiles; the default uses GCC, but you
+can change the link to Mk-solsparc-cc.mk which uses Sun's C compiler.
+
+If there isn't already a likely looking "bld" subdirectory for your
+platform, make one using the others as a guide.  In general, the
+compiler options provided are fairly simple in order to increase the
+odds that the compilation will succeed.  You can tune or revise the
+Makefile for your system by editing a local copy within your
+subdirectory, which avoids the need to change any of the actual
+Distribution files.  When you have it working, let me know what was
+done so I can add it to the Distribution or at least to some notes.
+
+
+PORTING
+=======
+
+	If you are trying to build things on a platform with no
+readily applicable Makefile or "bld" subdirectory, you are essentially
+doing a new port.  Here are some guides.
+
+[1] Unix systems are the easiest.  Mac has been done for the KS.
+    A couple of people are eyeing a NT/W2K/XP port but it's not there yet.
+
+[2] Look at cenv.h to see what is needed and add new names if necessary.
+    You need to set at least CENV_SYS_xxx and CENV_CPU_xxx and possibly
+    a few other things.
+
+[3] A good program to start with is "wxtest".  Get that to build and
+    verify that when run, it passes all of its tests.  If it fails,
+    nothing else will work!
+
+[4] Then to build a KN10, you should start by trying to build a "synch"
+    version with no device subprocs.  Rig your Makefile so it sets the
+    appropriate CENV_SYS_xxx and CENV_CPU_xxx flags, and build the
+    target "port-ks".
+
+[5] Once that works, move up to the target "base-ks".  This is more
+    complex but still avoids trying to build the networking code, which
+    is the most unportable part.
+
+[6] Finally, try "base-kl" or "base-ks-its", either of which will try to
+    build network code.  It's OK if the code doesn't actually work at
+    first as long as it compiles, since you can still run the KN10
+    whether the network device is up or down.
+
+Good luck.
+
+There are a hundred compile-time options and a bazillion ways to
+permute them.  Only a handful of combinations are well tested.  In
+particular, it is dangerous to mix "synch" and non-synch options.
+
+If you do need to fix or modify any of the sources, read this file:
+
+	doc/coding.txt - Coding and porting guidelines
+
+And please let me know about them!  You can send bug fixes or ideas,
+including suggestions for improving the current build & install
+process, to me at <klh@alum.mit.edu>.
+
+INSTALLING BINARIES
+===================
+
+	This is a largely trivial operation of copying all generated
+executables over into $KLH10_HOME, but there is one tricky bit.
+
+If you plan to use the network interface emulation, you MUST either
+run the KN10 as root, or make the interface process setuid-root.
+There is no single right choice.
+
+If you want to do the latter:
+    Make sure only authorized users can access $KLH10_HOME.
+    Then connect to it, become root (superuser), and do one of:
+	KL:	# chown root dpni20; chmod 4750 dpni20
+	KS-ITS:	# chown root dpimp;  chmod 4750 dpimp
+    
+Another factor to consider is that running as root may allow you to
+use the MEM_LOCK setting to lock things in memory and avoid swapping.
+
+If your KN10 is being automatically started up in the background when
+your system boots, running as root is simplest.
+
+
+KLH10/KN10 CONFIGURATION
+========================
+
+	Each KN10 must be configured at runtime in order to do
+anything useful.  This is done by means of a file called "klh10.ini"
+that contains all KLH10 commands you want executed on startup;
+normally this includes the complete device configuration
+specifications for your KN10.
+
+The configuration of these devices is by far the most important part
+of installation, and the remainder of this file is dedicated to those
+issues.
+			--------------------------
+
+	Configuring a KN10 is logically very similar to configuring a
+real machine.  Each KN10 is compiled to emulate a specific CPU and
+microcode, with specific devices available for "plugging in" at
+runtime.  You cannot change the CPU/microcode, but you have some
+control over what devices are on your system and how they look to the
+virtual KN10.
+
+As distributed, there are three base machines:
+
+	Target		CPU	uCode	Runs
+	------		---	-----	----
+	base-kl		KL10B	v.442	TOPS-10, TOPS-20
+	base-ks		KS10	v.130	TOPS-10, TOPS-20
+	base-ks-its	KS10	v.262	ITS
+
+The KL10B version provides emulation for the following:
+
+	CPU:	KL10B with extended addressing
+	Memory:	4MW MF20 (8192 pages of 512 words) with MCA25 cache
+	Microcode: v.442 (supports final versions of TOPS-10 or TOPS-20)
+	Available Devices:
+		DTE - one CTY
+		RH20 - up to 8 (7 if using a KLNI/NIA20)
+		Disk - 8 RP06 or RP07 drives per RH20
+		Tape - 8 TM02/3 formatters per RH20, with one TU45/TU77 each
+		Network - one KLNI/NIA20 ethernet interface
+
+The KS10 version provides emulation for the following:
+
+	CPU:	KS10
+	Memory:	512KW (19 bits - 1024 pages of 512 words)
+	Microcode: ITS v.262 (supports final version of KS10 ITS)
+		   DEC v.130 (supports final versions of KS TOPS-10/20)
+	Devices available:
+		FE - one CTY
+		RH11 - up to 2
+		Disk - 8 RP06 or RP07 drives per RH11
+		Tape - 8 TM02/3 formatters per RH11, with one TU45/TU77 each
+		Network - one "ACC LH-DH" IMP interface (ITS only)
+
+
+There are no runtime configuration parameters for the CPU (future
+versions may provide some).  Configuration setup for each device is
+covered in more detail in the following pages.
+
+For a KN10 to know about a particular device, the device must be
+defined at runtime with the KLH10 "devdefine" command, which normally
+is put into the KLH10.INI startup file.
+
+General format for DEVDEFINE (non-KS):
+
+    DEVDEFINE <devid> <dev#> <drivername> <optional-parameters>
+
+	<devid> - A short (6-character) name of your choice to
+		uniquely identify this device.  Examples might be
+		dsk0, dsk1, mta0, xyzzy, etc.  These names are meaningful
+		only to you; the KLH10 parser doesn't care, nor are they
+		passed to the KN10 in any way.
+
+		The <devid> is how you can refer to the device
+		when using other KLH10 commands such as DEVMOUNT.
+
+	<dev#> - The KN10 device number you are binding.
+		For all machines but the KS10, this is normally
+		an octal device number such as would be used in
+		I/O instructions (DATAI/DATAO, etc).  For example,
+		use 200 for DTE#0, 540 for RH20 #0, and so on.
+
+		The <dev#> is how the KN10 can refer to the device.
+
+	<drivername> - Specifies what the device actually is, by
+		identifying the "emulator driver" you are binding
+		this device to.  The driver is a software module that
+		is invoked to support all references to the device,
+		whether from you or from the KN10.
+
+		Giving the "devshow" command will list all of the known
+		drivers (currently DTE, RH20, RP, TM03, NI20).  External
+		(dynamically linked) drivers are supported but untested.
+
+	<optional-parameters> - Various parameters specific to the
+		device driver type, usually optional.  Their syntax is
+		normally of the form <keyword>=<value>, but sometimes
+		just the <keyword> is sufficient.
+		The ordering of these parameters does not matter; nor
+		does the case of the keywords.
+
+
+General format for DEVDEFINE (KS):
+
+    Similar, but some of the devices are different and the
+    DEVDEFINE command has a slightly different format.
+    The KS10 introduced a "new" IO instruction scheme whereby all
+    devices were actually on a PDP11-type Unibus; the old-style
+    IO instructions such as DATAI do not exist as such, so there
+    are no device numbers.
+
+    DEVDEFINE <devid> <bus#> <drivername> <optional-parameters>
+
+	<devid> - Same; a short name of your choice.
+
+	<bus#> - The Unibus you are binding this device to.
+		This must be either "ub1" or "ub3" for Unibus #1 or #3
+		respectively; there are no other choices.
+		(The KN10 can easily support more, but it would no longer
+		be a kosher KS10.)
+
+	<drivername> - Same; the emulator driver name.
+		The recognized KS10 devices are:
+			RH11, RP, TM03, LHDH, CH11, DZ11
+		(The last three are used only with ITS.)
+
+	<optional-parameters> - Same, with one important addition.
+		All Unibus devices MUST specify the following parameters:
+
+		addr=<#> - The octal Unibus address of device
+		vec=<#>	 - The octal interrupt vector address
+		br=<#>	 - The BR interrupt level, one of 4,5,6,7
+
+
+In the following discussions of each device driver, all of the parameters it
+understands are listed and described.
+
+DTE (CTY) CONFIGURATION: (KL only)
+
+	The current DTE emulation does not support any terminals other
+than the CTY.  Configuration normally consists of the following command:
+
+		devdefine dte0 200 dte master
+
+The parameters are:
+
+[MASTER=<boolean>]	Default: FALSE
+[MASTER]		Same as MASTER=TRUE
+	Specifies whether this DTE is the "master" DTE.  Since only the CTY
+	is currently supported, only one DTE is ever needed, and this should
+	always have MASTER specified.
+
+
+[ACKDLY=<#msec>]	Default: 0
+	This specifies a delay, in msec, between the time the DTE receives some
+	data for output and the time it returns an ACK to the KN10.
+
+	For TOPS-10 you should set ackdly=5.  The TOPS-10 monitor is
+	unprepared to deal with the instantaneous response of the KN10 DTE
+	and suffers from the resulting race condition; setting this value
+	to some "reasonable" amount keeps CTY output streaming smoothly.
+
+	TOPS-20 doesn't appear to need any delay.
+
+[WARN=<boolean>]	Default: FALSE
+[WARN]			Same as WARN=TRUE
+	Specifies whether to show warnings for unrecognized DTE commands,
+	which are otherwise ignored.  A milder variant of debugging output.
+
+[DEBUG=<boolean>]	Default: FALSE
+[DEBUG]			Same as DEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	is created, without requiring a separate DEVDEBUG command later.
+
+RH20 CONTROLLER CONFIGURATION: (KL only)
+
+	Before you can define any devices that use the Massbus, you must first
+define a RH20 Massbus controller for them.  The commands for this are:
+
+		devdefine rh0 540 rh20		; Controller #0
+		devdefine rh1 544 rh20		; Controller #1
+		devdefine rh2 550 rh20		; Controller #2
+		devdefine rh3 554 rh20		; Controller #3
+		devdefine rh4 560 rh20		; Controller #4
+			 [rh5 564 normally RESERVED for NI20]
+		devdefine rh6 570 rh20		; Controller #6
+		devdefine rh7 574 rh20		; Controller #7
+
+The RH20 driver emulates both the RH20 controller and its associated data
+channel.  It works in the same way whether the drives it is controlling
+are disk or tape devices.
+
+There are currently no parameters for the RH20 driver.
+
+The DEVDEFINE command is used to define and bind a device to a controller.
+When used in this way, the <dev#> specification is a bit different:
+
+	<dev#> - If the device is actually a drive unit of a controller
+		and does not have its own full-fledged KN10 device number,
+		the form becomes:
+
+		<devid>.<#> - where <devid> identifies a previously defined
+			controller, and the <#> specifies a unit number.
+
+		For example:
+			devdefine rh0 540 rh20		; KN10 device 540
+			defdefine dsk0 rh0.0 rp		; Ctlr RH0, unit #0
+
+		For more examples, see the configuration commands for the Disk
+		or Tape devices.
+
+NOTES:
+
+	The important thing to be aware of about RH20 configuration is that
+only *ONE* I/O transfer can be in progress at any time on a particular RH20,
+no matter how many drives it is controlling.  In order to have multiple
+transfers in progress, each must be taking place on a different RH20.
+
+	On a real KL, extra RH20s would cost extra, so systems with up to 8
+drives might put them all on one controller.  On a KN10, all RH20s are
+"free", so you can use as many as you like.  However, don't blindly define all
+8 Massbus controllers.  If you are using the network interface then the #5
+slot must be reserved for the NI20!
+
+	The degree of parallelism is of course limited by the actual physical
+hardware the KN10 is running on; inventing multiple RH20s does not magically
+create new disk heads or I/O buses.  If your virtual disks are all on the same
+physical disk, only one of them can be doing a real I/O transfer regardless of
+whether they are controlled by different RH20s.  On the other hand, different
+RH20s do allow multiple I/O requests to be given to the native OS, which can
+then select and queue them in the most efficient manner.
+
+WARNING:
+
+	TOPS-10 does not support both tape and disk drives on the same
+RH20!  Each RH20 must either control disks only, or tapes only.
+
+	TOPS-20 however does support mixed configurations, and it is safe
+to assign both tapes and disks to the same RH20 if you wish to do so.
+
+RH11 CONTROLLER CONFIGURATION: (KS only)
+
+	Before you can define any devices that use the Unibus, you
+must first define a RH11 Unibus controller for them.  As far as is
+known, all KS10s had exactly the same RH11 configuration, and the
+commands for this are:
+
+	devdef rh0  ub1   rh11	addr=776700 br=6 vec=254
+	devdef rh1  ub3   rh11	addr=772440 br=6 vec=224
+
+As for the RH20, there are no other parameters besides the generic
+Unibus ones illustrated above.
+
+RP (DISK) CONFIGURATION: (KL & KS)
+
+	A RH20 or RH11 controller must be defined before you can
+define a disk drive, since the drive expects to be bound to a
+controller.
+
+	An example of defining a RH20 and two RP drives looks like this:
+
+		devdefine rh0  540   rh20		; Define controller #0
+		devdefine dsk0 rh0.0 rp type=rp06 path=RH20.RP06.0
+		devdefine dsk1 rh0.1 rp	type=rp07 path=/dev/rrz3a format=rare
+
+The parameters for disk configuration come in two groups: those that describe
+the DRIVE, and those that describe the PACK mounted on the drive.
+
+The following are DRIVE configuration parameters:
+
+[TYPE=<disktype>]	Default: RP06
+	This specifies the drive's type, which determines its geometry (size)
+	and how it will look to the KN10.  The following types are known:
+		RP04, RP05, RP06, RP07
+		RM02, RM03, RM05, RM80
+	The RP06 and RP07 are the recommended choices; the others have not
+	been tested.
+	This parameter will also accept an octal number to specify an arbitrary
+	device type between 0-777 inclusive.  If this feature is used, all
+	geometry values are cleared and all of the CYL, TRK, and SEC parameters
+	must be given in order to completely define the drive.
+	[See the note below about "Dynamic Geometry" drives.]
+
+[CYL=<#>]		Optional: (range 1-65536 inclusive)
+[TRK=<#>]		Optional: (range 1-256 inclusive)
+[SEC=<#>]		Optional: (range 1-256 inclusive)
+	Use these parameters only when defining the geometry for a non-standard
+	drive.  All arguments are decimal numbers.
+		CYL is the number of cylinders (including maintenance cyls).
+		TRK is the number of tracks (or heads) per cylinder.
+		SEC is the number of 128-word sectors per track.
+	The presence of any of these parameters flags the drive as a "dynamic
+	geometry" drive; however, it is not necessary to specify them all if
+	a preceding TYPE parameter has already set the default geometry values.
+	[See the note below about "Dynamic Geometry" drives.]
+
+[SN=<#>]		Default: <unique #>
+	This is whatever 4-digit drive serial number you would like
+	the drive to have.  TOPS-20 thinks that two drives with the same
+	SN constitute a dual-ported drive, so these numbers must be unique.
+	If no SN is specified, the KN10 will invent a safe one for you.
+
+[DPDMA=<boolean>]	Default: TRUE
+	This is primarily for debugging; it controls whether the device
+	process (DP) should do I/O directly to and from KN10 memory,
+	if that is possible.
+	Unless there is some reason to suspect bugs, this should always
+	be left TRUE.
+
+[DPPATH=<path>]		Optional: dprpxx
+	Specifies where, in the native OS filesystem, to find the executable
+	program for the device process.
+	Normally this is "dprpxx" in the KLH10_HOME directory, but may be
+	changed for debugging.
+
+[BUFSIZ=<#>]		Optional: 512
+	This is another debugging variable that allows setting the size
+	of the device's internal buffer, which is used if format conversion
+	is needed or for transfers that are not a multiple of the sector
+	size.  Don't use this.
+
+[DEBUG=<boolean>]	Default: FALSE
+[DEBUG]			Same as DEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	is created, without requiring a separate DEVDEBUG command later.
+
+[DPDEBUG=<boolean>]	Default: FALSE
+[DPDEBUG]		Same as DPDEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	process (DP subproc) is created, without waiting to give a
+	DEVDEBUG command.
+
+
+The following are PACK mount parameters:
+
+[PATH=<path>]		Default: RH20.<type>.<#>  (e.g. RH20.RP06.0)
+	Specifies the pack location -- the filename of the virtual disk
+	in the native OS filesystem.  This can be either a normal file
+	such as "RH20.RP06.0" or a raw disk partition device such as
+	"/dev/rrz3a".
+	For ease of maintenance, a normal file is recommended.  The
+	file does not have to exist; it will be created if necessary.
+
+[FORMAT=<fmt>]		Default: RAW
+	Specifies the pack format -- how the data in the virtual disk
+	file is organized into PDP-10 words.  There are several possible
+	formats, most of which exist only to help port virtual disks between
+	dissimilar native platforms.  The most useful formats are:
+		RAW  - the fastest.  1 word in 8 bytes; no I/O conversion.
+		DBD9 - the most compact.  2 words in 9 bytes.
+		RARE - A "semi-raw" mode that writes in RAW but cleans
+			data on read; suitable for un-initialized packs.
+	Note: RAW mode must be used with care, as the initial disk contents
+	must be completely initialized to zero.
+
+[RO] or [RW]	Default: RW
+	Specifies whether the pack is Read-Only (RO) or Read/Write (RW).
+
+
+NOTES:
+
+	The pack pathname will be created if it doesn't exist.  I suggest you
+make this be a symbolic link either to a raw disk partition large enough to
+represent a disk of the selected type, or to a normal file in some part of the
+filesystem that likewise has enough free space available.
+
+	Note that if using normal files, you can get by with less
+space for a while because only sectors that are actually referenced
+will have storage allocated for them in the native filesystem.
+However, once a sector is written, it can never be de-allocated; so
+over time as the monitor runs and dribbles on the virtual disk, you
+will slowly approach the full space requirements of the emulated disk.
+If you run out of space on the native filesystem that holds such a
+normal file, the emulated disk will appear to get an I/O error and
+will go unsafe.  It is best if you don't let this happen, by ensuring
+that (1) the native filesystem has enough space to begin with, and (2)
+this space isn't consumed by other things.
+
+	The actual space requirements depend on the drive type and format you
+select.  Note in the following table that one sector is 128 PDP-10 words.
+Actual sizes are rounded up to the nearest MB.
+
+			   T20		Format=		Format=
+	Drive	# Sectors  Pages	  RAW/RARE	  DBD9
+	 --	      1	       -	1024 bytes	 576 bytes
+	 --	      4	       1	4096 bytes	2304 bytes
+	 --		     245	  1 MB
+	 --		     435			  1 MB
+	 --		   1,000	  4.1 MB	  2.3 MB
+	RP05	156,180	  39,045	160 MB		 90 MB
+	RP06	309,700	  77,425	318 MB		179 MB
+	RP07	866,880	 216,720	888 MB		500 MB
+
+	Note you can select "dbd9" format for the maximum packing
+density, at the price of a slightly slower system since the KN10 then
+has to do an extra data conversion step for all disk I/O, and virtual
+sectors are no longer aligned with physical disk blocks.
+
+	Other disk types are available with different sizes, but I'd recommend
+using some combination of RP06s and RP07s.  Note that you probably can't pack
+them neatly into existing native OS drive partition tables, so some space will
+be wasted unless using normal files.
+
+	Normal files are expected to be slightly slower than raw disk
+partition devices, since they are subject to filesystem overhead and
+kernel buffering.
+
+	Raw disk partitions require some special care.  First, they
+can *ONLY* be used when "raw" or "rare" format is selected.  Second,
+if specifying "raw" format, the disk partition must be completely
+cleared before its first use.  This can be accomplished by, for example,
+something like the shell command "dd if=/dev/zero of=/dev/rrz3e".
+
+	The DEVMOUNT and DEVUNMOUNT commands can be used to mount and
+unmount virtual packs from a drive, with the additional optional
+parameters "RO", "RW", or <fmt>.  Note however that this feature has
+not been extensively tested and a typo in the command can result in
+a very badly confused PDP-10 OS.
+
+
+NOTE: DYNAMIC GEOMETRY
+	[WARNING: USING THIS FEATURE REQUIRES MONITOR MODIFICATIONS!]
+
+	This is a feature of the emulator that allows the
+specification of drives other than those which historically existed,
+normally for the purpose of using much larger virtual drives.
+	For each drive, the emulator has a geometry table of CYL, TRK,
+and SEC sizes.  Specifying any known standard disk type sets these
+values to the correct ones for that type; however, if this is followed
+by any of the CYL, TRK, or SEC parameters, the corresponding value is
+updated and the drive is flagged as having a "dynamic geometry".  Note
+that specifying an arbitrary device type resets all of these values to
+0, necessitating explicit specification of all three.
+
+	This feature MUST NOT BE USED except with a monitor that has
+been modified to know about the new geometry.  This can be done in
+either or both of two ways:
+
+    (1) Invent a new drive type and modify the monitor's
+	predefined geometry tables accordingly.  Types 030-040
+	inclusive are available -- they are part of the range
+	considered "RP04 type" but were never used by any real
+	drives as far as is known.
+
+    (2) On initialization, check the 01000 bit of the Drive Type
+	register (Reg 06 for the RH20, 013 for the RH11), which
+	the KN10 sets to indicate a "dynamic geometry" drive.
+	If set, read the EPOS and EPAT registers to obtain the
+	drive geometry.
+
+The second method is preferable because it is the most flexible.  A
+dynamic geometry drive can always be examined by the monitor to
+determine its size at startup by reading the "ECC Position" and "ECC
+Pattern" registers (016 and 017 for the RH20, 022 and 023 for the
+RH11).
+
+To summarize:
+    New "Drive Type" flag in register 06:
+	Bit 01000 set to indicate "dynamic geometry".
+	This bit was never used as far as can be determined.
+    Re-use registers: (only if above flag is set)
+	016 (ECC Position) returns "Max Cylinder", range 0-177777
+	017 (ECC Pattern)  returns "Max Track/Sector", 0-377 and 0-377
+		Track is high 8 bits, Sector is low 8.
+
+Note that the "Max" values indicate the maximum possible value of the
+field, which is one less than the number of things.  Thus a max sector
+value of 077 means you can address 077+1 => 0100 sectors per track
+(corresponding to SEC=64).  Also note that the vanilla T10/T20
+monitors use a DPB pointer with only 5 bits for the track field, so
+unless that is modified you should not specify a TRK higher than 32.
+
+Although new registers could have been used (024-037 are available) it
+was deemed more convenient to re-use the EPOS and EPAT registers,
+which are otherwise never used by the KN10.
+
+The reason for using a Drive-Type flag rather than simply relying on a
+new drive type value is to allow for retaining existing drive types
+(e.g. RP07) so that the bulk of existing monitor code can be left
+unchanged.  It can be hard to find everything that depends on the
+drive type since not everything is table-driven, and bootstrap code
+for example is also affected.
+
+So, for example, one can set the drive type to RP07, accept the RP07
+defaults of 32 tracks and 43 sectors so that bootstrap code will work
+without change, and then increase the number of cylinders in order to
+achieve much larger disk sizes.  For example:
+
+	devdefine dsk1 rh0.1 rp	type=rp07 cyl=65536 path=bigdisk.1
+
+would result in a virtual disk of:
+
+	65536 cyl * 32 trk * 43 sec = 90,177,536 sec = 52GB.
+
+TM03 (TAPE) CONFIGURATION: (KL & KS)
+
+	On a real machine, a tape transport ("slave") is controlled by
+a "formatter" such as the TM03, which in turn is controlled by a
+controller (RH20 or RH11).  Up to 8 slaves can be controlled by a
+single formatter, and up to 8 formatters by a single controller.
+
+	The KLH10 code emulates this model, except that for simplicity
+a formatter controls only one slave; unlike the physical hardware, in
+a KN10 there is no cost penalty for additional formatters.
+
+	NOTE!  It is best to bind tapes and disks to different
+controllers, for two reasons.  First, TOPS-20 can handle mixed
+devices, but TOPS-10 cannot; on TOPS-10 a RH20 should only have disks,
+or tapes, but not both.  Second, only one device on each controller
+can be actively transferring data at a time, and tapes are usually
+much slower than disks.
+
+	As for disk, the formatter must be bound to a controller when
+defined.  An example of defining a RH20 and one TM03/TU45 looks like
+this:
+
+		devdef rh1  544   rh20
+		devdef mta0 rh1.0 tm03  fmtr=tm03 type=tu45 path=/dev/rmt0a
+
+The possible parameters for the TM03 driver are:
+
+
+[FMTR=<ftype>]		Default: TM03
+	Specifies formatter device type.
+	Only two types are available: TM02 and TM03.  Normally TM03 should
+	be used.
+
+[TYPE=<stype>]		Default: TU45
+	Specifies transport (slave) device type.
+	Only three types are available: TU45, TE16, and TU77.
+	They differ slightly in the features the KN10 will think are
+	available, but none matter to the emulated tape.
+
+[SN=<#>]		Default: <random #>
+	This is whatever 4-digit drive serial number you would like
+	the transport to have.  As far as is known, nothing depends on this.
+
+[PATH=<devpath>]	Default: <none>
+	Specifies the hard tape device to bind to the transport, with
+	the default parameters "RW" and "HARD".  This should be the
+	raw tape device, such as "/dev/rmt0a".  Do not use either the
+	non-raw (/dev/mt0a) or non-rewind (/dev/nrmt0a) device names!
+
+	If this is not specified, nothing is "pre-mounted".  The mount
+	state can be changed at any time with DEVUNMOUNT and DEVMOUNT.
+	
+	Note this cannot be used for mounting virtual tapes; use the DEVMOUNT
+	command instead.
+	
+[DPPATH=]		Default: dptm03
+	Specifies the native OS pathname for the DP (Device Process) program.
+
+[DEBUG=<boolean>]	Default: FALSE
+[DEBUG]			Same as DEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	is created, without requiring a separate DEVDEBUG command later.
+
+[DPDEBUG=<boolean>]	Default: FALSE
+[DPDEBUG]		Same as DPDEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	process (DP subproc) is created, without waiting to give a
+	DEVDEBUG command.
+
+
+NOTES:
+	For backward compatibility, the drivername "tm02" is treated as
+an alias for "tm03".
+
+	The DEVMOUNT and DEVUNMOUNT commands can be used to mount and
+unmount either virtual tapes or physical tape drives after
+configuration, with various optional parameters.  In particular,
+"HARD" must be specified if the pathname is that of a physical tape
+drive.
+
+NI20 (NETWORK) CONFIGURATION: (KL only)
+
+	The NI20 driver emulates a KLNI/NIA20 ethernet interface and
+requires the host system to provide a real ethernet port, either
+dedicated for the KN10's use or shared with the native OS.
+
+The NI20 on a real system is always installed in massbus slot #5,
+which corresponds to device 564.  So, an example of defining a NI20
+looks like this:
+
+		devdefine ni0 564 ni20 ipaddr=10.0.0.51
+
+
+The parameters for the NI20 driver are:
+
+
+[DEDIC=<boolean>]	Default: FALSE
+	This is the most important configuration decision.
+	Ideally you will have at least two ethernet ports and can dedicate
+	one of them for the sole use of the KN10.  If so, set DEDIC=TRUE
+	and specify the interface with IFC= (see below).
+
+	If this is not possible (only one interface available) then the
+	interface must be "shared" with the native OS, rather than being
+	dedicated.  Some things will work; others may not.  You must specify
+	whether you want to use DECNET, or IP, or both.
+
+[IFC=<name>]		Default: <OS-default>
+	If DEDIC=TRUE is set, or the system has more than one hardware ethernet
+	port, the interface should be explicitly specified with IFC= so you
+	get the right one.
+	However, for a shared interface this will default to whatever the host
+	system uses for its IP datagrams, normally "ln0" or "tu0" for
+	OSF/1.
+	The shell commands "ifconfig -a" or "netstat -i" will show the
+	known interfaces.
+	See also the ENADDR parameter.
+
+[ENADDR=<x:x:x:x:x:x>]	Default: <none>
+	Normally unnecessary.
+	Used to specify the ethernet address to use, if the KN10 has trouble
+	determining it.  Syntax is six hexadecimal values (bytes) separated
+	by colons.
+	This value will be ignored if the KN10 can in fact determine the
+	real address itself, except for Solaris.
+	WARNING: On Solaris, setting this will attempt to modify the
+	actual ethernet address of the hardware interface!  This is
+	likely to be required when multiple interfaces exist due to the
+	brain-damaged way Solaris handles them.
+
+[DECNET=<boolean>]	Default: FALSE
+	This flag is only meaningful for a shared interface; it is ignored for
+	a dedicated interface.
+	A shared interface will not receive DECNET packets unless you set
+	DECNET=TRUE.  This should not be done lightly as it causes several
+	risky things to happen, which can disrupt service to the native OS:
+
+	-- The 10 is allowed to change the interface address!
+	This may confuse other software.  As a feeble protection against
+	shooting yourself in the foot, this is only allowed if the existing
+	interface address is not already a DECNET address (if it was, that
+	would imply that the native OS wants to speak DECNET too).
+
+	-- The driver attempts to grab all DECNET packet types!
+	If the native host is trying to use DECNET itself, this will cause
+	great confusion.
+
+	-- The 10 is allowed to mess with the multicast addresses of the
+	interface (adding and deleting entries).
+
+[LSAP=<#>]	Default: <none>
+	This flag is only meaningful for a shared interface; it is ignored for
+	a dedicated interface.
+
+	A shared interface will not normally receive 802.3 packets unless you
+	set the LSAP parameter to the specific source and dest LSAP (DSAP/SSAP)
+	that you wish to see; for example, "lsap=0xA4".
+
+[IPADDR=<d.d.d.d>]	Default: <none>
+	This flag is only meaningful for a shared interface; it is ignored for
+	a dedicated interface.
+
+	A shared interface will not receive IP packets unless you set
+	IPADDR to the IP address that the PDP-10 OS expects to use.
+	This should not disrupt service to the host OS as long as the IP
+	address is correctly selected and is different from that of the
+	host OS.
+
+[DOARP=<boolean>]	Default: TRUE
+	Only valid for a shared interface where IPADDR= is also specified.
+	DOARP says whether the driver should attempt to support ARP itself;
+	because it is always TRUE where applicable, this parameter need only
+	be given when turning ARP support off for debugging, either completely
+	or selectively.
+
+	This special support is needed to compensate for an OSF/1 bug;
+	OSF/1 either cannot see or ignores ARP packets sent to it from
+	a packetfilter (unlike IP packets).  DOARP attempts to remedy
+	this with three distinct tactics, all of which are invoked by
+	the default value of TRUE (bit=01):
+
+	(bit=02) Allows other platforms to find the KN10's address,
+	    by installing a "published" entry in the kernel's ARP table.
+	    This lets the native platform proxy-answer any broadcast requests
+	    for the KN10's address.  Necessary because TOPS-20 sometimes
+	    screws up its ARP replies; this also means the packetfilter
+	    only has to pass ARP replies, not ARP requests).
+
+	(bit=04) Allows the native platform to find the KN10's address,
+	    by installing a "permanent" entry in the kernel's ARP table.
+	    Necessary because OSF/1 loopback omits ARP packets, i.e. the
+	    KN10 never sees ARP requests from the native platform.
+
+	(bit=010) Allows the KN10 to find the native platform's address.
+	    Checks outgoing ARP requests from the KN10; if it spots one
+	    attempting to locate the native host, it drops the packet
+	    and substitutes an ARP Reply with the appropriate information
+	    which gets fed back into the KN10 via the receive side.
+	    Necessary because OSF/1 loopback omits ARP packets, i.e.
+	    native platform never sees ARP requests from the KN10.
+
+	You can show the ARP tables with the shell command "arp -a".  There is
+	no cleanup when the DPNI20 process dies; if you want to clean up the
+	table yourself, use "arp -d <name>" while root.
+
+	Note: None of this ARP hackery is needed if the interface is
+	dedicated or if no IP traffic is desired.
+
+
+[C3DLY=<#>]		Default: 5
+	REQUIRED for TOPS-10!
+	Sets number of milliseconds to delay the NI20 LDPTT operation
+	while the KN10 continues running, to avoid a monitor race condition.
+	A good value is probably 5, but may vary with hardware.
+	The TOPS-20 monitor does not have this bug, but setting this parameter
+	to 0 probably won't make anything faster.
+
+[DPDELAY=<#>]		Default: 5
+	REQUIRED for TOPS-10 and TOPS-20!
+	Sets number of seconds to delay the KN10 itself when the NI20
+	first starts up, again to avoid a monitor race condition.
+	A good conservative value is 5.  If the TOPS-20 monitor complains
+	"NIA10 initialization timed out" and there are no other obvious
+	errors, try increasing this.  On TOPS-10 the message may say
+	something about a "KLNI microcode" load failure.
+	A smaller value will make startup faster, at the risk of tickling
+	this monitor bug.  Every system will be different.	
+
+[DPPATH=<path>]		Default: dpni20
+	Specifies where, in the native OS filesystem, to find the executable
+	program for the device process.
+	Normally this is "dpni20" in the KLH10_HOME directory, but may be
+	changed for debugging.
+	IMPORTANT: This program must run as root, either by setting the binary
+	to setuid-root or by running the KN10 while logged in as root.
+	It cannot perform the necessary network operations otherwise.
+
+[ECHOCHK=<boolean>]	Default: TRUE
+	Primarily for debugging.
+	Specifies whether to suppress "echo" (self-addressed) packets.
+	A real KL never sees its own transmissions, so this is normally TRUE,
+	but on some platforms the actual hardware or native OS already
+	prevents this from happening so the overhead is unnecessary.
+	This parameter need only be given when turning off the extra check.
+
+[ECHOBUF=<#>]	Default: 60
+	Primarily for debugging.
+	Number of packets to remember in a ring buffer when ECHOCHK is true.
+
+[ECHOTMO=<#>]	Default: 1
+	Primarily for debugging.
+	Number of seconds to remember packets when ECHOCHK is true.
+
+[BACKLOG=<#>]		Default: <OS-default>
+	Primarily for debugging.
+	This specifies the number of packets that OSF/1 will allow
+	to pile up inside the kernel while waiting for the KN10 to read them.
+	If you are experiencing some problems with lost packets and it doesn't
+	appear to be the fault of the network, you could try setting this
+	parameter, although it is just one of many factors.
+
+[RDTMO=<#>]		Default: 0
+	Normally unnecessary.
+	Sets the number of seconds to time out while doing a read() from
+	the native system's packetfilter interface.  This was needed on
+	earlier versions of OSF/1 which couldn't kill the "dpni20" process
+	otherwise (the problem symptom is the persistence of that process
+	after the KN10 itself has been killed).  If needed, try rdtmo=2.
+
+[DEBUG=<boolean>]	Default: FALSE
+[DEBUG]			Same as DEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	is created, without waiting to give a DEVDEBUG command.
+
+[DPDEBUG=<boolean>]	Default: FALSE
+[DPDEBUG]		Same as DPDEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	process (DP subproc) is created, without waiting to give a
+	DEVDEBUG command.
+
+
+NOTES:
+
+	* Before bringing up a KN10 as a network host, you will need to carry
+out all the usual procedures needed to register a host on your local network.
+The fact that the "host" will be virtual rather than physical may be hard to
+explain to bureaucratic minds; you don't need to try.  Just pretend it's for
+real.
+
+	* If you plan to use IP, you'll need to configure or build your PDP-10
+monitor so that it knows about its assigned IP address, knows what network
+it's on with what subnet mask, knows its default prime gateway, and whatever
+else a real system needs in the way of configuration.
+
+	* The "dpni20" binary must be made setuid-root.  I can't
+guarantee that this program has no security holes, which is a good
+reason to keep the KLH10_HOME directory well-protected.  The only
+alternative is to run the entire KN10 while logged in as root, which
+you may wish to do anyway to enhance responsiveness (it is then able
+to lock itself in memory and raise its process priority).
+
+	* Each time the KN10 starts or stops its NIA20, the dpni20
+process is created and killed.  This means you can sometimes recover
+from problems, or try a new version of the dpni20, simply by using
+some mechanism in the PDP-10 OS to stop and "reload" or restart the
+NI.  On TOPS-20 this is done with the <SYSTEM>KNILDR program.
+
+	* The most common problem with a shared interface is an
+inability for the virtual host (KN10) to talk with the native host; it
+depends on whether the native OS allows outbound ethernet packets to
+be seen by other input processes, or vice versa.  Some platforms allow
+this (OSF/1), others don't (Solaris, Linux), and some used to but were
+mistakenly "fixed" to disallow it (FreeBSD).
+	A simple but annoying workaround is to first telnet to some
+other host before telnetting back into the KN10.  A better solution
+would be to fix those OSes that are open-source, and push to have
+these fixes incorporated in the standard releases.
+
+LHDH (IMP): (KS-ITS only)
+
+	This is the big one for a KS10 ITS system.  As far as is
+known, no DEC operating system for the KS10 provided a TCP/IP network
+interface (I believe there was an ARPA version that supported the
+older NCP protocol).
+
+The LHDH driver emulates an ACC LH-DH IMP interface.  Note that this
+really was an IMP interface, not an Ethernet interface, thus the only
+I/O possible is in terms of IP datagrams rather than ethernet packets.
+
+	A typical definition will look like this (line-continued for 
+	clarity only; the KLH10 parser won't recognize \ for that purpose):
+
+	devdef imp ub3 lhdh \
+		addr=767600 br=6 vec=250 \	; Generic Unibus params
+		ipaddr=10.2.0.6 \		; ITS IP address 
+		gwaddr=199.34.53.50		; Host platform's IP address
+
+The parameters for the LHDH driver are:
+
+[ADDR=<#>]	Required (normally 767600 for LHDH)
+	This is the starting address for the device's Unibus registers.
+
+[BR=<#>]	Required (normally 6 for LHDH)
+	This is the BR (Bus Request) priority level to use for interrupts
+	by this device.
+
+[VEC=<#>]	Required (normally 250 for LHDH)
+	This is the interrupt vector address to use for interrupts by this
+	device.
+
+[IPADDR=<d.d.d.d>]	Required
+	Must always be given, regardless of whether the IMP device is
+	sharing the host platform's ethernet address or using a dedicated one.
+	Must correspond to the IP address that the ITS system thinks it has.
+	For grins, the original ITS systems were:
+		mit-dms  10.1.0.6
+		mit-ai   10.2.0.6
+		mit-ml   10.3.0.6
+		mit-mc   10.3.0.44
+	(RFC 846 lists these and many other historic IP addresses)
+
+[GWADDR=<d.d.d.d>]	Required
+	Must always be given.  This tells the IMP where to send packets
+	that are not addressed to the same network as the ITS system
+	(as defined by the IPADDR parameter).
+	Normally the host platform can be specified, but a real gateway
+	is OK too.
+
+[DEBUG=<boolean>]	Default: FALSE
+[DEBUG]			Same as DEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	is created, without waiting to give a DEVDEBUG command.
+
+[DPDEBUG=<boolean>]	Default: FALSE
+[DPDEBUG]		Same as DPDEBUG=TRUE
+	This can be used to turn on debug tracing as soon as the device
+	process (DP subproc) is created, without waiting to give a
+	DEVDEBUG command.
+
+[DPPATH=<path>]		Default: dpimp
+	Specifies where, in the native OS filesystem, to find the executable
+	program for the device process.
+	Normally this is "dpimp" in the KLH10_HOME directory, but may be
+	changed for debugging.
+	IMPORTANT: This program must run as root, either by setting the binary
+	to setuid-root or by running the KN10 while logged in as root.
+	It cannot perform the necessary network operations otherwise.
+
+[IFC=<name>]		Default: <OS-default>
+	Normally unnecessary.
+	Because the IMP interface only looks for IP datagrams, it does not
+	need to have an ethernet device dedicated to it; whatever it uses
+	is always shared.
+	Thus, this will default to whatever the host system uses for its IP
+	datagrams (the shell commands "ifconfig -a" or "netstat -i" will
+	show the known interfaces).
+	On FreeBSD this currently defaults to a /dev/tun<#> device.
+
+[ENADDR=<x:x:x:x:x:x>]	Default: <none>
+	Normally unnecessary.
+	Used to specify the ethernet address to use, if the KN10 has trouble
+	determining it.
+
+[DPDELAY=<#>]		Default: 0
+	Recognized but currently unimplemented, as ITS is correctly
+	coded to have no race conditions associated with its IMP.
+
+[RDTMO=<#>]		Default: 1
+	Sets the number of seconds to time out while doing a read() from
+	the native system's packetfilter interface.  The default value of 1
+	may no longer be necessary but doesn't hurt.
+	Same as NI20's RDTMO parameter.
+
+[BACKLOG=<#>]		Default: 0
+	Primarily for debugging.
+	Same as NI20's BACKLOG parameter.
+
+[DOARP=<boolean>]	Default: TRUE
+	Same as for NI20.
+
+[DEDIC=<boolean>]	Default: FALSE
+	Recognized but unimplemented.
+
+DZ11 (TTY MUX): (KS only)
+
+	This is actually a dummy device which exists to make it possible
+	to boot and run OS binaries that expect to find a DZ11 in a
+	specific place.
+
+	The generic Unibus parameters must be provided in the DEVDEFINE so
+	that this device will respond to IO instructions addressed to it,
+	but no TTY I/O actually happens.
+
+CH11 (CHAOSNET): (KS only)
+
+	This is another dummy device, only for ITS.
+	As for the DZ11, the generic Unibus parameters must be provided.
+
+HOST (Native Host): (KL & KS)
+
+	There are two variants of this special device, one for each
+basic device style:
+
+	; KL10 example
+	devdefine idler 700 host	; PDP-10 device 700
+
+	; KS10 example
+	devdef idler ub3 host addr=777000
+
+See the file "dvhost.txt" for more details on the use of this device.
+
+There are no parameters, beyond those for setting the Unibus address
+on a KS10.
+
+; Sample KLH10.INI file:
+
+; This is a sample KLH10.INI -- the config file that is read and executed
+; by default at startup.
+
+; Define basic device config - one DTE, one disk, one tape
+devdef dte0 200   dte	master ackdly=5
+devdef rh0  540   rh20
+devdef rh1  544   rh20
+devdef dsk0 rh0.0 rp	type=rp06 format=raw path=RH20.RP06.0
+devdef mta0 rh1.0 tm03	fmtr=tm03 type=tu45
+
+; Define shared KLNI with address that TCP/IP monitor expects
+devdef ni0 564 ni20 ipaddr=10.0.0.51

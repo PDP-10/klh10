@@ -1,0 +1,547 @@
+/* CMDREF.TXT - KLH10 Command Reference documentation
+*/
+/* $Id: cmdref.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+KLH10 COMMAND SYNTAX:
+
+	The KLH10 command parser is extremely simple-minded, since
+normally very little user interaction is needed.  In particular, it is
+not intended to be a general-purpose debugger, although it does have
+various commands to help debug the "hardware".
+
+	Each command is one complete line, and command verbs need only
+a unique initial substring.  Case is not significant anywhere in KLH10
+commands, except for filenames that must be given to the native OS.
+
+	The various parts of a command must be separated by spaces or
+tabs.  The backslash (\) character can be used to quote the next
+character, but if you think you need this, you are probably trying
+something funny that may not work.  Lines cannot be continued with
+backslash; just keep typing.
+
+
+KLH10 COMMAND REFERENCE: (in ASCII lexical order)
+
+^\, CONTROL-\, ASCII "FS"
+	This is not exactly a KLH10 command; it is the command escape
+	character, which can be typed anytime the KN10 is running.
+	It should halt the KN10 immediately with the message
+
+		[HALTED: FE interrupt]
+
+	Followed by the KLH10 command parser prompt:
+
+		KLH10>
+
+	Typing ^\ while in the command parser should have no effect,
+	although this depends on the native OS.
+
+
+1-STEP
+	Single-steps the KN10 by executing one instruction.  For debugging.
+	This is the same as "proceed 1".
+
+
+BREAKPT <addr>
+	Set PC breakpoint to <addr>.  For debugging.
+
+	Only one PC breakpoint can be set.  It does not modify memory
+	in any way.  Use an <addr> of 0 to turn it off.
+	Execution is slower when the PC breakpoint is active, so don't
+	leave it on if you don't need it.
+
+	Currently, only the in-section part of the address is significant
+	(low 18 bits).  The KN10 will be stopped whenever the low 18 bits
+	of PC match the specified value, whether the CPU is in user or
+	exec mode.
+
+
+CONTINUE
+	Continues the KN10 at the current PC.
+	This is the normal method of continuing after interrupting the
+	KN10 with ^\.
+
+
+DEPOSIT <addr> <value>
+	Deposits the word value at the given address.  For debugging.
+	See the description of the LOAD command for the format of <addr>.
+
+	The <value> should be one or two octal constants of the form <RH>
+	or <LH>,,<RH>.  Instruction mnemonics are not recognized, sorry.
+
+
+DEV <devid> <device-command-line>
+	Execute a device-dependent command.
+	<devid> must be already defined by the DEVDEFINE command.
+	This is provided as a way for device drivers, especially dynamically
+	loaded ones, to accept arbitrary commands if they wish to do so.
+	No current driver uses this.
+
+
+DEVDEBUG [<devid> [<debugval>]]
+	Set or show device debug values.
+	DEVDEBUG		- Shows values for all known devices.
+	DEVDEBUG <devid>	- Shows value for that device.
+	DEVDEBUG <devid> 0	- Turns off debug tracing for device.
+	DEVDEBUG <devid> 1	- Turns on basic debug tracing for device.
+	DEVDEBUG <devid> 3	- May turn on verbose tracing for device.
+
+	<devid> must be already defined by the DEVDEFINE command.
+	Each device may have a different interpretation of a non-zero
+	debug value.  In general, when debug tracing is turned on, activity
+	on that device will cause messages to be printed on the standard
+	error stream, which is normally the KLH10 CTY.
+
+	Note that devices may output error messages at any time whether or
+	not debug tracing is in effect.
+
+
+DEVDEFINE <new-devid> <dev#> <driver> <optional-parameters>
+	Define, bind, and initialize a KN10 device or controller unit.
+	See the file "install.txt" for more details.
+
+    <devid> - A short (6-character) name of your choice to
+	uniquely identify this device.  Examples might be
+	dsk0, dsk1, mta0, etc.  These names are meaningful
+	only to you; the KLH10 doesn't care, nor are they
+	passed to the KN10 in any way.
+
+	The <devid> is how you can refer to the device
+	when using other KLH10 commands such as DEVMOUNT.
+
+    <dev#> - The KN10 device number you are binding.
+	For all machines but the KS10, this is normally
+	an octal device number such as would be used in
+	I/O instructions (DATAI/DATAO, etc).  For example,
+	use 200 for DTE#0, 540 for RH20 #0, and so on.
+
+	The <dev#> is how the KN10 can refer to the device.
+
+    <drivername> - Specifies what the device actually is, by
+	identifying the "emulator driver" you are binding
+	this device to.  The driver is a software module that
+	is invoked to support all references to the device,
+	whether from you or from the KN10.
+
+	Giving the "devshow" command will list all of the known
+	drivers (currently DTE, RH20, RP, TM03, NI20).  External
+	(dynamically linked) drivers are supported but untested;
+	see the "devload" command.
+
+    <optional-parameters> - Various parameters specific to the
+	device driver type, usually optional.  Their syntax is
+	normally of the form <keyword>=<value>, but sometimes
+	just the <keyword> is sufficient.
+	The ordering of these parameters does not matter; nor
+	does the case of the keywords.
+
+    NOTE!!!  There is currently no way to undefine a device.
+	Once defined, a <devid> lasts until the user quits the KLH10.
+
+
+DEVEVSHOW [<devid>]
+	Show device event registration info.  Primarily for debugging.
+	<devid> must be already defined by the DEVDEFINE command.
+
+DEVLOAD <new-drivername> <path> <initsym> <comments>
+	Load a DLL device driver.
+	This command allows device emulator drivers to be loaded dynamically
+	at runtime rather than being linked into the KLH10 binary at
+	compile time.
+	Warning: This almost certainly WILL NOT WORK yet for your platform.
+	It is intended to provide a way for people to write their own
+	device emulator drivers independently of those provided
+	or built into the KN10.
+
+
+DEVMOUNT <devid> <path> [<options>]
+	Mount device media.
+	<devid> must be already defined by the DEVDEFINE command.
+	<options> are device dependent.
+
+	Note that this command can only make a polite request to the device,
+	which may respond with a failure message.  If the device is busy,
+	the request may be ignored immediately with an error message; try again
+	later.  Any currently mounted media will be automatically unmounted,
+	but it's best to explicitly DEVUNMOUNT a device before trying
+	to DEVMOUNT something on it.
+
+	DEVMOUNT is used primarily for mounting virtual tapes on the
+	TM02/TM03 driver, although it is intended to work for disks as well.
+
+	The options for the TM02/TM03 depend on whether you are mounting
+	a virtual tape or a physical tape drive.
+
+	For a physical drive, you must specify:
+	    HARD	   - <path> is a physical tape drive.  No other
+				options will be recognized, not even RO.
+
+	If HARD is not specified, a virtual tape is assumed.
+	For virtual tapes, there are several options:
+
+	    FMT=<format>   - Tape format (RAW, TPS, TPC, etc; see vtape.txt)
+	    MODE=<mode>    - One of READ, CREATE, or UPDATE.
+	    FSKIP=<#>	   - Skip <#> files/tapemarks when mounted.
+	    UNZIP[=<bool>] - TRUE to allow uncompression if <path> suggests it.
+	plus for convenience:
+	    RO, READ       - same as MODE=READ (read-only)
+	    RW, CREATE     - same as MODE=CREATE
+	    UPDATE         - same as MODE=UPDATE
+	and for debugging:
+	    DEBUG[=<bool>] - TRUE for debug output from vmtape.
+	    PATH=<path>    - Overrides command <path>
+	    CPATH=<path>   - Overrides control path derivation
+	    RPATH=<path>   - Overrides data (raw) path derivation
+
+	The normal defaults are now FMT=TPS and MODE=READ.
+	(Formerly they were RAW and RW)
+
+    Example:
+	@assign mta0:				; At T20 EXEC
+	@i dev
+	Devices assigned to/opened by this job: MTA0, TTY105
+	@[HALTED: FE interrupt]			; ^\ typed here
+	KLH10> devmo mta0 mybackup create	; Mount virtual R/W tape
+	Mount requested: "mybackup"		; Request sent to device
+	KLH10> [mta0: Tape online]		; Asynch response looks OK  
+						; (Typed CR for fresh prompt)
+	KLH10> c				; Continue KN10
+	Continuing KN10 at loc 01117513...
+	
+	@dumper					; Back at T20 EXEC
+	DUMPER>tape mta0:
+	DUMPER>save ps:<KLH>*.*.* (AS) 
+		[...etc...]
+
+	Note in the above example that the <devid> "mta0" only happens to
+	look like the TOPS-20 device designator "mta0:" because a KLH10
+	DEVDEFINE command at startup defined it thusly for convenience.
+	Don't confuse them.
+
+
+DEVSHOW [<devid>]
+	Show information about device definitions.
+	<devid> must be already defined by the DEVDEFINE command.
+	If no device is specified, all are shown; this can be useful.
+
+	If a <devid> is specified, it is queried for whatever information
+	it wants to show.  Currently none show anything, so this form isn't
+	very interesting.
+
+
+DEVUNMOUNT <devid>
+	Unmount device media.
+	<devid> must be already defined by the DEVDEFINE command.
+	This is particularly useful for magtape devices, but is intended
+	to also work for disks someday.
+
+	IMPORTANT!  This command, like DEVMOUNT, can only make a polite
+	request to the device.
+	If the device is busy, the request is ignored immediately
+	with an error message; try again later.
+
+    Example:
+	DUMPER>quit				; Leaving T20 DUMPER pgm
+	@[HALTED: FE interrupt]			; ^\ typed at T20 EXEC
+	KLH10> devunmount mta0			; KLH10 cmd given
+	Unmount requested			; Request looks OK
+	KLH10> c				; Continue KN10
+	Continuing KN10 at loc 01117511...
+	
+	@					; Back at T20 EXEC
+
+
+DEVWAIT [<devid>] [<secs>]
+	Waits until device sub-process(es) are ready to accept new
+	requests.
+
+	If <devid> is specified, only that device is waited for.
+	    Otherwise, all devices are waited for.
+
+	If <secs> is specified, the command will only wait for that
+	    many seconds.  Otherwise, it waits indefinitely.
+	
+	This is primarily intended for use in startup scripts, before
+	(or after) a mount or unmount request is made to a disk or
+	magtape device.  It ensures that further commands are not
+	executed until the devices are ready for them.
+	The likelihood that this will ever be needed is small, but
+	the command exists anyway.
+
+
+DUMP <file>
+	Dump binary from KN10 memory into a native OS file.  This is the
+	inverse of LOAD.
+	Only the first 256K of memory is dumped; the data-format used is
+	the same as the current LD_FMT setting, and the load-format is SAV.
+	Zero words are not written out.
+
+
+EXAMINE [<addr>]
+	Show word at address.  For debugging.
+	Sets the current location ("dot") to the specified address; if no
+	address is given, the current location is used.
+	The PDP-10 word value is printed out.  If it appears to be a
+	valid PDP-10 instruction, it is shown in instruction format as well.
+
+	The <addr> may be "local" or "global"; if in the form <LH>,,<RH>
+	it is assumed to be global.  This can be specified explicitly by
+	prefixing the address with either of the letters:
+		L	- Address is "local" (relative to some section)
+		G	- Address is "global"
+
+	The <addr> can also be prefixed with one of the following letters
+	to specify the memory mapping to use:
+		C	- Current mode's memory map (the default)
+		E	- Exec mode memory map
+		U	- User mode memory map
+		P	- Physical address
+		A	- AC address, interpreted as <AC block #>,,<AC>
+
+	Not all combinations are meaningful in all situations.
+	EXAMINE is always safe; you cannot cause a page fault with
+	an EXAMINE reference.  "??" will be printed if no mapping exists.
+
+
+GO [<addr>]
+	Start KN10 at address.
+	Ignores the current PC and sets it to the address, if one is given.
+	If no address is given, the start address from the most recent
+	"load" command is used.
+
+    Example:
+	KLH10> go
+	Starting KN10 at loc 040000...
+
+	BOOT V11.0(315)
+
+	BOOT>
+
+
+HALT
+	Halt KN10 immediately.
+	Currently this is a no-op because if you're in the KLH10 command
+	parser that means the KN10 is already halted!
+	When the KLH10 allows concurrent execution this will become a
+	meaningful command.
+
+
+HELP [<cmd>]
+	HELP			- Shows brief help for all commands.
+	HELP <cmdprefix>	- Same for all matching commands.
+
+	The HELP command is intended more for remembering commands than
+	for documenting them, so don't expect much.  Keep this reference
+	file handy.
+
+
+LOAD <file>
+	Load binary into KN10, sets start-addr if specified by file.
+	This is how a PDP-10 bootstrap is initially loaded.  The KLH10
+	uses the native OS filesystem as its "front-end" filesystem and
+	can load any required bootstrap directly from ordinary files.
+
+	The binary file must, of course, be formatted correctly with
+	respect to both its data-format (how PDP-10 words are stored in
+	8-bit bytes) and its load-format (typically EXE).
+
+	The default data-format is core-dump, "c36" ("u36" for KSITS version).
+	This can be changed with the command SET LD_FMT=<fmt> if necessary.
+
+	Provided the selected data-format correctly matches that of the file,
+	LOAD is able to determine the load-format automatically (SBLK, SAV,
+	EXE) and determine the start address of the program.  However, if
+	the data-format is wrong, LOAD will blindly load garbage; check
+	to see if the start address it reports looks reasonable.
+
+    Example:
+	KLH10> load boot.sav
+	Using word format "c36"...
+	Loaded "boot.sav":
+	Format: DEC-CSAV
+	Data: 4632, Symwds: 0, Low: 040000, High: 054641, Startaddress: 040000
+	Entvec: JRST (120 ST: 00, 124 RE: 00, 137 VR: 0,,0)
+	KLH10>
+
+
+NEXT-EXAMINE
+	Show next word, for debugging.
+	Increments the current location ("dot") by 1 and then does "examine".
+
+
+PROCEED <#>
+	Single-steps the KN10 by the specified number of instructions.
+	Most useful with TRACE-TOGGLE.
+
+
+QUIT
+	Quit emulator.  Asks for confirmation, since this kills the
+	program entirely.  You should never kill or exit a KLH10
+	process except with QUIT, or there will be a lot of leftover
+	subprocesses and memory segments littering the native system.
+
+	For an example, see the SHUTDOWN command.  You don't have to
+	use SHUTDOWN prior to QUIT if you don't care about stopping your
+	PDP-10 monitor gracefully.
+
+
+RESET
+	Reset KN10.  For debugging.
+
+
+SET [<var>[=<val>]]
+	Set/show KLH10 variables, primarily for debugging.
+
+	SET		- Shows all known variables
+	SET <var>	- Shows value of that variable
+	SET <var>=<val> - Sets variable to specified value.  No spaces!
+
+	Showing all known variables produces a long list; most of that
+	information is of use only when debugging.  The variables
+	that a user might plausibly want to set follow below.
+
+SET SW=<word-value>	- Set KN10 data switches
+	This is sometimes needed for diagnostics or bootstrap loaders,
+	which read the data switches as a crude form of input.
+	Example:
+	    KLH10> set sw=20
+	       sw: 0,,0  =>  0,,20
+	    KLH10>
+
+SET LD_FMT=<data-format> - Set data-format for LOAD/DUMP
+	LD_FMT is a bit of a misnomer; it may be renamed.  It actually
+	refers to the data format.
+	The data format specifies how 36-bit words are read from or
+	written into a sequence of 8-bit bytes.  When 9-track tape drives
+	were introduced a variety of formats were created to address this
+	issue, and these formats have all been provided as options
+	for KLH10 I/O as well.
+	    C36	- "Core-Dump"	 - Default.
+	    H36 - "High-Density" - Most compact format, same as FTP Image.
+	    A36 - "Ansi-Ascii"	 - Weird handling of low bit.
+	    S36 - "SIXBIT"	 - used for 7-track tapes.
+	    U36 - "Unixified"	 - Alan Bawden's archival format
+	See "Tape Formats" in VTAPE.TXT for more details.
+
+SET MEM_LOCK=<boolean>	- Set "ON" to lock emulator in memory
+	If set TRUE, the emulator and all of its subprocesses call
+	mlockall() to ensure that none of them are ever swapped out.
+	You must be running the emulator as root for this to do anything.
+	If used, this should be set prior to defining any devices.
+
+	This results in locking down about 34M of RAM (6M for a KS10)
+	so the overall system should have at least 64M and preferably more.
+
+	!!! WARNING: there is a kernel bug in Digital Unix (up to at
+	least version 4.0B) which can cause the entire system to eventually
+	hang up when mlockall() is used in this way.  It's unclear whether this
+	has been (or will be) fixed in 4.0D or later versions.
+	Solaris does not suffer from this problem.
+	FreeBSD does not implement mlockall().
+
+
+SET PROC_PRI=<pri>	- Set to increase emulator process priority
+	The PROC_PRI parameter gives its argument to the setpriority()
+	call; the valid values range from -20 (highest priority) to 20 (lowest
+	priority).  You may need to experiment with this setting to find the
+	value that gives you the best combination of emulator and general Unix
+	system response; I suggest starting with -10.
+	You must be running the emulator as root for this to do anything.
+
+	Note that the DPNI20 subprocess always runs at -20 to ensure
+	fast network response; to avoid interfering with this, you should not
+	set PROC_PRI to its "maximum" of -20.  -19 is quite enough to give the
+	emulator so much priority that all other Unix system processes are
+	noticeably slower.
+
+
+SET CLK_ITHZFIX=<hz>	- Set to specify interval timer clock resolution
+	The CLK_ITHZFIX parameter fixes the KN10 clock tick rate in
+	Hz (ie ticks per second).  This originally defaulted to 30Hz as a
+	compromise designed to allow the emulator to run on slower hardware
+	platforms without spending all its time processing clock interrupts.
+	However, faster platforms can now handle the full clock rate that
+	TOPS-10 or TOPS-20 expects, so the default is now 60Hz.  You have the
+	option of changing this parameter to either enforce a different rate,
+	or (by setting it to 0) allowing the monitor to change the rate as it
+	pleases.
+	Recommendations:
+	- If running on slow hardware you may need to set this back
+		to 30 in order to get useful work done, regardless of
+		the PDP-10 system being used.
+	- For stand-alone processor diagnostics, set (or leave) this at 60.
+		This is particularly true for the DFKFB timing test.
+	- For ITS set (or leave) this at 60.  This is the normal clock rate.
+	- For TOPS-20 try setting this to 0.  The monitor's desired
+		rate is 1000 and system response on a fast machine may
+		improve since the scheduler will be invoked much more often
+		and its overall behavior will be closer to that of a real KL10.
+		If things seem slower, use a smaller value like 100 or 60.
+	- For TOPS-10 set (or leave) this at 60.  This is the monitor's
+		normal clock rate, and it is NOT recommended to let it
+		free-run with 0.
+		The reason is that the TOPS-10 monitor twiddles the interval
+		incessantly in a futile attempt to compensate for what it
+		thinks are deviations when compared to the real-time base
+		clock.  "Fixing" the rate at 60 keeps it stable.
+
+SHUTDOWN
+	Halt OS gracefully.
+	This only works with a moderately healthy PDP-10 monitor.  It
+	deposits -1 into location 30 and continues the KN10.  The monitor
+	is supposed to notice this, carry out final shutdown operations, and
+	then execute a HALT instruction, which returns control to the
+	KLH10 command loop.
+
+    Example:
+	Shutdown complete			; Printed by PDP-10 OS
+	[HALTED: FE interrupt]			; ^\ typed to get FE int
+	KLH10> shutdown				; Now can give SHUTDOWN cmd
+	Continuing KN10 at loc 01117511...
+	**HALTED**
+	[HALTED: Program Halt, PC = 1120252]
+	KLH10> quit				; Now give QUIT to leave KLH10
+	Are you sure you want to quit? [Confirm]
+	Shutting down...Bye!
+	%
+
+
+TRACE-TOGGLE
+	Toggle execution trace printout.  For debugging.
+
+
+VIEW
+	View KN10 status (PC, etc).  Primarily for debugging, but
+	harmless for the curious.
+
+    Example:
+	KLH10> view
+	KN10 status: EXEC
+	  PC: 1117506  [JPC: 1117513  UJPC: 30144  EJPC: 6126407]
+	  Flags: 704040
+	Next: OCcID  1117506/ SKIPE 333013      333013/ 0
+	KLH10>
+
+	A little explanation: the JPC is the PC of the last jump instruction.
+	UJPC and EJPC hold the JPC as of the last transition out of user
+	or exec mode, respectively.  The flags are the left-half PC flags;
+	the "Next:" line shows the next instruction that will be executed
+	when the KN10 is continued.
+
+
+ZERO
+	Zero the first 256K of memory.  For debugging.
+
+
+^-EXAMINE
+	Show previous word, for debugging.
+	Decrements the current location ("dot") by 1 and then does "examine".

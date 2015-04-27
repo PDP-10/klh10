@@ -1,0 +1,195 @@
+/* CODING.TXT - General coding rules for KLH10
+*/
+/* $Id: coding.txt,v 2.4 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+KLH10 General coding rules
+
+
+STYLE AND STANDARDS
+===================
+
+	The style rule is simple: use the existing style.  There is no
+religious reason for this particular style, but it is always best for
+edits and additions to remain consistent with what's already there.
+
+All code should conform to the first ANSI C Standard (ANS X3.159-1989,
+also called the 1990 Standard).  Do not use or assume features from
+later versions of the C Standard, or from any specific compiler,
+unless conditionalized such that everything will still build without
+those features.  This specifically includes pragmas; none are
+currently used.  Similarly, the "long long" datatype cannot be assumed
+to exist.
+
+Do not use C++.  Eventually this may become unavoidable for GUI
+wrappers, but the existing core code must remain in C.
+
+Simply using ANSI C is not enough to ensure code is portable.  You
+must also be careful about any assumptions regarding the host CPU:
+little-endian vs big-endian, integer type sizes, printf arguments, and
+so on.  This is a long and complex topic that boils down to "don't do
+stupid things".
+
+
+PORTING AND OSD CODE
+====================
+
+	OSD means "Operating System Dependent".  To make it easier to
+port the KLH10 to new platforms, all system calls or non-ANSI library
+facilities should be encapsulated within one or more of the OSD*.C
+modules, and accessed only by facilities with an "os" name prefix.
+The bulk of this code is presently in OSDSUP.H and OSDSUP.C, which is
+dedicated to the KN10 component and not used by any other programs.
+
+The only exceptions are DPSUP.C and the separate DP* programs that use
+it, but even those may be changed in the future to follow the same
+conventions.
+
+This should be done even for system calls that are considered
+"standard" for all Unix systems, such as read(), because of the
+existence of certain popular non-Unix platforms.
+
+New platforms will almost certainly require new Makefiles.  Try to
+follow the scheme already in place.
+
+
+WORD MANIPULATION
+=================
+
+	NEVER, ever, operate on a PDP-10 word (w10_t) except with the
+macros provided from k10ops.h and word10.h.  The only things you can
+do to words without macros are pointing to them (&) or copying (by
+assignment or parameter passing).
+
+The KLH10 is designed to be portable to environments where the longest
+native integer type is 32 bits, so a w10_t may actually be a structure
+or union rather than an integer.
+
+An important ramification of this is that any arithmetic done on
+values that might exceed 32 bits must always provide special handling;
+you cannot merrily assume that a sufficiently large "long long" will
+always be available.  Even when it is, the "native" arithmetic may not
+be as efficient as a 32-bit algorithm!
+
+
+ARG/RET CHECKS
+==============
+
+    An important rule for macros and functions:
+	Arguments are always *assumed* to be correctly formatted or masked.
+	Results are always *guaranteed* to be correctly formatted or masked.
+
+This is important in order to maintain consistency and avoid redundant
+operations.  The rule permits incorrect values to be generated or
+maintained, as long as they are corrected before being given to other
+facilities.
+
+There are only two known exceptions to this rule: mr_PC and E.
+	* mr_PC is not masked during the normal execution loop, to save time.
+		This may change for the KLX version.
+	* E is not masked when provided to instruction routines, also to
+		save time where the mask isn't needed.
+
+
+FLOATING POINT
+==============
+
+	Do not use it.  No native implementation corresponds exactly
+with that of the PDP-10, and floating point results are inherently
+unportable, especially for extreme operands that may even trap.
+
+	In theory it may be possible to accelerate some PDP-10
+floating point operations with carefully selected uses of native FP
+operations or libraries, but this will take a VERY large amount of
+work to verify that the results remain bit-identical with those of a
+real PDP-10.
+
+
+CODING INSTRUCTION ROUTINES
+===========================
+
+    All instruction routines must be declared in this way:
+
+		insdef(i_xxx)
+		{	/* Function code */
+		}
+
+The "insdef" macro declares the function with the following three args:
+	int op;		/* 9-bit opcode of instruction */
+	int ac;		/* 4-bit AC field of instruction */
+	vaddr_t e;	/* Effective Address calculated from I(X)Y */
+			(WARNING! for KS10 may have junk in high bits!)
+
+	The op and ac values have already been masked.
+	Note that someday "op" may go away.
+
+
+All memory references should be checked BEFORE anything is modified
+either in memory or the ACs!  Actually, it is good practice to verify
+the memory reference before even starting the computation, especially
+if there's a chance that PC flags such as TRAP1 might be set.
+This ensures that abnormal termination (due to page failure or PI
+interrupt) doesn't leave anything messed up.
+Exceptions are BLT and IDBP/ILDB which know how to back out.
+
+Normal memory operand reads and writes should be done with:
+	word = vm_read(e);	- Read word, may page-fail!
+	vm_write(e, word);	- Write word, may page-fail!
+
+	Halfword variants vm_{read,write}{lh,rh}() also exist, but note
+	that they operate on h10_t integer values, not w10_t words.
+
+If the same memory location is to be read-modified (both read and
+written) then these should be used:
+	vmptr_t p;
+	p = vm_modmap(e);	- Get phys mem ptr (may page-fail!)
+	word = vm_pget(p);	- Read word from phys mem (won't fail)
+	vm_pset(p, word);	- Write word to phys mem (won't fail)
+
+BLT, Stack, and Byte operations do special-case memory referencing to
+allow for previous-context mappings by PXCT.
+
+AC reads and writes are done with:
+	word = ac_get(ac);	- Read AC
+	ac_set(ac, word);	- Set AC
+
+	Halfword AC reads and writes have ac_{set,get}{lh,rh}()
+	but note that they operate on h10_t integer values, not w10_t words.
+
+Multi-word operations (in particular the double-word instructions) must
+reference each word individually, because AC+1 may wrap around (modulo 020)
+and E+1 may likewise either wrap or cross a page boundary.
+
+The return value is added to the PC, so normally this will be 1
+except for jumps (0) and skips (2).  The macro definitions PCINC_n
+are used for this purpose; someday they may have different values.
+
+Instructions which set any of the PC flags should do so with the macro
+		PCFSET(flags)
+to ensure that various transition subtleties are handled properly.
+
+
+PRINTF ARGS
+===========
+
+	This is a generic portability tidbit.  All printf-style
+references to integer variables of unknown size (that is, defined by
+typedefs) must promote the value to long and use %l in the format
+string.  In particular, h10_t and vaddr_t types require this.
+
+
+MISCELLANY
+==========
+
+	To keep some strict compiler modes happy, all functions with
+external linkage must have a prototype declaration prior to their
+definition.  This is not needed for static functions, unless of course
+they are referenced prior to their definition.

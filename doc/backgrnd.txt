@@ -1,0 +1,402 @@
+/* BACKGRND.TXT - KLH10 Background Commentary
+*/
+/* $Id: backgrnd.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+FAIR WARNING:
+	You don't need to read this file.  It has nothing of
+	interest to most users.  Hackers, however, may like it.
+
+	It is mostly a rambling commentary on the KLH10 code that attempts
+	to explain why things are the way they are, and speculate on how
+	they might be.
+	And like the code itself, this is an incomplete work in progress.
+
+
+	As you read the source you will notice that some parts are
+rather simplistic and specific, while others are too complex and
+generalized.  Many things are not fully implemented, and many others
+are over-implemented.  Sometimes there are good reasons for this and
+other times that's just how it ended up when I ran out of time during
+one development phase or another.
+
+A little history may help set the context:
+
+HISTORY
+=======
+
+	From an outside viewpoint there have been essentially two
+major KLH10 versions: the first being a "toy" KS10 emulator (V0.x),
+and the second a commercial KL10B emulator (V1.x).  Internally, of
+course, many more versions have existed as part of a long incremental
+development process.
+
+[XXX: Flesh out later]
+
+	Roots - PDP-10 arithmetic package for KCC cross-compiling.
+	First version - KS10 running ITS, then TOPS-20.
+		Synchronous device model.
+	DEC intervention - KL10B version on Alpha, commercial use.
+		Extended addressing, KL devices.
+		Device subprocess model.
+	Merged version - KS and KL, shared devices.  Intended for
+		Public ITS systems.
+	Source release - cleanups, multiple tape format support, etc.
+
+
+PRIORITIES
+==========
+
+	Once the decision was made to pursue a commercial KL10B
+emulator, KLH10 design and implementation was driven by four main
+priorities, in the following order of importance:
+
+	[1] Accuracy
+	[2] I/O Performance
+	[3] Stability & reliability
+	[4] Portability
+
+[1] Accuracy
+------------
+
+	The most important goal was implementing an accurate
+emulation, with two facets.  Not only did the emulator have to run
+existing TOPS-10 and TOPS-20 monitor binaries as-is, it also had to
+emulate a KL10B accurately enough for users to run their applications
+and get exactly the same answers as before.  Otherwise, it would be
+worthless as a product.
+
+This is a matter of judgement since perfect emulation is impossible,
+but there is a huge difference between the initial "toy" KLH10 that
+first ran ITS and the current one.  By far the vast bulk of the work
+went into the task of making the emulator behave correctly, certainly
+much more than into making it "fast".
+
+There were many problems.  Some were difficult simply because of their
+complexity, but the hardest were the ones where the documentation was
+simply wrong or ambiguous in describing how a real KL10B behaved.
+Even access to the microcode was not much of a help, since much of the
+KL logic was actually implemented in hardware.
+
+Some of the issues encountered:
+
+	- Extended addressing idiosyncracies, esp with PXCT
+	- EXTEND instructions - many ambiguities
+	- Floating point - hardware garbage
+	- RH20 and DC10 emulation (more "Adventures in RH20-Land")
+	- DTE 10-11 device emulation
+	- NI20 emulation
+	- Monitor race conditions
+
+The DTE and NI20 are particularly complex since in reality those
+devices were self-contained processors in their own right.
+
+Of course, for practical reasons not everything could be emulated; see
+the file "kldiff.txt" for details on the differences between the KN10
+and a real KL10B.
+
+
+[2] Stability & reliability
+---------------------------
+
+	For this kind of product to be worth something, it has to work
+and keep working.  The more problems I ran into while developing it,
+the more paranoid I became about making possibly destabilizing
+changes.  In particular, once it was deployed to clients I tried to
+make only those changes that were absolutely necessary for one reason
+or another.
+
+I did build a large battery of tests to help verify whether or not the
+internal KN10 processor was accurately emulating a real KL10B, as well
+as a variety of device operations.  These regression tests are still
+very helpful, but they do not catch everything; they are good only up
+to a point.
+
+As a result, once code was proven to work, it tended to remain
+relatively static from there on.  Only with the KLH10 source release
+and its availability to many more potential testers did I feel safe in
+finally starting many long delayed cleanups.
+
+What this means is that the V2.x sources you have are not the same as
+the commercial V1.x versions.  They are intended to be better, but
+have not undergone anything close to the same amount of testing and
+verification.  At some point, of course, V2.x should be stable enough
+that it can replace V1.x with minimal perturbations.
+
+
+[3] I/O Performance
+-------------------
+
+	The biggest problem with the initial toy KLH10 was its lack of
+asynchronous I/O; this meant that any device I/O would always be
+"instantaneous" in the sense that all CPU operations would block
+completely until the I/O was finished.  The CPU blockage is okay for a
+single-user personal system, but unacceptable for a true time-sharing
+system and completely prohibitive if trying to support real magnetic
+tape drives.
+
+The solution adopted was to implement devices as separate Unix child
+processes (the DP filename prefix stands for "Device Process"), allowing
+them all to run independently and asynchronously.
+
+[XXX: flesh out a bit more]
+
+
+
+[4] Portability
+---------------
+
+	While always desirable on general principles, portability is a
+somewhat idealistic goal -- there is no absolute requirement for it,
+unlike the other issues.  The main reason the emulator remains
+portable is because I wanted it that way in preparation for the day
+when it could be distributed.
+
+There is nothing in the KLH10 code that requires an integer
+type larger than 32 bits, nor does it require any features not found
+in ANSI C.  In fact, for a long time it did not even rely on ANSI
+features either.
+
+At the time it was first written, this was an inescapable requirement
+because 64-bit types, not to mention ANSI compilers, were few and far
+between; even GCC's "long long" had early bugs.  With the Alpha
+version 64-bit code became possible, but nothing has ever relied on
+it.
+
+This is why every reference to a PDP-10 word or value is done by means
+of a macro.  Even on platforms that support 64-bit types, the
+architecture sometimes works better when restricted to 32 bits.
+
+From the viewpoint of OS (rather than CPU) portability, the code again
+tries to rely on ANSI C library functions rather than UNIX system
+calls, but it is fair to say that most of the existing OS-dependent
+support is Unix oriented, especially for the real-time asynchronous
+version.  Fortunately with the advent of true operating systems for
+both MacOS (X) and Windows (NT, 2K, XP), this should less of a problem
+in the future.
+
+
+Non-issue: CPU speed
+--------------------
+
+	It may seem odd to people who have not run a business or
+service, but the speed of the emulated PDP-10 has never been a real
+issue.  In practice clients have just picked a hardware platform that
+provides acceptable performance, and as soon as their systems are up
+and working, they prefer to see as little change as possible.  There
+is little compulsion to upgrade with faster or more featureful versions
+unless something is actually broken, which should only happen if the
+platform OS is upgraded to yet another incompatible release.
+
+
+
+MAJOR DESIGN ISSUES
+===================
+
+C vs Assembler 
+--------------
+
+	The notion of a PDP-10 emulator had been bouncing around for
+some time before I decided to embark on the project, and performance
+was always the number one issue; it was not clear whether it could be
+made to execute PDP-10 code fast enough to be useful.  A typical
+workstation was a 33MHz SPARC-2, and the x86 PCs were still 386s.
+Several people felt the best way to achieve this was to pick a host
+architecture (SPARC or the forthcoming Alpha) and code in assembly
+language.
+
+As a long time PDP-10 assembler fan, this approach appealed to me as
+well, but eventually I came to the conclusion that this would be best
+attempted in C, for two major reasons:
+
+    - Portability.  After having engineered a major porting effort
+	from TOPS-20 to Unix while at SRI, I never wanted to be locked
+	into a specific machine architecture again.  Oracle's
+	extremely impressive porting system provided additional
+	conviction that this was the right approach.
+
+    - Implementation time.  It was much faster to write in C than
+	assembler, especially for RISC-based machines.
+
+There was also a third, subjective reason -- at the time, Stu Grossman
+was writing a simple prototype in C called "KX10".  While I was unable
+to use anything from it, it did convince me that C was the right way
+to go, and as far as I know Stu was the first to attempt it.
+
+As it turned out, this decision also proved to be the right one in
+terms of performance.  I had anticipated that keeping the code
+portable would eventually lead to "free" performance gains as hardware
+improved over the years, and that was in fact the case.  But one other
+factor surprised me: C code was sometimes faster than assembly code!
+
+It took a while to realize that for the new RISC-based machines with
+pipelines and caches, new rules applied; often the C compiler provided
+with a machine would know about tricks or scheduling rules that not
+only were difficult for a human to code by hand, they also could
+change from one machine to the next.  While doing timing tests on
+initial versions of the emulator, I found performance so sensitive to
+tiny and logically unrelated changes that I finally gave up worrying
+about it.
+
+In retrospect all this may seem obvious, but it was not so at the
+time.
+
+
+Instruction Execution Loop
+--------------------------
+
+	The decision to use C posed some problems with respect to
+control flow.  The microcode of real machines is like a huge plate of
+extremely sticky spaghetti where every "instruction" has a jump
+address that can go anywhere else, plus a bunch of chopsticks stirring
+the mess up with external interrupts and asynchronous device
+operations.
+
+By contrast, C favors the use of separately defined functions with a
+stack-based calling convention, and control flow strongly favors using
+the normal call-return mechanism.  It is possible to bypass the latter
+with "longjmp" type invocations, but you can only jump to pre-existing
+contexts and the mechanism can be very expensive.  For someone used
+to the freedom of assembly language, this is very frustrating.
+
+Without going into all possible ways of implementing a PDP-10 emulator
+in C, there appeared to be two main choices:
+
+    - Stuffing as much as possible inside a single huge function.
+	Normally this would involve using a large switch() statement
+	for instruction dispatch, plus assorted gotos to accomodate
+	weird control flow issues.
+
+    - Looping within a small function and dispatching to each
+	instruction as a function call.
+
+(Note that the PDP-10 has one characteristic that makes things a
+little easier -- every instruction must always calculate an effective
+address regardless of whether it is used or not, so this naturally
+leads to building an instruction execution loop with the EA
+calculation as its central focus.)
+
+The KN10 code uses the latter approach for a number of reasons, some
+of which no longer apply.  When it was first written, compilers still
+existed that had problems with very large switch statements, and even
+now it is still considered easier for them to optimize a function if
+it does not contain "goto" statements.  Keeping instructions in
+separate routines also made it easier to invoke them explicitly as
+needed (for XCT, PXCT, etc), examine their assembler output to see
+what was being produced, and step through them with a debugger.
+
+This is almost certainly not an optimal design for speed.
+
+
+PDP-10 Word Representation
+--------------------------
+
+[XXX - some stuff about the tradeoffs, from word10.h]
+
+
+FUTURE DIRECTIONS
+=================
+
+	Since the odds of new commercial applications showing up are
+essentially nil, whatever happens next will be entirely up to the
+PDP-10 hacker community.  It will either evolve with their help or
+quietly go away without it.
+
+Recently a number of other PDP-10 emulators have finally appeared,
+most or all of which have the KS10 as a target.  I have not yet looked
+at them (partly to avoid contamination) and so have no basis for
+comparison, but in general I think multiple KS implementations are a
+good thing, and as software tools improve it should become easier.
+The KS is a fairly clean yet respectable machine that would make an
+excellent semester project, and was fun to do.  The more people who
+can get their hands dirty, the better.
+
+The KL10 by contrast was much harder, and definitely not fun.  I hope
+that with the KLH10 release no one else will have to go through that
+nightmare, or at least will be able to start from a far better place.
+
+
+FUTURE KLH10 IMPROVEMENTS
+=========================
+
+The wish-list stack has always been a mile high.  Here's a bunch of
+stuff off the top of my head, in no particular order.
+
+- Multi-processing extensions:
+	- Decouple FE from KN10.
+	- Allow other user processes to examine KN10 state and manipulate
+		devices (especially virtual magtapes) without requiring
+		console access.
+	- Re-investigate threading (very carefully; very unportable).
+
+- The UI sucks:
+	- Improve present UI, add editing.
+	- Allow input scripts to feed OS console at startup.
+	- Add GUI interfaces:
+		- 340 display (Spacewar lives!)
+		- FE/Console (KA10 panel with blinkenlights!)
+		- Magtape UI
+		- CPU and device visualizations
+
+- Accuracy improvements:
+	- Get rid of the last low-bit FDV divergence, even
+	  though that may reduce mathematical accuracy.
+	- Implement address break (optional - very slow).
+
+- Raw performance:
+	- Develop better performance metrics (TenStones?  DECmarks?).
+	- Speed up floating point (DFDV is far and away the
+		slowest instruction).
+	- Alternative word representations.
+	- EA calculation and memory mapping (most of the CPU is burned
+		on this, I believe).
+	- Characterize workload to determine true bottlenecks.
+	- Alternative instruction loops:
+		- Hybrid switch & dispatch
+		- Hand-coded assembler (x86 primarily)
+	- Locality improvements; must match to host cache setup.
+	- Autoconf mechanism to run tests on host and automatically
+		select optimal build configuration.
+
+- Network support:
+	- Add AN10 device, couple with IP tunnels like "tun".
+	- Determine OS mods to allow self-connection for systems that
+		currently can't do it (Linux, FreeBSD, Solaris).
+		Get mods incorporated in standard releases.
+
+- Magtape support:
+	- Finalize tape naming conventions.
+	- Non-console access (cf UI above).
+	- Finish in-memory support.
+	- Add update capability.
+
+- Emulator extensions:
+	- Finish KA10, KI10 versions.  TENEX pager.  WAITS?
+	- Emulate SC-40 and/or XKL (more "physical" memory).
+	- Additional devices (many!)
+		- DH11 (KS10), or extend DTE (KL10)
+		- AN10 (IMP interface)
+		- DX20, CI, ...
+	- Emulate NCP with IMP interface for older OSes.
+
+- PDP-10 software:
+	- Public ITS support.
+	- Further KN10-conditionalized OS mods.
+	- Resurrect older KA/KI OSes.
+	- GCC on KL (Lars).
+
+- Distribution:
+	- Add HTML versions of doc.
+	- Better build mechanism.
+	- Permission for Public ITS distribution (legal hoops).
+	- Packaged ITS filesystems.
+	- Packaged DEC OS filesystems.
+	- Packaged NIC/Stanford filesystem.

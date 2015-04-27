@@ -1,0 +1,118 @@
+/* DVHOST.TXT - The special HOST device
+*/
+/* $Id: dvhost.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1997-1999, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+THE "HOST" DEVICE
+
+	This is not a real device, nor is it anything that ever
+existed on a real PDP-10.  Rather, it is a pseudo-device which serves
+as a simple API to request services or information from the emulator.
+It is called "HOST" to emphasize that its status or I/O represents
+communication with the native host platform that the emulator is
+running on.
+
+
+"HOST" DEVICE CONFIGURATION
+
+	As for other devices, the DEVDEFINE command must be used
+(typically as a line in "klh10.ini") to associate the HOST device with
+either a unibus address (for the KS10) or a PDP-10 device number (for
+all other models).  This needs to be a device number or address that
+is not otherwise used by something else, and any monitor modifications
+that refer to this device must use the same number or address.
+
+    KL10 example:
+
+		devdefine idler 700 host	; PDP-10 device 700
+
+	where "host" specifies the HOST device; "idler" is a name
+	of your own choosing, and 700 is simply a device number that
+	does not conflict with any standard DEC devices.
+
+    KS10 example:
+
+	devdef idler ub3 host addr=777000
+
+	where "host" specifies the HOST device; "idler" is a name
+	of your own choosing, and "ub3" plus "addr=777000" specifies
+	a unibus address that should not conflict with any standard
+	DEC devices.
+
+There are currently no configuration parameters associated with the HOST
+device, and only one such device can be defined.
+
+
+KL10 "HOST" DEVICE USAGE
+
+	Although any of the four basic PDP-10 I/O instructions (CONI,
+CONO, DATAI, DATAO) can be used with this device, only one specific
+instance is currently meaningful, and its use is very simple.
+
+    IDLE FUNCTION:	CONO <hstdev>,1
+
+	The emulator process will enter an "idle" state with respect to the
+	host system, until a PI (priority interrupt) event occurs.  During
+	this state no host CPU time is consumed emulating PDP-10 instructions,
+	although device subprocesses are still free to run.  Instruction
+	execution will resume with a dispatch to the appropriate PI
+	interrupt handler, which should eventually return to the next
+	instruction following the CONO.
+
+All other I/O instructions will behave as if the device was
+non-existent.  A CONO with an E != 1 will be a no-op, as will DATAO;
+CONI and DATAI simply read a zero word.  However, new functions can
+obviously be readily added as the need arises.
+
+
+KS10 "HOST" DEVICE USAGE
+
+	To invoke the "idle function" on the KS10, just write the
+value "1" to the device's unibus address.  The exact IO instruction
+used to do this should not matter.
+
+
+MONITOR PATCHES FOR THE "IDLE" FUNCTION:
+
+	In order to effectively use the HOST "idle" function, you must
+determine the right place to patch your monitor to use it -- the point
+in the scheduler where the system decides there isn't anything it can
+do and begins to run the "null job".
+
+For a TOPS-20 V7 monitor the most appropriate patch is to replace the
+instruction at SCDNL1-1 in SCHED.MAC (a JRST SCDNL2) with the "IDLE"
+function instruction.  In context:
+
+		SCDNUL:	SETOM NULJBF
+		SCDNL2:	    ...
+			<null job stuff>
+			JRST SCDNL1	; Something to do.
+			JRST SCDNL2	; Replace with CONO <hstdev>,1
+					; which will fall through when there's
+					; any PI activity.
+		SCDNL1:	<start of sched cycle>
+			...
+
+For a TOPS-10 monitor I would suggest replacing the instruction at
+NULCOD+1 in CLOCK1.MAC (a SOJG 6,1) with the "IDLE" function
+instruction.  However, this has not been well tested and there may be
+a more appropriate place.
+
+You can verify whether this function is working by observing the
+process CPU usage on the host system.  As long as the KN10 is not
+running the monitor's null job, the emulator will be using as much CPU
+time as possible -- as much as 95% on an otherwise lightly loaded
+single-CPU system.  But when the monitor has nothing to run and the
+KN10 is effectively idle, the emulator's CPU usage should drop to
+perhaps 5%.  It will never be completely zero because all monitors
+always maintain a clock interrupt that drives periodic updates and
+scheduler checks.
+

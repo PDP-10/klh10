@@ -1,0 +1,112 @@
+/* README - README file for KLH10 Distribution
+*/
+/* $Id: klh10.rdm,v 2.2 2001/11/10 10:41:40 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+Please read the LICENSE file for the full license terms.  Although
+there are no specific restrictions on use of this software, some rules
+do apply for modification and re-distribution.  Note that these terms
+do not apply to files in the "run" and "contrib" directories, which
+may have each have different terms and are distributed separately to
+avoid licensing complications (see the READaux file if you have
+extracted the Auxiliary Distribution).
+
+While not part of the license terms, I would like to ask that any
+commercial or institutional users who derive benefit from this
+software consider arranging for a modest support agreement.  Without
+the income from a handful of commercial licensees, it would have been
+completely impossible to justify the time that went into developing
+and testing this product.
+
+Of course, this software comes "as is" with no guarantees whatsoever,
+and with ABSOLUTELY NO WARRANTY.  This is particularly true for this
+Distribution, which is NOT the same as the V1.x commercial version; I
+took the opportunity to make several substantial cleanups and
+additions which have yet to be thoroughly verified and tested.  There
+are still some known issues with certain platforms, but I've decided
+to proceed with this release now rather than postpone it indefinitely
+in the perpetual pursuit of perfection.
+
+		---------------------------------
+
+Now, if you're the impatient type who wants to get on with it, go
+straight to:
+
+	doc/install.txt
+
+But if you're the rarity who likes to read everything first, I
+recommend starting with:
+
+	doc/Intro.txt
+
+Please send me any bug fixes (preferably conditionalized for clarity),
+as well as any ideas for improving the distribution itself.
+Undoubtedly there will be many.  I can't promise I will be able to
+incorporate all of them in a timely fashion since my clients and
+family will always have first priority, but will do my best.
+
+Thanks!
+	--KLH
+
+Net:   <klh@alum.mit.edu>
+Snail: 759 Torreya Court, Palo Alto, CA 94303-4160
+
+		---------------------------------
+
+CREDITS, THANKS, ACKNOWLEDGEMENTS
+
+    I'm not sure where to put this but figure the README is
+    prominent enough.
+
+While I am responsible for all of the KLH10 software and documentation
+as of this distribution, there were many people along the way who,
+whether they knew it or not, helped make it happen.  Everyone who uses
+this software owes them a debt of gratitude!
+
+First, the list from the original KS10 version:
+
+    Stu Grossman, for convincing me that a C version was feasible.
+    Alan Bawden & Dave Moon, who (apart from their already legendary
+	roles in ITS) helped as much as they could without actually
+	being there.
+    Jay Verkler, who provided a MIT-AI lab environment within Oracle.
+    And everyone else on the ITS-LOVERS and TOPS-20 lists whose messages
+	and actions have helped keep PDP-10s alive.
+Plus:
+    Mark Crispin, without whom it would never have run TOPS-20.
+    Rob Austein, for lots of network and porting help; the "tun" IMP code
+	is based on his work.
+
+Now, for the KL10 version:
+
+    Andy Riebs and Maurice Marks, who championed the KL project at DEC.
+    Larry Sendlosky, who more than anyone else is responsible for
+	the success of the KL10 version.  While at DEC he dug up
+	whatever was needed, built and tested innumerable configurations,
+	and went into the field to pitch and support the emulator.
+    Doug and Christina Engelbart, and the rest of the Bootstrap group,
+	for preserving the SRI-NIC DEC-2065 just long enough.  Without
+	a working KL and filesystem it would have been much harder.
+    Duane Winkler, for taking a chance.
+    Bill Parsons, David Alspaugh, Dennis Horn, Holly Sue White, 
+    Jim Saleh, Mary Coppernoll, Raylene Pak, Tom Jenkins, Tom Saleh,
+	and many unknown others for using it and shaking the bugs out.
+
+And finally:
+
+    Doug Humphrey, who supported the merge and Public ITS work.
+    Bob Supnik, who made it possible to release the sources.
+    Lars Brinkhoff, for inspiration and release testing.
+    Tim Shoppa, for his preservation efforts and release hosting.
+    
+If I've inadvertently left anyone off, please let me know.
+
+Thanks again!

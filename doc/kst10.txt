@@ -1,0 +1,16 @@
+/* KST10.TXT - KS TOPS-10 system startup on KLH10
+*/
+/* $Id: kst10.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+    [NOTE: Eventually this will describe how to install a KS TOPS-10 system
+    from an installation tape.  For the time being, see
+    klt10.txt instead.]

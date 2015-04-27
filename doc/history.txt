@@ -1,0 +1,426 @@
+/* HISTORY.TXT - KLH10 Historical notes
+*/
+/* $Id: history.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+The following two messages were sent when the first version of the
+emulator was announced.  Although I always cringe a bit on reading
+things from my younger self, I've included them as historical
+documentation because of the glimpse they provide back into a more
+innocent time when this was all just terrific fun.  No kids, no gray,
+no NDAs, no licenses, and no lawyers.
+
+
+Date: Mon, 20 Jul 1992 23:51:04 BST
+From: Ken Harrenstien <klh@us>
+To: its-lovers@mc.lcs.mit.edu, tops-20@wsmr-simtel20.army.mil
+Cc: klh
+Subject: One small step, one giant leap 
+Message-Id: <CMM.0.88.711701464.klh@churchy.us.oracle.com>
+
+On this anniversary of a truly historic moment, I would like to announce
+a somewhat smaller event which may loom the larger for being closer to
+our hearts.
+
+	stealth.us.oracle.com% telnet nx.us.oracle.com
+	Trying 139.185.5.134 ...
+	Connected to mit-nx.us.oracle.com.
+	Escape character is '^]'.
+	Unknown ITS PDP-10
+	
+	NX ITS.1645. DDT.1545.
+	TTY 11
+	2. Lusers, Fair Share = 136%
+	klh$u
+	*peek^K!
+	
+	NX ITS 1645  Peek 629   7/20/92 23:02:48  Up time = 2:15
+	Memory: Free=381   Runnable Total=83 Out=71    Users: High=6 Runnable=1
+	Index Uname Jname Sname     Status   TTY    Core Out %Time    Time PIs
+	  0 SYS    SYS    SYS        HANG    ?        51   0   0%        4  
+	  1 CORE   JOB    CORE       UUO     ?         0   0   0%           
+	  2 KLH0   HACTRN SYS        TTYI    T0       30   9   1%           
+	  3 11TLNT TELSER 202405     SLEEP   ?         1   0   0%           
+	  4 KLH    HACTRN KLH        HANG    >        30   9   0%           
+	  5  KLH    PEEK   KLH       +TTYBO  T11 C    83  71   7%           
+	Fair Share 135%     Totals:                  195       9%        7
+	Logout time = 2       Lost 0%  Idle 98%  Null time = 2:14
+	
+	
+	A
+	NX ITS 1645  Peek 629   7/20/92 23:02:50  Up time = 2:17
+	IMP is up.   TCP/IP is available.
+	Ix Usr Uname  Jname  State   RWnd Ibf SWnd ReTxQ Lclprt Fgnprt Fgnhst
+	34   3 11TLNT TELSER OPEN    5170  0 10000 0   0     27  10107 139.185.5.5
+	4 buffers (4 free)
+	
+	STY Map
+	    Idx    STY owner   Idx    STY user    Host
+	T11   3 11TLNT TELSER    5 KLH    PEEK    139.185.5.5 (TCP)
+	
+	Q
+	:KILL 
+	*$$u
+	NX ITS 1645  Console 11 Free. 23:03:13
+	
+	telnet> q
+	Connection closed.
+	stealth.us.oracle.com% 
+
+
+Yes, NX is a real, live, internet-host ITS assembled from the final
+snapshot of AI.  So here's the punch line...
+
+***There is no KS-10.***  NX is running on a "KLH-10" -- a virtual PDP-10.
+
+Over the past two months I was finally able to put everything together
+to create a complete PDP-10 emulator, including all necessary devices
+(RP06, TM03, console, IMP); to distinguish it from a real DEC machine
+I'm calling it a KLH-10 per Alan Bawden's suggestion.  The current
+version is completely in C and should eventually be portable to most
+platforms, but at the moment NX's host machine is a 33Mhz SUN Sparc-2
+workstation sitting on my desk.
+
+It's a long story with many more details and ramifications, all of which
+I'll put off for later.  Although I wrote it entirely on my own, it would
+never have happened without many people who I'd like to thank here:
+
+	Stu Grossman, for convincing me with his KX-10 that a hardware
+emulation in C was feasible.
+	Alan Bawden & Dave Moon, who (apart from their already legendary
+roles in ITS) helped as much as they could without actually being there.
+	Jay Verkler (JLV), who with his group has re-created an AI lab
+work environment within Oracle.  It's called the Network Products Division
+and made this hack possible.
+	Plus everyone else on these lists whose messages and actions
+have helped keep the PDP-10 alive in spirit and reality a little
+longer... may it now live as long as we wish!
+
+--Ken
+
+23-Jul-92 20:25:01-GMT,15781;000000000001
+Received:  by churchy.us.oracle.com (5.59.11/37.7)
+	id AA19272; Thu, 23 Jul 92 21:24:48 BST
+Date: Thu, 23 Jul 1992 21:24:47 BST
+From: Ken Harrenstien <klh@us>
+To: its-lovers@mc.lcs.mit.edu, tops-20@wsmr-simtel20.army.mil
+Cc: klh
+Subject: KLH10 info 
+Message-Id: <CMM.0.88.711951887.klh@churchy.us.oracle.com>
+
+OK, here are some more details about the KLH10.  I've been a bit
+overwhelmed by the many private responses and hope this answers most of
+the questions.
+
+First, the FAQs I've been getting:
+
+    * "When/How can I get a copy?"
+	Ouch, probably not until after Interop (Oct).  It kills me to say
+	this, but my time *is* limited.  (The usual bribes might help :-)
+	RMS has suggested distributing it via GNU/FSF, and I like that idea.
+
+    * "Will it run <my favorite PDP-10 OS>?"
+	Anything based on the KS10 should run with minor mods.
+	The 166, KA and KI will require moderate I/O instruction changes.
+	The KL10/20 (extended addressing, DTE20, etc) would require
+	major surgery -- without anesthetic.
+
+    * "How fast is it?"
+	That depends mostly on the host platform.  Using a 33 MHz Sparc-2,
+	very roughly 0.2 MIPS, perhaps 50% of a KA.
+	More about this farther on.	
+
+    * "Why can't I connect to NX?"
+	Oracle uses firewalls to prevent full Internet access to their
+	internal networks.  We are trying to set up an ITS turist machine
+	but it needs to be done very carefully.  Wait for an announcement.
+
+    * "Thanks!"
+	You're welcome!!
+
+The rest of this message talks about various aspects at more length:
+specifics of the target machine & devices, the emulator, and various
+other thoughts.  It is a bit long for one message, but I figure it's
+better to get it all out of the way.  My apologies to any uninterested
+people.
+
+Summary:
+-------
+	Target machine: KS10 with MIT ITS microcode
+	Target config: 512K memory, RH11/RP06, RH11/TM03, FE console,
+			ACC LH/DH & IMP
+	Current speed:  ~0.2 MIPS
+	Current host: 33 MHz Sparcstation-2 with internal disk, SunOS 4.1.1
+	Compiler: GCC 2.1
+	Misc: Sources .5MB, runtime memory 4.3MB, disk lotsaMB
+
+About the Target Machine:
+------------------------
+
+	The decisions I made while coding the emulator all boil down to
+a simple desire to get something useful and interesting up as quickly
+as possible.  Among other things this meant using an ITS-microcode
+KS10 as the target machine, because:
+
+	[1] I don't have official access to TOPS-20 binaries or sources,
+	and didn't want to worry about licensing hassles.  Ditto TOPS-10.
+	I also am lacking the voluminous documentation about installation
+	and operating procedures.
+
+	[2] The most recent ITS binaries and sources are all archived
+	online (thanks to Alan), and all are for the KS10 version.  All
+	documentation is likewise online, and in any case I have a
+	somewhat more intimate understanding of ITS.
+
+	[3] The KS10 has a simpler architecture than the KL10, which
+	allows an emulator to run much faster.  If not for [2] I might
+	have started with the KA10 for this reason.
+
+It is important to realize that the KLH10 is emulating the ITS
+microcode, which is slightly different from that for TOPS-10 or
+TOPS-20.  The primary differences have to do with the pager and the
+absence of the extended-instruction set (the noteworthy ITS features
+such as one-proceed, JPC, and CIRC are of course supported).
+
+In order to bring up TOPS-10 or TOPS-20, minor changes would be needed
+to the pager code (somewhat more for TOPS-20, owing to its more complex
+design).  The extended string instructions are ugly but straightforward
+for anybody with a strong stomach (and weak mind?).
+
+Everything else is fully supported, including the double-precision
+floating point instructions.  I took pains to verify that all results
+and PC flags are identical to the real hardware, even for wildly
+unnormalized operands.  This was *not* one of the fun parts.
+
+With respect to a KA or KI version, the I/O instructions would also
+need to be modified and a number of things changed in the APR and PI
+system, but not a great deal.  Bringing up TENEX should be relatively
+easy given a complete description of the BBN pager.  WAITS, however,
+would be up to a true SAILor.
+
+I know many people are going to wish for a KL10 they can run a
+full-grown TOPS-20 on.  Of course this is theoretically possible, but
+it is not going to be easy to get something that runs at a useful speed
+without a superfast host.  Remember the KL10 is an oversexed mutant
+with these strange bulging growths oozing out of random body parts, all
+of which have to be duplicated no matter how bizarre.  Just dealing
+with extended addressing is going to slow down the basic instructions
+as well as requiring much more pager overhead; this is one area where
+the hardware parallelism is hard to beat.  The additional device cruft
+(DTE20s, meters, address breaks, etc) doesn't help.  Personally I won't
+try it without some concrete incentives.
+
+P.S.  Just for grins I included the KA10 and PDP-6 arithmetic ops,
+although I don't have a reference machine for verification (ha).  Who
+knows, maybe a 340 will come along!  Spacewar, yeah!
+
+		
+I/O Devices:
+-----------
+
+	A great deal of the work consisted not of emulating the 10 but
+rather emulating a basic set of peripherals.  The KS10's use of Unibus
+devices made it somewhat more painful than the old I/O device scheme,
+because instead of a small matrix of devices and I/O instruction
+opcodes, there's a long list of bus addresses to check, each of which
+has completely arbitrary meanings.  Not to mention the Unibus adapters
+with their individual Unibus page maps, all of which are emulated as
+well.
+
+DSK: Currently one RH11/RP06 is supported as a virtual disk.  The
+actual implementation uses a standard Unix disk file (not a raw disk)
+to hold the "RP06" contents; this is so all blocks that haven't been
+written will simply not exist (also known as a holey file), thus taking
+up much less space than a full raw disk would.  Formatting the disk is
+obviously unnecessary; sector headers are not written or read.  Errors
+are pretty much limited to those caused by garbage written into the
+registers, so the interface is a bit simpler than the real thing.  It's
+possible that an OS which can't leave well enough alone will insist on
+using some weird maintenance bits, in which case the device code will
+need work.  Mods for multiple drives or other RH-controlled drive types
+are trivial.
+
+MTA: Similar considerations apply to the RH11/TM03 magtape interface.
+>From the "FE" (front-end controller interface) one can mount or unmount
+"tapes" that consist of either binary tape images or virtual tapes
+built on the fly from lists of unix files.  Hooking up a real magtape
+drive would probably have been easier, but loading virtual dump tapes
+into the filesystem is very fast, actually -- much faster than the real
+devices would be.  In fact I found one race condition in the ITS
+bootstrap loader that required slowing down disk I/O until I was able
+to reassemble a fixed version.
+
+NET: The network interface is an emulation of the ACC LH/DH that some
+MIT machines used to have, as well as a virtual IMP.  Putting this one
+together was a major project in network hacking, not to mention deceit.
+Using Sun's NIT (Network Interface Tap) and various trickery, I was
+able to set up NX with its own IP address, independent of its
+platform's address and thus permitting me to run ITS without
+interfering with the other network stuff I'm doing on my workstation.
+For efficiency, the virtual IMP is actually a "Simple IMP" that doesn't
+bother sending RFNMs, and the virtual LH/DH does I/O in PDP-10 byte
+order (not Unibus order) -- this all required changes to the ITS IMP
+driver.  For a while I considered munging the packets within the
+virtual IMP to pretend that the local net was the ARPANET, but finally
+decided it was better to fix ITS itself, and did so; ITS can now be
+configured for non-ARPA subnets.  Geez, I never thought after I did ITS
+TCP/IP that I'd be hacking the code again ten years later!
+
+TTY: The FE console TTY "interface" is emulated, tho the 8080 FE
+commands aren't -- no need.  There is also a dummy DZ11 driver that
+merely reads and writes registers without doing anything.  This (and an
+equally empty Chaosnet driver) was needed because that's what the last
+AI ITS binary image was configured for, and I had to get that up before
+I could reassemble a new system (oh the joys of bootstrapping).  The
+DZ11 won't be hard to finish off, but I'm not sure it's worthwhile;
+it's a horribly inefficient device and it's much faster to telnet in
+over the network.  If realio trulio serial-line I/O is needed, I'd
+recommend going for a DH11 if the OS supports it.  (It isn't as if
+it still costs three times as much as a DZ :-)
+
+
+About the emulator:
+-----------------
+
+	The KLH10 is written in C for a vanilla Unix OS, largely so it
+can be readily ported to other platforms; in particular, those of the
+future as well as those of today.  Although re-coding critical sections
+in assembler would readily double or triple the basic instruction
+speed, it is much easier to simply recompile it on a faster machine.
+Although I use the GCC compiler for its efficiency, I don't use any
+of its non-standard language constructs, again for portability.
+
+The most fundamental design decision had to do with the method of
+representing 36-bit words on a 32-bit architecture.  I wound up coding
+around a halfword-based scheme, with each 18-bit PDP-10 halfword
+right-justified in a 32-bit host word; thus each PDP-10 word uses 8
+octets.  The same format is used for memory, ACs, and disk storage;
+basically I traded off space for speed.
+
+On a machine with a word size larger than 36, or a C compiler that
+supported an equivalent integer type (such as double-word ints), many
+things become easier, and I'd want to re-do a fair amount of the
+arithmetic code.  Not because the current version won't work -- it will
+-- but because it won't be as efficient.  I decided early on that the
+differences between optimal code on a 32-bit and +36-bit machine were
+just too great to easily combine with the primitive tools available in
+C.
+
+The arithmetic emulation relies only on well-defined native integer
+operations; native floating point is never used, both because it is
+non-portable (formats vary) and because it is very difficult to
+precisely emulate the PDP-10's behavior without actually carrying out
+the same internal operations "by hand".  This is by far the slowest
+part of the KLH10.  I checked it out by compiling it on a real 20
+(using KCC, of course!) and running it for hours under a test program
+that generated various operand bit patterns and compared the results
+with those for real instructions.
+
+The current implementation is being used as a testbed for threads, and
+includes code for both a non-threaded and threaded version.  (I
+figured, what better test of software parallelism than to emulate
+hardware parallelism?) This means that running on a true
+multi-processor platform could produce somewhat better performance,
+although the main APR execution thread is still serial and will impose
+an upper bound on the speedup.  Let's not talk about pipelining just
+now.
+
+To clear up one thing that has caused confusion: the emulator is *not*
+running standalone on my Sparc.  Except for the net device it uses the
+usual Unix system calls and burns 100% of the CPU, running flat out.  I
+don't really notice it since the amount of CPU I use most of the time
+is typically a negligible fraction of the Sparc's capability; for
+example, I'm writing this note in one window while ITS runs in the
+other, and everything's cool.
+
+
+The NEED for SPEED:
+------------------
+
+	In the summary I mentioned a speed of 0.2 MIPS, or about 5 usec
+per instruction.  This is probably the number people are most avidly
+interested in, but at the same time it's also one of the hardest to
+measure.  PDP-10 speeds have always been tricky, mainly because it all
+depends on the precise mix of instructions and operands.  Now it's even
+fuzzier because so much of the KLH10 is variable.
+
+Of course, the host platform speed is an overriding factor.  But I've
+seen that even minor changes in the main loop can produce noticeable
+differences in response time, as can the exact nature of memory
+references.  For example, the SPARC is a register-window machine and
+it's faster to pass arguments to functions than to set and read global
+variables; it's also faster to use C structure members than globals!
+Another machine could have precisely the opposite behavior.  I should
+add here that the compiler is also tremendously important; using
+GCC results in code that is 40% faster than Sun's CC!  Yow!
+
+Anyway, I haven't really buckled down and tried to tune or measure its
+performance, so take the 0.2 MIPS loosely.  My back-of-the-envelope
+calculations before I started suggested that an assembler-coded SPARC
+implementation could achieve a KA performance level; the current C
+version appears to get perhaps half that speed.  Assembling the entire
+ITS OS takes about 26 minutes of real time, but I don't know if anyone
+remembers how long it took on a real KS10, much less a KA10.
+
+The Sparc is already a slowpoke compared with some of the new
+workstations and chipsets coming out, so it's just a matter of time
+before someone cracks the KS10 speed limit on reasonably cheap
+personal hardware.  I can't help but wonder if might be worth paying
+serious attention to a high-speed version, one that would represent a
+cost-effective solution for those places still committed to PDP-10
+software.  Systems Concepts probably doesn't need to worry -- yet!
+
+
+Future improvements:
+-------------------
+
+	The obvious one is speed.  Then more machine variants, more
+devices.  More instrumentation & profiling.  A nicely packaged
+distribution with your choice of OS and initial filesystem included.
+The usual embellishments.  Whatever people suggest.
+
+There's also the possibility of evolving a new virtual machine, one
+which realizes more closely whatever the ideal PDP-10 is conceived to
+be.  (That itself is an interesting question.) For example, the real
+KS10 ITS microcode does not actually support JPC, which was a feature
+of Holloway's MAC-10 pager; the KLH10 does it trivially and in that
+sense is more than a simple KS10.  Its pager could support 2048K as
+easily as 512K.  And so on, all of which implies reconfiguring a real OS
+to run on an unreal machine.  The first step down this road has already
+been taken with NX ITS, assembled to use a non-existent net interface.
+
+And I've always thought it would be lovely to have a window displaying
+a KA-style console panel with a full bank of lights and clickable
+switches.  I know the KS10 never had one, but that doesn't mean it has
+to stay that way, and besides, the KL10 cheated with a 11/40 panel, so
+it's down to either the KA or KI.  Of course it's just for fun, what
+else is this all about?
+
+
+Final thoughts:
+--------------
+
+	I was going to close with the last paragraph, but realized
+there's one more thing I want to say.  It's just that, um, well,
+this will sound silly, but it feels so... weird? ... eerie?
+... just plain literally *mind-blowing* to watch this system boot up
+and run happily, utterly unaware that it's not on a real machine, or
+that anything odd happened since the last time it ran, or that its
+earthly incarnation of a noisy roomful of huge cabinets and washing
+machines is now entirely self-contained within a small innocuous pizza
+box holding up my ITS manuals.  Do systems have wathans?  I've gotten a
+bit more used to it, but every now and then I still sit back, realize
+once again what the hell is going on, and hold on to something while
+the chills pass.  I didn't expect this at all.  A side effect of being
+imprinted at a tender young age, or something...
+
+--Ken
+

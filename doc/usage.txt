@@ -1,0 +1,311 @@
+/* USAGE.TXT - KLH10 Usage Instructions
+*/
+/* $Id: usage.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+	This file provides basic pointers for using the KLH10.
+See "install.txt" for information on installing and configuring the KLH10.
+
+KLH10 STARTUP:
+
+	You should not start the KLH10 unless you have installed it in
+its "home directory" and are connected to that directory (see the file
+"install.txt" if necessary).  Then simply give the following shell
+command:
+		% klh10
+
+The KLH10 will start up, allocate and clear KN10 memory, and begin
+reading commands from the default file "klh10.ini".  If you wish to
+use a different init file, you can specify it on the command line, for
+example:
+		% klh10 test.ini	; Use "test.ini" instead of "klh10.ini"
+		% klh10 /dev/null	; Use nothing
+
+Or you can simply edit or delete "klh10.ini" itself.
+
+
+KLH10 COMMAND PARSER:
+
+	After starting the KLH10 you will be talking to the command
+parser.  This serves a function very similar to that of the RSX20F
+PARSER front-end program for a real KL10.  However, the KLH10 commands
+are nothing like PARSER commands.  For a list of the commands, see
+the files "cmdsum.txt" and "cmdref.txt".
+
+	Normally the only reason you will be talking to the command
+parser is to get the KN10 configured, load a bootstrap program, and
+start it; from there on you interact only with the KN10.  This can all
+be done automatically by commands in the "klh10.ini" file, and it is
+highly advisable to at least configure the KN10 devices this way,
+using the information in "install.txt".
+
+
+KLH10 BOOTSTRAPPING:
+
+	The KLH10 is capable of loading PDP-10 binary files directly
+into its KN10 memory with the "load" command.  The KLH10 uses the
+native OS filesystem as its "front-end filesystem", and does not
+require a special area on a virtual disk.  Ordinarily you will use
+this capability to load a PDP-10 bootstrap program, which when started
+will then load either the TOPS-10 or TOPS-20 monitor.  For example:
+
+	    KLH10> load boot.exe
+
+will load "boot.exe" from the native filesystem, producing this output:
+
+	    Using word format "c36"...
+	    Loaded "boot.exe":
+	    Format: DEC-CSAV
+	    Data: 4630, Symwds: 0, Low: 040000, High: 054641, Startaddress: 040000
+	    Entvec: JRST (120 ST: 00, 124 RE: 00, 137 VR: 0,,0)
+	    KLH10>
+
+Once the bootstrap is loaded, you can start it by giving the
+"go" command:
+
+	    KLH10> go
+	    Starting KN10 at loc 040000...
+
+	    BOOT V11.0(315)
+
+	    BOOT>
+
+And from this point on, you are talking to the PDP-10 software, and the
+remaining procedures for bringing up the monitor should be the same as
+for a real system.  In particular, typing CR should spur the bootstrap
+into loading and starting the default of <SYSTEM>MONITR.EXE.
+
+	Note that there are two TOPS-20 boot programs included with
+the KLH10 distribution: "boot.exe" which boots from disk, and
+"mtboot.exe" which boots from tape.  There is also a TOPS-10 boot
+program, "klboot.exe".  These are exact copies of the Digital
+bootstraps by those names, provided only as a convenience to users who
+already have a TOPS-10 or TOPS-20 license.
+
+	The details of a complete boot and filesystem rebuild from
+tape, using "mtboot.exe", are too intricate for a few paragraphs.
+Suffice to say here that once you get to the BOOT> prompt of MTBOOT,
+you can proceed just as for a real KL10, with the exception that
+building a "front-end filesystem" area is not necessary.  See the file
+"klt20.txt" for an example of a TOPS-20 system installation.
+
+
+KLH10 COMMANDS vs KN10 EXECUTION:
+
+	It is very important to understand that the KLH10 is always
+doing only one of two things.  It is either reading and executing
+commands typed to it, or it is running the KN10 which is executing
+PDP-10 instructions.  There is no way to enter KLH10 commands without
+temporarily suspending KN10 execution.
+
+	While the KLH10 is reading commands, nothing else is
+happening, and your typein is seen only by the KLH10 command parser.
+The KN10 does not run until you give an explicit command to start or
+resume execution.
+
+	While the KN10 is running, your typein is seen only by the
+PDP-10, as CTY input.  You can return to the KLH10 command parser at
+any time by typing the command escape character (^\, CONTROL-\, ASCII
+"FS", octal 034), which suspends KN10 execution.  Control also returns
+to the command parser if the KN10 halts for any reason.
+
+	Future versions of the KLH10 may allow concurrent execution so
+that KLH10 commands can be given while the KN10 continues to run,
+similar to the way a real KL system works with its front-end PDP-11
+independent of the KL10 CPU.  For now, simplicity is stability.
+	
+
+STOPPING THE KLH10:
+
+	Normally, you will be running a PDP-10 monitor.  Bring it down
+as you would for a real KL10, except that at the point where you type
+^\ to return to the RSX20F PARSER, instead you are returned to the
+KLH10 command parser and the KN10 is stopped.  You can give the
+"shutdown" command, which deposits -1 in location 30 and continues
+the KN10; this should cause the monitor to execute a HALT instruction,
+which returns control back to the KLH10 command parser.
+
+	You can then give the "quit" command (which asks for
+confirmation) to leave the KLH10 program completely.  This command
+performs essential cleanups of the various device processes and shared
+memory areas, and should always be done.
+
+	Alternatively, if the monitor is wedged or you don't care
+about the PDP-10 filesystem consistency, you can blow everything away
+immediately by returning to the command parser with ^\ and using "quit"
+right away.
+
+	A word about restarting.  Although it may work to use "reset"
+and then load the PDP-10 bootstrap in order to restart a monitor without
+actually quitting the KLH10 program, this is not recommended; it is much
+safer to quit entirely and invoke the KLH10 again from scratch.
+
+
+IF THE KLH10 CRASHES:
+
+	If the KLH10 process dies accidentally or is killed in any way
+other than via the "quit" command, then you will probably find some
+leftover device processes (DPs) littering your host system.  If this
+happens, you can clean up as follows:
+
+	Use the shell command "ps ax" (on Solaris, "ps -eaf") to find
+		the processes.
+		They will be called "dprpxx", "dptm03", or "dpni20".
+		You will notice a -DPM:<#> argument to the DP; this
+		identifies the shared memory segment ID it's using.
+	Kill each DP with "kill <pid>" where <pid> is the process ID.
+	Find the active shared memory segments with "ipcs".
+		Those with segment IDs belonging to the killed processes
+		(the numbers in the -DPM: args)
+		must be flushed; use "ipcrm -m <#>" for each one.
+	Yes, this is tedious, isn't it?  Blame AT&T SYSV's moronic IPC
+		facilities.  And next time, use "quit" if you can...
+
+RUNNING THE KLH10 IN BACKGROUND MODE:
+
+As of V1.1 the emulator can now be run as a background process, which
+for example makes it possible to start it up automatically, without
+manual intervention, whenever the hardware system is rebooted.
+
+This feature is very simple but has the disadvantage that once the
+background process has started, you cannot talk to the emulator's CTY.
+
+The procedure is as follows:
+
+    (1) Create a klh10.ini file for monitor auto-start, perhaps distinguishing
+	it with a different filename such as klh10.ini-q.
+	The exact details will vary depending on the monitor; for TOPS-20
+	an auto-start can be done as follows:
+
+		KLH10>load boot.exe
+		KLH10>dep 0 400000,,0
+		KLH10>go 40001
+
+    (2) Invoke the KLH10 using the "-background" switch and auto-start
+	initialization file, with output redirected to a log file, and
+	running in the background.
+	Examples:
+
+	Bourne Shell (/bin/sh):
+	    $ ./klh10 -background klh10.ini-q > logfile 2>&1 &
+
+	C Shell (/bin/csh, /bin/tcsh, etc):
+	    % ./klh10 -background klh10.ini-q >& logfile &
+
+	Note and remember the process ID that the shell prints out, for use
+	when bringing the system/emulator down.
+
+In order to bring down the system and emulator when running in the
+background:
+
+    (1) Bring down the monitor in the usual way (e.g. on TOPS-20 you
+	    would use the ^ECEASE command).
+
+    (2) Find the process ID of the emulator if you didn't already note it,
+	by using "ps".
+
+    (3) Terminate the emulator by sending a SIGTERM signal, e.g.
+		% kill <pid>
+
+Check the log file to make sure that everything went OK.  This file
+simply records all output to the emulated CTY.  If you wish to observe
+it while the emulator is running, do "tail -f logfile".
+
+Again, UNIX unfortunately provides no mechanism for re-attaching a
+terminal to a background process, so there is currently no way to provide
+input to the emulated CTY in this situation.  Eventually this feature
+will be provided by a front-end daemon that can be connected to at will.
+
+
+USING VIRTUAL TAPES:
+
+	A useful feature of the KLH10 is its "virtual tape" mechanism,
+which allows PDP-10 programs to believe they are reading and writing
+magtapes when in fact they are merely doing I/O to a disk file in the
+native filesystem.  This is very fast and convenient.
+
+Unfortunately, the process of "mounting" and "unmounting" virtual
+tapes is not as convenient as it should be, and is the major interface
+quirk that remains to be fixed.  What follows documents the current
+procedure, warts and all.  This should be read in conjunction with the
+descriptions of DEVMOUNT and DEVUNMOUNT in the "cmdref.txt" file, as
+well as "vtape.txt" for further details.
+
+To CREATE a virtual tape, use the DEVMOUNT command with the
+	name of a non-existent file and the parameter MODE=CREATE
+	(or just "RW"; for the full list of parameters see cmdref.txt).
+	When done writing and reading the tape, use DEVUNMOUNT to
+	"unmount" it from the virtual drive and finalize the tape file(s).
+
+To READ an existing virtual tape, use DEVMOUNT with the
+	filename of the existing tape file; it will default to MODE=READ
+	which will make the drive appear to be write-locked.
+
+For safety, the tape code will not allow you to mount an existing
+virtual tape for writing (a mode known as "update").  If you try to do
+this, you will see something like the following:
+
+	@[HALTED: FE interrupt]			; ^\ typed at T20 EXEC
+	KLH10> devmount mta0 klhbackup rw	; Try to mount existing tape
+	DPTM03: vmt_xmount: Tape file "klhbackup" already exists
+	[dptm03: Couldn't mount read/write virtual tape: klhbackup]
+	Mount requested: "klhbackup"
+	KLH10>
+
+Note that the command parser doesn't have a clean way to know if the
+mount request succeeded or failed; it can only say that a request was
+made.  Any failure or success reports come directly from the tape device.
+
+
+USING HARDWARE TAPES:
+
+	The KLH10 has the capability of using physical ("hard") tape
+drives to read and write actual, not virtual, tapes.  Normally a hard
+mount will be made at the time the tape device is first defined with
+DEVDEFINE, but it is also possible to use DEVMOUNT to change this
+later.
+
+Usage is the same as for virtual tapes, except that in the DEVMOUNT
+command, the option "hard" must be specified:
+
+	@[HALTED: FE interrupt]
+	KLH10> devmo mta0 /dev/rmt0a hard
+	Mount requested: "/dev/rmt0a"
+	KLH10>
+
+Do NOT use either the block (/dev/mt0a) or non-rewind (/dev/nrmt0a)
+forms of the physical device pathnames.  No other options are
+recognized when "hard" is set; they will be ignored.  In particular,
+"ro" has no effect, because the binding established by a hard mount is
+between the KN10 device and an external device, not between the KN10
+and a particular tape.  In order to write-lock physical types, you
+must use their physical write-lock mechanism.
+
+In general physical tapes can be loaded and unloaded from the drive
+manually and all should operate as if the drive was a real TU45, TU77,
+or whatever.  My favorite example of this is the "UNLOAD" command in
+the TOPS-20 EXEC, which will eject the physical tape if the host
+system supports that capability.
+
+An error message will be printed if any problem is detected; for
+example, the following can happen if the drive is powered off:
+
+	@[HALTED: FE interrupt]
+	KLH10> devmo mta0 /dev/rmt0a hard
+	Mount requested: "/dev/rmt0a"
+	KLH10> [dptm03: Cannot mount device "/dev/rmt0a": I/O error]
+	KLH10>
+
+When using hardware drives, there may be some lag between the time of
+physical events (like going offline or online) and the time the KN10
+finds out about the new status.  This is primarily due to the overly
+thick insulation that the native OS interposes between the KN10 and
+the actual hardware.

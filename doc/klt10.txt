@@ -1,0 +1,93 @@
+/* KLT10.TXT - KL TOPS-10 system startup on KLH10
+*/
+/* $Id: klt10.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1997, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+    [NOTE: Eventually this will describe how to install a TOPS-10 system
+    from an installation tape.  For the time being it merely describes
+    startup using a ready-made filesystem that I may someday package
+    for distribution.  Four monitors are included:
+
+	    704NON.EXE - TOPS-10 V7.04 no network, won't try to load KLNI.
+	    704DCN.EXE - TOPS-10 V7.04 with DECnet and LAT
+	    704LAT.EXE - TOPS-10 V7.04 with just LAT (untested)
+	    SYSTEM.EXE - TOPS-10 V7.04 for the KS.
+
+    You will need to specify an appropriate monitor from this list when
+    prompted by BOOT>.]
+
+	In the transcript that follows, all notes are prefaced by
+triple semicolons (;;;), and user input is presented in lowercase
+where possible -- note that the monitor sometimes echoes typein in
+uppercase.  Where there might be some confusion, a note such as "Type
+CR" will identify what you need to type.
+
+		-----------------------------------------
+
+	;;; Here we go... 
+	;;;
+% ./kn10-kl klt10-img.ini		;;; Invoke KLH10
+	[usual output banners]
+KLH10> ; KLH10 configuration for TOPS-10 test system
+KLH10> 
+KLH10> ; DTE requires ackdly to avoid T10 race condition
+KLH10> devdef dte0 200 dte master ackdly=5
+KLH10> devdef rh0 540 rh20
+KLH10> devdef rh1 544 rh20
+KLH10> devdef dsk0 rh0.0 rp type=rp06 sn=4747 format=raw path=T10.RP06.0
+KLH10> devdef dsk1 rh0.1 rp type=rp06 sn=1026 format=raw path=T10.RP06.1
+KLH10> devdef mta0 rh1.0 tm02 type=TU77 fmtr=TM03  
+KLH10> 
+KLH10> ; NI: new param "c3dly" to see if it helps T10.
+KLH10> ; NI: new param "rdtmo" to avoid system hangups with OSF/1 V3.0
+KLH10> ;
+KLH10> ; Decnet node TWONKY, 9.429
+KLH10> devdef ni0 564 ni20 dedic=0 decnet=1 doarp=0 enaddr=aa:00:04:00:ad:25 dpdelay=12 c3dly=2 rdtmo=3
+KLH10> 
+KLH10> load klboot.exe
+Using word format "c36"...
+Loaded "klboot.exe":
+Format: DEC-PEXE
+Data: 0, Symwds: 0, Low: 01000000, High: 00, Startaddress: 0703667 Entvec: 00 wds at 00
+KLH10> [EOF on klt10-img.ini]
+KLH10> go				;;; Type "go" to start KN10!
+Starting KN10 at loc 0703667...
+BOOT V4(100)
+
+BOOT>704non				;;; Enter desired monitor, then CR
+[Loading from DSKA:704NON.EXE[1,4]]
+
+TOPS-10 704 No Network 11-Nov-93
+Why reload: sa				;;; "sa" or whatever
+Date: 					;;; Just enter CR
+Time: 					;;; Just enter CR
+Startup option: no			;;; Example; could say "go".
+[Rebuilding the system search list from the HOM blocks]
+
+[Rebuilding the active swapping list from the HOM blocks]
+
+[Rebuilding the system dump list from the HOM blocks]
+
+
+TOPS-10 704 No Network Thursday 24-Apr-97 3:00:25
+
+.log 1,2/by				;;; Log in like this to bypass accting
+Job 1  TOPS-10 704 No Network  CTY
+03:07   24-Apr-97   Thursday
+
+.			;;; Ready to futz around...
+			;;; ... do whatever, then when OK to bring down:
+.[HALTED: FE interrupt]		;;; Type ^\ (CTRL-\) to return to KLH10
+KLH10> q			;;; OK to quit KLH10 now!  TOPS-10 not fussy.
+Are you sure you want to quit? [Confirm]
+Shutting down...Bye!
+%				;;; Back at unix shell prompt
+

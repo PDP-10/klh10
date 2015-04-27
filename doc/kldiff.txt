@@ -1,0 +1,191 @@
+/* KLDIFF.TXT - Differences between KLH10 and KL10
+*/
+/* $Id: kldiff.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+This file attempts to summarize the known visible differences between
+the KLH10 emulator's "KN10" processor and an actual DEC KL10,
+specifically a Model B CPU running version 442 of the microcode.
+
+It is important to remember that it is very difficult to stumble
+across these differences unless you are looking hard.  As a practical
+matter, for users there is far less of a difference between the KN10
+and a KL10 than there were between different releases of the KL10
+microcode.
+
+As one illustration of this point, DEC diagnostics are mentioned in
+several places, but their reports must be taken with large grains of
+salt.  Many stopped working for the latest KL10s, and some only worked
+when loaded with older microcode; in order to run those, the KLH10 must
+be built with a "hybrid" KN10.
+
+
+USER MODE DIFFERENCES
+=====================
+
+[U1] No Public mode.
+
+	The KN10 does not implement public mode; it was considered to
+have little real use (the KS10 does not implement it), and would make
+execution slower.  This is discussed in more detail in the exec mode
+section.
+
+
+[U2] Floating point results with normalized operands.
+
+	Some floating-point results may differ by a single low-order
+bit, particularly FDV with negative operands.
+	This is noticed by the diagnostic DFKCA.
+
+
+[U3] Floating point results with unnormalized operands.
+
+	There are certain cases where unnormalized operands may
+produce different results in the low-order bits, apparently due to
+sloppiness in the KL10 hardware.
+	DFDV is the most notable example; when given wildly
+unnormalized operands, some low-order bits are cleared by the KN10 to
+produce logically correct results, but these same bits are filled with
+mysterious garbage on the KL10.  Note that the same operands on a KS10
+produce "clean" results that exactly match those of the KN10!
+	Diagnostics don't notice this as they never use unnormalized
+operands.
+
+
+[U4] Extended instruction set (string ops)
+
+	These instructions have so many undefined aspects, and their
+microcode implementation changed so often, that it is difficult to say
+much here beyond acknowledging that certain esoteric failure cases may
+well produce different results.  "Normal" cases should all be
+identical.
+	The diagnostic DFKCC detects no differences except for the
+intermediate AC values of an interrupted CVTBDx, where a KL10 saves a
+fractional quantity and the KN10 saves an integral quantity; but
+nothing should actually be examining this intermediate value.
+
+
+[U5] Traps (1,2,3), PC, Page Fault.
+
+	Traps on the KN10 are handled in subtly different ways than
+traps on a KL10.  For the most part there is no observable difference,
+but peculiar cases do exist.
+	In general, the PC seen by a trap instruction may be different
+from that on a KL10 if the offending instruction (which set the trap
+flags) was a jump or skip.  However, either of these are problematical
+for a KL10 trap handler as well.
+	On the KN10, an instruction that sets any trap flags will
+trap as soon as the instruction is complete, with the PC pointing to
+the next instruction (and backed up before executing the trap
+instruction).
+	This differs from a KL10 where it is possible for the
+next-instruction c(PC) fetch to cause a page fault before the trap is
+handled.  The diagnostic DFKEA notices this.  N.B.: This is not the
+same as a page fault during execution of either the offending
+instruction or the trap instruction, both of which are correctly
+handled.
+
+EXEC MODE DIFFERENCES
+=====================
+
+Most of these are hidden from the user altogether.
+
+
+[E1] No Public or Supervisor modes.
+
+	The KN10 does not implement public mode; it was considered to
+have little real use, and would make execution slower.  The KN10 does
+keep the Public bit in page map entries, but never actually sets
+Public when fetching instructions from a Public page, nor does it
+verify whether an operation is permitted if in Public/Supervisor mode.
+	Note that the DEC KS10 does not implement this either, so the
+functionality is presumably not terribly important.
+	However, this confuses and ultimately crashes the diagnostic
+DFKEB which tests specifically for the operational differences between
+user, public, kernel, and supervisor modes.
+
+
+[E2] No Previous-Context-Public PC flag.
+
+	The KN10 always treats PC flag bit 0 as being "overflow",
+which means that anything that stores the PC flags in exec mode will
+get the state of the overflow flag, rather than the PCP flag as on a
+real KL10.
+	This mildly irritates some diagnostics when run in exec mode,
+specifically DFKCA, DFKCB, and DFKDA, which expect bit 0 to stay clear.
+
+
+[E4] Page fail in interrupt instruction (IO Page Fail)
+
+	The KN10 implements the documented behavior for this, which
+is to trigger an IO-Page-Fail interrupt rather than taking a page fail
+trap.  However, according to the diagnostic DFKEA, a real KL10 should
+take the trap, contrary to the Processor Reference Manual (p.3-65).
+It is unclear whether DFKEA's interpretation is correct or corresponds
+to old versions of the KL10.  In any case, a monitor should never let
+this happen in the first place.
+
+
+[E5] PXCT in non-zero section
+
+	The problem is that no one is sure any more exactly how PXCT
+is *supposed* to work, or even how it *does* work on the KL10!  The
+original KN10 implementation conformed to the available
+documentation, and passed the PXCT diagnostic DFKEC perfectly, but
+caused page faults when used with real monitors and certain user
+programs.  The current modified implementation works for all TOPS-10
+and TOPS-20 software tested to date, but now triggers two failure
+cases in DFKEC.
+
+
+CPU HARDWARE DIFFERENCES
+========================
+
+There are several things about the KL10 hardware that are not
+implemented at all in the KN10, either because the features are
+never used by a monitor or would be too impractical to implement.
+Without going into unnecessary detail, here are the main items.
+
+[C1] Interrupt Instructions - no BLKI, BLKO
+	Only JSR and XPCW are supported.
+	(plus AOSE, SKIPE, and JSP to keep diagnostics happy).
+
+[C2] Interrupt Functions - only those needed are implemented.
+
+[C3] CONI/CONO PI, - bits <18:20> not implemented.
+	The diagnostic DFKDA notices this.
+
+[C4] No Cache
+	All of the "Sweep Cache" instructions are no-ops that merely
+	clear Sweep Busy and set Sweep Done.  The cache strategy bits <18:19>
+	in a CONI/CONO PAG, are ignored.
+
+[C5] No Address Break
+	DATAO APR, remembers the break information for a DATAI APR,
+	but the actual functionality is not implemented, and will probably
+	never be, for efficiency reasons.
+	The diagnostic DFKDA notices this.
+
+[C6] Time Base doubleword - not updated except by RDTIME.
+
+[C7] Interval Counter - not as precise.
+
+[C8] No Execution Account counter
+
+[C9] No Memory Account counter
+
+[C10] No Performance Analysis counter
+
+[C11] SBDIAG partially implemented
+	Only the SBDIAG functions necessary to keep the TOPS-10 and TOPS-20
+	monitors happy are implemented.  The emulated machine pretends to
+	have a MF20 that responds to the entire range of 22-bit physical
+	memory (4096K).

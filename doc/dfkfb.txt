@@ -1,0 +1,119 @@
+/* DFKFB.TXT - README for DFKFB KL timing diagnostic
+*/
+/* $Id: dfkfb.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+NOTE:
+	DFKDB is not KLH10 software; it is a KL10 instruction timing
+	diagnostic written by DEC and may only be used with a valid TOPS-10 or
+	TOPS-20 license.  If present in the distribution, it is included
+	purely as a convenience for developers.
+
+People with a weakness for instant gratification, which is most of us,
+will like DFKFB.  As soon as you have built a KN10-KL, you can
+immediately run DFKFB without spending any time on installation or
+configuration, and get an idea of how it compares with a real KL.
+
+[1] Build a KN10-KL for your native platform.
+	$ cd <distrib>/bld/<platform>
+	$ make base-kl
+
+[2] Go to the DFKFB directory, if present, and run it.
+	$ cd ../../run/dfkfb
+	$ ../../bld/<platform>/kn10-kl dfkfb.ini
+
+[3] Compare output with other configurations, platforms, etc.
+    Strut or sulk as appropriate.
+
+As with all benchmarks, the DFKFB output must be taken with large
+grains of salt.  Its results will be strongly influenced by the cache
+behavior of your platform; with modern hardware it will usually run
+entirely in the cache and thus will represent tne best speed you can
+get.  When running a PDP-10 OS with real applications, you will get
+many more cache misses and the following factors become more
+important:
+
+       - PDP-10 instruction mix.  Floating point is slow.
+       - I/O response (fast physical disks make a difference).
+       - Non-KLH10 processes competing for the native platform's CPU.
+
+Still, it's fun to see how many multiples of a real KL you can run at.
+
+
+THE REAL THING
+==============
+
+	Unfortunately, although I have output logs of DFKFB runs for a
+variety of platforms, I do not have one for a real KL10 itself!
+Hopefully someone will be able to contribute this from their archives.
+
+The best information I can provide comes from a user-mode timing test
+program I wrote called "ZOTZ"; the results I have are for a DEC-2065,
+which is a KL10B with MCA25 cache.  Even though this is a user-mode
+program rather than exec-mode as for DFKFB, these numbers should be
+within a few percent of the real thing.  Copying this data into the
+format of DFKFB gives the following simulated output, with "??"
+inserted where nothing was available:
+
+1 - BASIC CLOCK CYCLE IS ?? NSEC.
+2 - INDEXING TAKES 36 NSEC.
+3 - INDIRECT TAKES 269 NSEC.
+4 - INDEXING AND INDIRECT TAKES 336 NSEC.
+5 - MOVEI TAKES 269 NSEC.
+6 - MOVE FROM AC TAKES 374 NSEC.
+7 - MOVE FROM MEMORY TAKES 402 NSEC.
+8 - HRR FROM MEMORY TAKES 443 NSEC.
+9 - SETOM 0 TAKES 571 NSEC.
+10 - JRST TAKES 303 NSEC.
+11 - JSR TAKES 642 NSEC.
+12 - PUSHJ TAKES 708 NSEC.
+13 - ADD FROM MEMORY TAKES 438 NSEC.
+14 - MUL (9 ADD/SUB - 18 SHIFTS) TAKES 2.42 USEC.
+15 - DIV TAKES 4.70 USEC.
+16 - FIX A FLOATING POINT ONE TAKES 874 NSEC.
+17 - FLTR AN INTERGER ONE TAKES 881 NSEC.
+18 - FAD (1 RIGHT SHIFT) TAKES 1.59 USEC.
+19 - FAD (8 SHIFT RIGHT - 3 LEFT) TAKES 1.81 USEC.
+20 - FMP (7 ADD/SUB - 14 SHIFTS) TAKES 2.56 USEC.
+21 - FDV TAKES 4.82 USEC.
+22 - DMOVE FROM MEMORY TAKES 608 NSEC.
+23 - DFAD (1 RIGHT SHIFT) TAKES 2.06 USEC.
+24 - DFAD (8 SHIFT RIGHT - 1 LEFT) TAKES 2.06 USEC.
+25 - DFMP (7 ADD/SUB - 32 SHIFTS) TAKES 4.25 USEC.
+26 - DFDV TAKES 8.71 USEC.
+27 - CONO PI TAKES ?? NSEC.
+28 - CONI PI TAKES ?? NSEC.
+29 - DATAO APR TAKES ?? NSEC.
+30 - DATAI APR TAKES ?? NSEC.
+31 - MOVE TO MEMORY TAKES 573 NSEC.
+32 - LOGICAL SHIFT (35 PLACES LEFT) TAKES 439 NSEC.
+33 - LOGICAL SHIFT (35 PLACES RIGHT) TAKES 470 NSEC.
+34 - LOGICAL SHIFT COMBINED (71 PLACES LEFT) TAKES 743 NSEC.
+35 - LOGICAL SHIFT COMBINED (71 PLACES RIGHT) TAKES 745 NSEC.
+36 - INCREMENT BYTE POINTER TAKES 924 NSEC.
+37 - INCREMENT AND LOAD BYTE TAKES 1.21 USEC.
+38 - INCREMENT AND DEPOSIT BYTE TAKES 1.60 USEC.
+39 - JFCL TAKES 404 NSEC.
+40 - CAI TAKES 272 NSEC.
+41 - JUMP TAKES 342 NSEC.
+42 - CAM TAKES 376 NSEC.
+43 - EQV AC TO AC TAKES 402 NSEC.
+44 - EQV MEMORY TO AC TAKES 742 NSEC.
+45 - SETOB TAKES 571 NSEC.
+46 - AOS TO MEMORY TAKES 539 NSEC.
+47 - EXCHANGE AN AC WITH AN AC TAKES 545 NSEC.
+48 - EXCHANGE AN AC WITH MEMORY TAKES 706 NSEC.
+49 - EXECUTE TAKES 471 NSEC.
+50 - BLT MEMORY TO MEMORY TAKES 1.58 USEC.
+51 - BLT AC TO MEMORY TAKES 1.48 USEC.
+52 - DATAI TAKES ?? NSEC.
+53 - DATAO TAKES ?? NSEC.
+

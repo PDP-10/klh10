@@ -1,0 +1,39 @@
+/* NEWS.TXT - KLH10 Change Summaries and other news
+*/
+/* $Id: news.txt,v 2.1 2001/11/19 12:13:12 klh Exp $
+*/
+/*  Copyright © 2001 Kenneth L. Harrenstien
+**  All Rights Reserved.
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+KNOWN BUGS
+==========
+
+Still outstanding:
+
+    - KS TOPS-10 7.03 install from tape periodically hangs on MT.
+    - KS TOPS-10 7.03 disk boot produces:
+	KLH10 PANIC: rh11_iobeg: drv/ctrlr mismatch: 7/0
+
+(Of course, this will never be a complete list!)
+
+
+KLH10 CHANGES
+=============
+
+KLH10 2.0A: 19-Nov-2001
+    - Revised ARP code in dpimp.c to fix problems with Linux port;
+	ITS networking now supported on Linux!
+    - Cleaned up Solaris port.  Two Makefiles now provided, one for
+	GCC and the other for SUN C.  Compiles and runs, but actual network
+	operation not yet verified.  
+    - Fixed bug with writing TPS format tape images (caught by John Wilson).
+    - Added "port-ks" target to Makefile to help porters.
+
+KLH10 2.0: 10-Nov-2001
+      Initial Distribution release.

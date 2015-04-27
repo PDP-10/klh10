@@ -1,0 +1,81 @@
+/* KSITS.TXT - KS ITS system installation on KLH10
+*/
+/* $Id: ksits.txt,v 2.4 2001/11/10 21:24:21 klh Exp $
+*/
+/*  Copyright © 1999, 2001 Kenneth L. Harrenstien
+**  All Rights Reserved
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+This is mainly a placeholder until distribution issues are resolved
+for the starter ITS file system copy.
+
+The run/ksits directory contains the boot files developed for the
+Public ITS project, which had 3 systems called PI, DU, DX.  These are
+for PI:
+
+	klh10-pi.ini	- KLH10 configuration for PI.
+
+	@.its-647pi-u	- ITS.  Normally you would just load this.
+	@.ddt-u		- DDT  stand-alone.
+	@.nsalv-260-u	- SALV stand-alone.  Start at 200000 !!
+	itsbin.647pi-u	- ITS binary, without DDT or SALV.
+
+	Note: All binaries by default are in U36 format, as opposed
+	      to the C36 format of all other KN10 configurations.
+
+Eventually I hope to be able to distribute the actual filesystem image
+as well, and then will include a large bunch of stuff containing
+nearly everything I've discovered or written about ITS software
+porting issues, machine names and addresses, dumps, utilities, bug
+fixes, etc.
+
+THE FIRST TIME
+==============
+
+Once you have installed the binaries per install.txt in a $KLH10_HOME
+corresponding to an instance of run/ksits (don't forget to make
+dpimp setuid root, or run as root) it should work to just do:
+
+     ./kn10-ks klh10-kn.ini ;;; or whichever system you prefer)
+	       [gubbish]
+     KLH10> go
+
+After the dust settles, type ^Z.
+The first time, ITS will complain that the time is not known.
+Run PDSET.
+
+To correctly set the date in the new millenium, you must use the
+undocumented command "C", as in "20C".
+
+-------------------------------------------------
+
+pdset^K(Please Log In)		;;; or :pdset
+!
+___002 PDSET  IOTLSR  
+
+PDSET.114
+Please don't use this program unless you know how.
+You are certain to break something if you happen to hit the wrong key.
+Type Control-Z to exit, or ? for a reminder of the commands.
+20C				;;; You type "20C"
+011110D				;;; You type YYMMDD and D.  YY=01 for 2001.
+131012T				;;; Ditto for time, HHMMSS and T.
+!.				;;; Finish with "!."
+141425/ 765361,,514221  763707,,355545  ___002 
+
+IT IS NOW  1:10:12 PM EST, SATURDAY, NOV 10,2001
+IT IS NOW  1:10:14 PM EST, SATURDAY, NOV 10,2001
+Q				;;; Get out with "Q"
+:KILL 
+*
+-------------------------------------------------
+
+From here on, ITS should always know the time.  If it ever gets totally
+out of whack, delete the file $KLH10_HOME/APR.TIMEBASE and reboot,
+running PDSET again.
+
