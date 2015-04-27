@@ -1,6 +1,6 @@
 /* WFIO.C - 36-bit Word File I/O facilities
 */
-/* $Id: wfio.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: wfio.c,v 2.4 2002/03/28 16:53:54 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: wfio.c,v $
+ * Revision 2.4  2002/03/28 16:53:54  klh
+ * First pass at using LFS (Large File Support)
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -132,6 +135,8 @@ File formats supported:
 		 0  0  0  0  0  0  0  0
 */
 
+#include "cenv.h"
+
 #include <stdio.h>
 #include <stdlib.h>	/* Malloc and friends */
 #include <string.h>
@@ -143,7 +148,7 @@ File formats supported:
 #include "wfio.h"
 
 #ifdef RCSID
- RCSID(wfio_c,"$Id: wfio.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(wfio_c,"$Id: wfio.c,v 2.4 2002/03/28 16:53:54 klh Exp $")
 #endif
 
 #ifndef WFIO_DEBUG	/* Include debug output capability if 1 */
@@ -243,13 +248,13 @@ byte aren't clobbered to 0.
 int
 wf_rewind(register struct wfile *wf)
 {
-    return wf_seek(wf, (long)0);
+    return wf_seek(wf, (wfoff_t)0);
 }
 
 int
-wf_seek(register struct wfile *wf, long loc)
+wf_seek(register struct wfile *wf, wfoff_t loc)
 {
-    long offset;
+    wfoff_t offset;
 
     switch (wf->wftype) {
     case WFT_U36:		/* Alan Bawden Unixified format */
@@ -285,7 +290,11 @@ wf_seek(register struct wfile *wf, long loc)
 	return 0;
     }
 
-    if (fseek(wf->wff, wf->wfsiop + offset, SEEK_SET)) {
+#if CENV_SYSF_FSEEKO
+    if (fseeko(wf->wff, wf->wfsiop + offset, SEEK_SET)) {
+#else
+    if (fseek(wf->wff, (long)(wf->wfsiop + offset), SEEK_SET)) {
+#endif
 	return 0;
     }
     wf->wfloc = loc;

@@ -24,12 +24,6 @@
  *  Try multiple other host addresses if first fails.
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-
-#include <netinet/in.h>
-
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
@@ -38,23 +32,57 @@
 #include <setjmp.h>
 #include <netdb.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+
+#include <netinet/in.h>
+
 #include "supdup.h"
 
+#ifndef FALSE
+# define FALSE 0
+#endif
+#ifndef TRUE
+# define TRUE 0
+#endif
+
+#ifndef CENV_SYS_UNIX
+# define CENV_SYS_UNIX defined(__unix__)
+#endif
+
+#if !defined(CENV_SYSF_TERMIOS) && !defined(CENV_SYSF_TERMBSD)
+# define CENV_SYSF_TERMIOS 1
+# define CENV_SYSF_TERMBSD 0
+#endif
+#define CENV_SYSF_BSDTTY CENV_SYSF_TERMBSD
+
+#if CENV_SYSF_TERMIOS
+# include <termios.h>
+#elif CENV_SYSF_TERMBSD
+# include <sys/ioctl_compat.h>	/* Kludge assumption: BSDish system */
+#endif
+
+
+#if !defined(USE_TERMINFO) && !defined(USE_TERMCAP)
+# define USE_TERMINFO 1
+#endif
+
 #ifdef TERMINFO
-#include <term.h>
+# include <term.h>
+
+/* Temporary hacks to compile, later actually get it working */
+#define BS (0)
+#define LL (0)
+#define also_has_meta_key (0)
 #endif /* TERMINFO */
 
-#ifdef	TERMCAP
-#include <sys/ioctl_compat.h>	/* Kludge assumption: BSDish system */
-
+#ifdef TERMCAP
 extern char *tgetstr();
 
 #include "termcaps.h"		/* Get table of term caps we want */
 
 static char tspace[2048], *aoftspace;
-
-#define OUTSTRING_BUFSIZ 2048
-unsigned char *outstring;
 
 unsigned char *tparam(), *tgoto();
 #endif /* TERMCAP */
@@ -66,6 +94,8 @@ unsigned char netobuf[TBUFSIZ], *netfrontp = netobuf;
 unsigned char hisopts[256];
 unsigned char myopts[256];
 
+#define OUTSTRING_BUFSIZ 2048
+unsigned char *outstring;
 
 int connected = 0;
 
@@ -100,6 +130,11 @@ extern int errno;
 
 /* Impoverished un*x keyboards */
 #define Ctl(c) ((c)&037)
+
+typedef void ossighandler_t(int);
+
+void os_ttyinit(ossighandler_t *, int);
+int os_ttymode(int);
 
 int sd (), quit (), rlogout (), suspend (), help ();
 int setescape (), status ();
@@ -139,14 +174,12 @@ int currcol, currline;	/* Current cursor position */
 
 struct sockaddr_in tsin;
 
-void	intr(int), deadpeer(int);
+ossighandler_t intr;
+ossighandler_t deadpeer;
+/* void	intr(int), deadpeer(int); */
 char	*key_name ();
 struct	cmd *getcmd ();
 struct	servent *sp;
-
-struct	tchars otc;
-struct	ltchars oltc;
-struct	sgttyb ottyb;
 
 
 putch (c)
@@ -230,11 +263,11 @@ main (argc, argv)
       fprintf (stderr, "supdup: tcp/supdup: unknown service.\n");
       exit (1);
     }
-  ioctl (0, TIOCGETP, (char *) &ottyb);
-  ioctl (0, TIOCGETC, (char *) &otc);
-  ioctl (0, TIOCGLTC, (char *) &oltc);
+
+  os_ttyinit(intr, -1);
   setbuf (stdin, 0);
   setbuf (stdout, 0);
+
   do_losingly_scroll = 0;
   if (argc > 1 && (!strcmp (argv[1], "-s") ||
                    !strcmp (argv[1], "-scroll")))
@@ -356,14 +389,14 @@ main (argc, argv)
   printf ("Connected to %s.\n", hostname);
   printf ("Escape character is \"%s\".", key_name (escape_char));
   fflush (stdout);
-  (void) mode (1);
+  (void) os_ttymode (1);
   if (clr_eos)
     tputs (clr_eos, lines - currline, putch);
   put_newline ();
   if (setjmp (peerdied) == 0)
     supdup (net);
   ttyoflush ();
-  (void) mode (0);
+  (void) os_ttymode (0);
   fprintf (stderr, "Connection closed by %s.\n", hostname);
   exit (0);
 }
@@ -445,6 +478,7 @@ sup_term ()
  *  }
  */
  
+#ifdef TERMCAP
   if (do_losingly_scroll)
     if (no_scroll && !SF)
       {
@@ -453,6 +487,7 @@ sup_term ()
       }
     else
       inits[13] |= 01;
+#endif /* TERMCAP */
 
   inits[23] = lines & 077;
   inits[22] = (lines >> 6) & 077;
@@ -551,52 +586,6 @@ systgetent (bp)
 }
 #endif /* TERMCAP */
 
-struct	tchars notc =	{ -1, -1, -1, -1, -1, -1 };
-struct	ltchars noltc =	{ -1, -1, -1, -1, -1, -1 };
-
-mode (f)
-     register int f;
-{
-  static int prevmode = 0;
-  struct tchars *tc;
-  struct ltchars *ltc;
-  struct sgttyb sb;
-  int onoff, old;
-
-  if (prevmode == f)
-    return (f);
-  old = prevmode;
-  prevmode = f;
-  sb = ottyb;
-  switch (f)
-    {
-    case 0:
-      onoff = 0;
-      tc = &otc;
-      ltc = &oltc;
-      break;
-
-    default:
-      sb.sg_flags |= RAW;       /* was CBREAK */
-      sb.sg_flags &= ~(ECHO|CRMOD);
-      sb.sg_flags |= LITOUT;
-#ifdef PASS8
-      sb.sg_flags |= PASS8;
-#endif
-      sb.sg_erase = sb.sg_kill = -1;
-      tc = &notc;
-      ltc = &noltc;
-      onoff = 1;
-      break;
-    }
-  ioctl (fileno (stdin), TIOCSLTC, (char *) ltc);
-  ioctl (fileno (stdin), TIOCSETC, (char *) tc);
-  ioctl (fileno (stdin), TIOCSETP, (char *) &sb);
-  ioctl (fileno (stdin), FIONBIO, &onoff);
-  ioctl (fileno (stdout), FIONBIO, &onoff);
-  return (old);
-}
-
 unsigned char sibuf[TBUFSIZ], *sbp;
 unsigned char tibuf[TBUFSIZ], *tbp;
 int scc;
@@ -641,11 +630,12 @@ clear_bottom_line ()
 int
 read_char ()
 {
-  int readfds;
+    fd_set readfds;
+    int fd = fileno(stdin);
 
   while (1)
     {
-      tcc = read (fileno (stdin), tibuf, 1);
+      tcc = read (fd, tibuf, 1);
       if (tcc >= 0 || errno != EWOULDBLOCK)
         {
           register int c = (tcc <= 0) ? -1 : tibuf[0];
@@ -654,8 +644,9 @@ read_char ()
         }
       else
 	{
-	  readfds = 1 << fileno (stdin);
-	  select(32, &readfds, 0, 0, 0, 0);
+	  FD_ZERO(&readfds);
+	  FD_SET(fd, &readfds);
+	  select(fd+1, &readfds, 0, 0, 0);
         }
     }
 }
@@ -669,6 +660,9 @@ supdup ()
   register int c;
   int tin = fileno (stdin), tout = fileno (stdout);
   int on = 1;
+  fd_set ifds, ofds;
+  int maxfd;
+  int ret;
 
   ioctl (net, FIONBIO, &on);
 
@@ -683,20 +677,25 @@ supdup ()
   escape_seen = 0;
   for (;;)
     {
-      int ibits = 0, obits = 0;
+      FD_ZERO(&ifds);
+      FD_ZERO(&ofds);
+      maxfd = (net > tin) ? net : tin;
+      maxfd = (maxfd > tout) ? maxfd : tout;
 
       if (netfrontp != netobuf)
-        obits |= (1 << net);
+	  FD_SET(net, &ofds);
       else
-        ibits |= (1 << tin);
+	  FD_SET(tin, &ifds);
+
       if (ttyfrontp != ttyobuf)
-        obits |= (1 << tout);
+	  FD_SET(tout, &ofds);
       else
-        ibits |= (1 << net);
+	  FD_SET(net, &ifds);
+
       if (scc < 0 && tcc < 0)
         break;
-      select (16, &ibits, &obits, 0, 0);
-      if (ibits == 0 && obits == 0)
+      ret = select(maxfd+1, &ifds, &ofds, 0, 0);
+      if (!ret)
         {
           sleep (5);
           continue;
@@ -705,7 +704,7 @@ supdup ()
       /*
        * Something to read from the network...
        */
-      if ((escape_seen == 0) && (ibits & (1 << net)))
+      if ((escape_seen == 0) && FD_ISSET(net, &ifds))
         {
           scc = read (net, sibuf, sizeof (sibuf));
           if (scc < 0 && errno == EWOULDBLOCK)
@@ -723,7 +722,7 @@ supdup ()
       /*
        * Something to read from the tty...
        */
-      if (ibits & (1 << tin))
+      if (FD_ISSET(tin, &ifds))
         {
           tcc = read (tin, tibuf, sizeof (tibuf));
           if (tcc < 0 && errno == EWOULDBLOCK)
@@ -802,11 +801,12 @@ supdup ()
             }
           *netfrontp++ = c;
         }
-      if ((obits & (1 << net)) && (netfrontp != netobuf))
+
+      if (FD_ISSET(net, &ofds) && (netfrontp != netobuf))
         netflush (0);
       if (scc > 0)
         suprcv ();
-      if ((obits & (1 << tout)) && (ttyfrontp != ttyobuf))
+      if (FD_ISSET(tout, &ofds) && (ttyfrontp != ttyobuf))
         ttyoflush ();
     }
 }
@@ -893,15 +893,13 @@ suspend ()
   if (VE) tputs (VE, 0, putch);
 #endif /* TERMCAP */
   ttyoflush ();
-  save = mode (0);
+  save = os_ttymode (0);
   if (!cursor_address)
     putchar ('\n');
   kill (0, SIGTSTP);
   /* reget parameters in case they were changed */
-  ioctl (0, TIOCGETP, (char *) &ottyb);
-  ioctl (0, TIOCGETC, (char *) &otc);
-  ioctl (0, TIOCGLTC, (char *) &oltc);
-  (void) mode (save);
+  os_ttyinit(intr, -1);
+  (void) os_ttymode(save);
 #ifdef TERMCAP
   if (VS) tputs (VS, 0, putch);
 #endif /* TERMCAP */
@@ -1000,7 +998,7 @@ punt (logout_p)
   if (VE) tputs (VE, 0, putch);
 #endif /* TERMCAP */
   ttyoflush ();
-  (void) mode (0);
+  (void) os_ttymode (0);
   if (!cursor_address)
     putchar ('\n');
   if (connected)
@@ -1346,7 +1344,7 @@ netflush (dont_die)
             return;
           if (dont_die)
             return;
-          (void) mode (0);
+          (void) os_ttymode (0);
           perror (hostname);
           close (net);
           longjmp (peerdied, -1);
@@ -1426,13 +1424,13 @@ key_name (c)
 
 void deadpeer(int sig)
 {
-  (void) mode (0);
+  (void) os_ttymode (0);
   longjmp (peerdied, -1);
 }
 
 void intr (int sig)
 {
-  (void) mode (0);
+  (void) os_ttymode (0);
   exit (1);
 }
 
@@ -1488,6 +1486,232 @@ setdebug ()
   ttyoflush ();
 }
 #endif /* 0 */
+
+/* Controlling terminal stuff
+**
+*/
+
+static int ttystated = FALSE;
+
+static struct ttystate {
+# if CENV_SYSF_TERMIOS
+	struct termios tios;
+# else
+	struct sgttyb sg;
+#  if CENV_SYSF_BSDTTY
+	struct tchars t;
+	struct ltchars lt;
+#  endif
+# endif
+}
+    inistate,	/* Initial state at startup, restored on exit */
+    cmdstate,	/* State while waiting for command char */
+    linstate,	/* State while collecting command line */
+    runstate;	/* State while running */
+
+static void ttyget(struct ttystate *ts);
+static void ttyset(struct ttystate *ts);
+
+
+int
+os_ttymode(register int f)
+{
+    static int prevmode = 0;
+    int onoff, old;
+
+    if (prevmode == f)
+      return (f);
+    old = prevmode;
+    prevmode = f;
+    switch (f)
+      {
+      case 0:
+	onoff = 0;
+	break;
+
+      default:
+	onoff = 1;
+	break;
+      }
+    ttyset(f ? &runstate : &inistate);
+#if CENV_SYSF_TERMBSD
+    ioctl (fileno (stdin), FIONBIO, &onoff);
+    ioctl (fileno (stdout), FIONBIO, &onoff);
+#endif;
+    return (old);
+}
+
+static void
+ttyget(register struct ttystate *ts)
+{
+# if CENV_SYSF_TERMIOS
+    (void) tcgetattr(0, &(ts->tios));	/* Get all terminal attrs */
+# else
+
+    gtty(0, &(ts->sg));		/* Get basic sgttyb state */
+#  if CENV_SYSF_BSDTTY
+    ioctl(0, TIOCGETC, &(ts->t));	/* Get tchars */
+    ioctl(0, TIOCGLTC, &(ts->lt));	/* Get ltchars */
+#  endif /* CENV_SYSF_BSDTTY */    
+
+# endif /* !CENV_SYSF_TERMIOS */
+}
+
+static void
+ttyset(register struct ttystate *ts)
+{
+# if CENV_SYSF_TERMIOS
+    (void) tcsetattr(0, TCSANOW, &(ts->tios));	/* Set all terminal attrs */
+						/* Note change is immediate */
+# else
+
+    stty(0, &(ts->sg));		/* Set basic sgttyb state */
+#  if CENV_SYSF_BSDTTY
+    ioctl(0, TIOCSETC, &(ts->t));	/* Set tchars */
+    ioctl(0, TIOCSLTC, &(ts->lt));	/* Set ltchars */
+#  endif /* CENV_SYSF_BSDTTY */    
+
+# endif /* !CENV_SYSF_TERMIOS */
+}
+
+
+void
+os_ttyinit(ossighandler_t *rtn, int intchr) 
+{
+#if CENV_SYS_UNIX
+
+    /* SIGINT is used instead of (eg) SIGQUIT because SIGINT is the
+    ** only appropriate value available from the ANSI C standard.
+    */
+    /*osux_*/signal(SIGINT, rtn);	/* Use native SIGINT */
+
+#if 0
+    /* Turn off SIGQUIT since the last thing we want to do with
+    ** a 32MB data segment is dump core!
+    */
+    osux_signal(SIGQUIT, SIG_IGN);
+#endif
+
+    if (!ttystated) {		/* If first time, */
+	ttyget(&inistate);	/* remember initial TTY state */
+	ttystated = TRUE;
+    }
+
+    /* Now set up various states as appropriate */
+    cmdstate = linstate = runstate = inistate;	/* Start with known state */
+
+# if CENV_SYSF_TERMIOS
+    runstate.tios.c_iflag = IMAXBEL;		/* Minimal input processing */
+    runstate.tios.c_oflag &= ~OPOST;		/* No output processing */
+    runstate.tios.c_cflag &= ~(CSIZE|PARENB|PARODD);
+    runstate.tios.c_cflag |= CS8;		/* No parity, 8-bit chars */
+    runstate.tios.c_lflag = ISIG;		/* Allow just ctl sigs */
+    memset(runstate.tios.c_cc, -1, sizeof(runstate.tios.c_cc));
+    runstate.tios.c_cc[VINTR] = intchr;
+    runstate.tios.c_cc[VMIN] = 1;
+    runstate.tios.c_cc[VTIME] = 0;
+
+# else
+    cmdstate.sg.sg_flags |= CBREAK;		/* Want CBREAK for cmds */
+    runstate.sg.sg_flags |= RAW /*CBREAK*/;	/* and running */
+    runstate.sg.sg_flags &= ~(ECHO|CRMOD);	/* no echo when running */
+    runstate.sg.sg_flags |= LITOUT;	/* Supdup added */
+#ifdef PASS8
+    runstate.sg.sg_flags |= PASS8 ;	/* Supdup added */
+#endif
+
+# if CENV_SYSF_BSDTTY
+    /* If a specific command escape/interrupt char is set, use that and
+    ** turn off everything else.  If 0, not set, all chars available for
+    ** possible debugging.
+    */
+    if (intchr) {
+	runstate.t.t_intrc = intchr;
+	runstate.t.t_quitc =
+	runstate.t.t_startc =
+	runstate.t.t_stopc =
+	runstate.t.t_eofc = -1;
+	
+	/* At this point, OK for cmd and cmdline input */
+	linstate.t = cmdstate.t = runstate.t;
+	linstate.lt = cmdstate.lt = runstate.lt;
+
+	/* Now finish clearing decks for run state */
+	runstate.t.t_brkc = -1;
+	runstate.lt.t_suspc =
+	runstate.lt.t_dsuspc =
+	runstate.lt.t_rprntc =
+	runstate.lt.t_flushc =
+	runstate.lt.t_werasc =
+	runstate.lt.t_lnextc = -1;
+    }
+#  endif /* CENV_SYSF_BSDTTY */
+# endif /* !CENV_SYSF_TERMIOS */
+#else
+# error "Unimplemented OS routine os_ttyinit()"
+#endif
+}
+
+int
+os_ttyin(void)
+{
+#if CENV_SYS_UNIX
+  {
+    unsigned char buf;
+    if (read(0, (char *)&buf, 1) != 1)	/* If this call fails, */
+	return -1;			/* assume no input waiting */
+    return buf;
+  }
+#else
+# error "Unimplemented OS routine os_ttyin()"
+#endif
+}
+
+int
+os_ttyout(int ch)
+{
+#if CENV_SYS_UNIX
+    char chloc = ch & 0177;		/* Sigh, must mask off T20 parity */
+    return write(1, &chloc, 1) == 1;
+#else
+# error "Unimplemented OS routine os_ttyout()"
+#endif
+}
+
+/* TTY String output.
+**	Note assumption that 8th bit is already masked, if desired.
+**	Call may block, sigh.
+*/
+int
+os_ttysout(char *buf, int len)		/* Note length is signed int */
+{
+#if CENV_SYS_UNIX
+    return write(1, buf, (size_t)len) == len;
+#else
+# error "Unimplemented OS routine os_ttysout()"
+#endif
+}
+
+/* Top-level command character input
+**	May want to be different from os_ttyin().
+*/
+int
+os_ttycmchar(void)
+{
+    return getc(stdin);
+}
+
+char *
+os_ttycmline(char *buffer, int size)
+{
+    return fgets(buffer, size, stdin);
+}
+
+void
+os_ttycmforce(void)
+{
+    fflush(stdout);
+}
 
 
 #ifdef	TERMCAP

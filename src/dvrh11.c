@@ -1,6 +1,6 @@
 /* DVRH11.C - Emulates RH11 controller for KS10
 */
-/* $Id: dvrh11.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvrh11.c,v 2.4 2002/03/14 06:26:22 klh Exp $
 */
 /*  Copyright © 1997, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,10 @@
 */
 /*
  * $Log: dvrh11.c,v $
+ * Revision 2.4  2002/03/14 06:26:22  klh
+ * Fixed rh11_bind to handle case of binding drive that's already been
+ * selected by CS2, even if by default.
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -47,7 +51,7 @@ static int decosfcclossage;
 #include "prmstr.h"	/* For parameter parsing */
 
 #ifdef RCSID
- RCSID(dvrh11_c,"$Id: dvrh11.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvrh11_c,"$Id: dvrh11.c,v 2.4 2002/03/14 06:26:22 klh Exp $")
 #endif
 
 struct rh11 {
@@ -320,6 +324,15 @@ rh11_bind(register struct device *d,
 
     rh->rh_drive[num] = slv;
     rh->rh_dt[num] = 0;		/* Drive not yet inited, so can't ask it */
+
+    /* Check to see if this drive is already being selected by CS2.
+     * If so, must set it up now, or will get spurious RAE's if PDP-10
+     * tries to read regs before it sets CS2 again.
+     */
+    if (rh->rh_ds == num) {
+	rh->rh_dsptr = slv;	/* Yes, set it up! */
+	rh->rh_cs2 &= ~RH_YNED;	/* Turn off non-ex bit */
+    }
 
     return TRUE;
 }

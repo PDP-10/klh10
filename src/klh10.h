@@ -1,6 +1,6 @@
 /* KLH10.H - General Configuration Definitions
 */
-/* $Id: klh10.h,v 2.4 2001/11/19 10:39:05 klh Exp $
+/* $Id: klh10.h,v 2.10 2003/02/23 18:23:38 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,24 @@
 */
 /*
  * $Log: klh10.h,v $
+ * Revision 2.10  2003/02/23 18:23:38  klh
+ * Bump version: 2.0H
+ *
+ * Revision 2.9  2002/05/21 16:54:32  klh
+ * Add KLH10_I_CIRC to allow any sys to have CIRC
+ *
+ * Revision 2.8  2002/05/21 09:41:58  klh
+ * Bump version: 2.0G
+ *
+ * Revision 2.7  2002/04/24 07:40:10  klh
+ * Bump version to 2.0E
+ *
+ * Revision 2.6  2002/03/28 16:51:39  klh
+ * Version 2.0D update
+ *
+ * Revision 2.5  2002/03/21 09:50:38  klh
+ * New version
+ *
  * Revision 2.4  2001/11/19 10:39:05  klh
  * Bump version: 2.0A
  *
@@ -35,20 +53,20 @@
 # include "rcsid.h"
 #endif
 #ifdef RCSID
- RCSID(klh10_h,"$Id: klh10.h,v 2.4 2001/11/19 10:39:05 klh Exp $")
+ RCSID(klh10_h,"$Id: klh10.h,v 2.10 2003/02/23 18:23:38 klh Exp $")
 #endif
 
 /* Preliminary legalisms (heavy sigh) */
 
 #ifndef KLH10_COPYRIGHT
 # define KLH10_COPYRIGHT "\
-    Copyright © 2001 Kenneth L. Harrenstien -- All Rights Reserved."
+    Copyright © 2002 Kenneth L. Harrenstien -- All Rights Reserved."
 #endif
 #ifndef  KLH10_WARRANTY
 # define KLH10_WARRANTY "This program comes \"AS IS\" with ABSOLUTELY NO WARRANTY."
 #endif
 #ifndef  KLH10_VERSION
-# define KLH10_VERSION "V2.0A release"
+# define KLH10_VERSION "V2.0H"
 #endif
 #ifndef  KLH10_CLIENT
 # define KLH10_CLIENT "Generic"
@@ -172,7 +190,7 @@
 # define KLH10_PAG_ITS KLH10_SYS_ITS
 #endif
 
-#if KLH10_SYS_ITS
+#if KLH10_SYS_ITS		/* ITS normally includes all of these */
 # ifndef  KLH10_ITS_JPC
 #  define KLH10_ITS_JPC 1	/* Include ITS JPC feature */
 # endif
@@ -183,6 +201,10 @@
 # ifndef  KLH10_ITS_1PROC
 #  define KLH10_ITS_1PROC 1	/* Include ITS 1-proceed feature */
 # endif
+#endif
+
+#ifndef  KLH10_I_CIRC		/* True to include ITS CIRC instruction */
+# define KLH10_I_CIRC (KLH10_SYS_ITS)
 #endif
 
 #ifndef  KLH10_MCA25		/* MCA25 KL Cache/Paging Upgrade */
@@ -238,6 +260,9 @@
 
 #ifndef  KLH10_DEV_HOST
 # define KLH10_DEV_HOST 1
+#endif
+#ifndef  KLH10_DEV_LITES
+# define KLH10_DEV_LITES 0
 #endif
 
 /* CPU and PI configuration (PI includes IO)

@@ -1,5 +1,5 @@
 # KLH10 Makefile for NetBSD on Alpha
-# $Id: Mk-nbaxp.mk,v 2.3 2001/11/10 21:28:59 klh Exp $
+# $Id: Mk-nbaxp.mk,v 2.5 2002/04/26 05:59:32 klh Exp $
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -21,14 +21,13 @@
 
 # Build definitions
 SRC = ../../src
-LIBS =
-CFLAGS = -c -g3 -O
+CFLAGS = -c -g3 -O3
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wstrict-prototypes -Wmissing-prototypes \
 		-Wmissing-declarations -Wredundant-decls
 
 # Source definitions
-CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_NETBSD=1
+CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_NETBSD=1 -include netbsd-sucks.h
 
 # Any target with no customized rule here is simply passed on to the
 # standard Makefile.  If no target is specified, "usage" is passed on
@@ -40,9 +39,25 @@ usage:
 install:
 	@make -f $(SRC)/Makefile.mk install-unix
 
-$(.TARGETS):
+$(.TARGETS): netbsd-sucks.h
 	@make -f $(SRC)/Makefile.mk $@ \
 	    "SRC=$(SRC)" \
 	    "CFLAGS=$(CFLAGS)" \
 	    "CFLAGS_LINT=$(CFLAGS_LINT)" \
 	    "CENVFLAGS=$(CENVFLAGS)"
+
+# This auxiliary file is needed to get around a bug in the NetBSD
+# /usr/include files.  <stdio.h> includes <sys/types.h> which includes
+# <machine/types.h> which incorrectly exposes a typedef of vaddr_t (normally
+# a kernel only type), thus conflicting with KLH10's vaddr_t.
+# By including this file ahead of any other source files (see the -include
+# in CENVFLAGS) we can nullify the typedef.
+# And while we're at it, blast paddr_t for the same reason.
+
+netbsd-sucks.h:
+	@echo '/* DO NOT EDIT - dynamically generated, see Makefile */' > $@
+	@echo "#define vaddr_t _kernel_vaddr_t" >> $@
+	@echo "#define paddr_t _kernel_paddr_t" >> $@
+	@echo "#include <sys/types.h>" >> $@
+	@echo "#undef paddr_t" >> $@
+	@echo "#undef vaddr_t" >> $@

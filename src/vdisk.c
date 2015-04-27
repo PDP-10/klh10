@@ -1,6 +1,6 @@
 /* VDISK.C - Virtual Disk support routines
 */
-/* $Id: vdisk.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: vdisk.c,v 2.5 2002/05/21 09:47:06 klh Exp $
 */
 /*  Copyright © 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: vdisk.c,v $
+ * Revision 2.5  2002/05/21 09:47:06  klh
+ * Second pass at LFS: make sure internal computations are big enough
+ *
+ * Revision 2.4  2002/03/28 16:52:52  klh
+ * First pass at using LFS (Large File Support)
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -34,7 +40,7 @@
 #include "vdisk.h"
 
 #ifdef RCSID
- RCSID(vdisk_c,"$Id: vdisk.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(vdisk_c,"$Id: vdisk.c,v 2.5 2002/05/21 09:47:06 klh Exp $")
 #endif
 
 /* Define stuff for format conversions */
@@ -252,7 +258,7 @@ vdk_unmount(register struct vdk_unit *d)
 int
 vdk_read(register struct vdk_unit *d,
 	 w10_t *wp,		/* Word buffer to read data */
-	 int32 secaddr,		/* Sector addr on disk */
+	 uint32 secaddr,	/* Sector addr on disk */
 	 int nsec)		/* # sectors - Never more than 16 bits */
 {
 #if VDK_DISKMAP
@@ -262,9 +268,10 @@ vdk_read(register struct vdk_unit *d,
 	vdkerror(d, "vdk_read: Can't map format %d", d->dk_format);
 	return 0;
     }
-    dwaddr = secaddr * VDK_NWDS(d);
+    dwaddr = ((osdaddr_t)secaddr) * VDK_NWDS(d);
     if (dwaddr % d->dk_wdsblk) {
-	vdkerror(d, "vdk_read: Non-sector disk address %ld.", (long) dwaddr);
+	vdkerror(d, "vdk_read: Non-sector disk address %" OSDADDR_FMT "d",
+		 dwaddr);
 	return 0;		/* Later do something better */
     }
     return vdk_mapio(d, 0, dwaddr, wp, (int)(nsec * VDK_NWDS(d)))
@@ -279,20 +286,20 @@ vdk_read(register struct vdk_unit *d,
 
     if (d->dk_fmt2wds == NULL) {	/* RAW input?  (No conversion) */
 
-	daddr = secaddr * VDK_NWDS(d) * sizeof(w10_t);
+	daddr = ((osdaddr_t)secaddr) * VDK_NWDS(d) * sizeof(w10_t);
 	bcnt = nsec * VDK_NWDS(d) * sizeof(w10_t);
 
 	if (!os_fdseek(d->dk_fd, daddr)) {
 	    d->dk_err = errno;		/* OS DEP!! */
-	    vdkerror(d, "vdk_read: seek failed for %ld, errno = %d",
-			daddr, errno);
+	    vdkerror(d, "vdk_read: seek failed for %"
+		     OSDADDR_FMT "d, errno = %d", daddr, errno);
 	    return 0;			/* Later do something better? */
 	}
 
 	if (!os_fdread(d->dk_fd, (char *)wp, bcnt, &ndone)) {
 	    d->dk_err = errno;		/* OS DEP!! */
 	    vdkerror(d, "vdk_read: failed: cnt %ld, ret %ld, errno = %d",
-			    bcnt, ndone, errno);
+		     (long)bcnt, (long)ndone, errno);
 	    return ndone / (VDK_NWDS(d) * sizeof(w10_t));
 	}
 
@@ -314,10 +321,10 @@ vdk_read(register struct vdk_unit *d,
     */
 
     /* Set up for OS I/O */
-    daddr = secaddr * d->dk_bytesec;	/* Disk addr in bytes */
+    daddr = ((osdaddr_t)secaddr) * d->dk_bytesec; /* Disk addr in bytes */
     if (!os_fdseek(d->dk_fd, daddr)) {
 	d->dk_err = errno;		/* OS DEP!! */
-	vdkerror(d, "vdk_read: seek failed for %ld., errno = %d",
+	vdkerror(d, "vdk_read: seek failed for %" OSDADDR_FMT "d, errno = %d",
 			daddr, errno);
 	return 0;
     }
@@ -342,8 +349,8 @@ vdk_read(register struct vdk_unit *d,
 
 	if (err) {
 	    d->dk_err = errno;		/* OS DEP!! */
-	    vdkerror(d, "vdk_read: failed, cnt %ld., ret %ld., errno = %d",
-			    bcnt, ndone, errno);
+	    vdkerror(d, "vdk_read: failed, cnt %ld, ret %ld, errno = %d",
+			    (long)bcnt, (long)ndone, errno);
 	    break;
 	}
 
@@ -372,7 +379,7 @@ vdk_read(register struct vdk_unit *d,
 int
 vdk_write(register struct vdk_unit *d,
 	  w10_t *wp,		/* Word buffer to read data */
-	  int32 secaddr,	/* Sector addr on disk */
+	  uint32 secaddr,	/* Sector addr on disk */
 	  int nsec)		/* # sectors - Never more than 16 bits */
 {
 #if VDK_DISKMAP
@@ -382,9 +389,10 @@ vdk_write(register struct vdk_unit *d,
 	vdkerror(d, "vdk_write: Can't map format %d", d->dk_format);
 	return 0;
     }
-    dwaddr = secaddr * VDK_NWDS(d);
+    dwaddr = ((osdaddr_t)secaddr) * VDK_NWDS(d);
     if (dwaddr % d->dk_wdsblk) {
-	vdkerror(d, "vdk_write: Non-sector disk address %ld.", (long) dwaddr);
+	vdkerror(d, "vdk_write: Non-sector disk address %" OSDADDR_FMT "d",
+		 dwaddr);
 	return 0;		/* Later do something better */
     }
     return vdk_mapio(d, TRUE, dwaddr, wp, (int)(nsec * VDK_NWDS(d)))
@@ -399,19 +407,19 @@ vdk_write(register struct vdk_unit *d,
 
     if (d->dk_wds2fmt == NULL) {	/* RAW output?  (No conversion) */
 
-	daddr = secaddr * VDK_NWDS(d) * sizeof(w10_t);
+	daddr = ((osdaddr_t)secaddr) * VDK_NWDS(d) * sizeof(w10_t);
 	bcnt = nsec * VDK_NWDS(d) * sizeof(w10_t);
 
 	if (!os_fdseek(d->dk_fd, daddr)) {
-	    vdkerror(d, "vdk_write: seek failed for %ld, errno = %d",
-			daddr, errno);
+	    vdkerror(d, "vdk_write: seek failed for %" OSDADDR_FMT
+		     "d, errno = %d", daddr, errno);
 	    d->dk_err = errno;		/* OS DEP!! */
 	    return 0;			/* Later do something better? */
 	}
 
 	if (!os_fdwrite(d->dk_fd, (char *)wp, bcnt, &ndone)) {
 	    vdkerror(d, "vdk_write: failed: cnt %ld, ret %ld, errno = %d",
-			    bcnt, ndone, errno);
+			    (long)bcnt, (long)ndone, errno);
 	    d->dk_err = errno;		/* OS DEP!! */
 	    return ndone / (VDK_NWDS(d) * sizeof(w10_t));
 	}
@@ -426,9 +434,9 @@ vdk_write(register struct vdk_unit *d,
     */
 
     /* Set up for OS I/O */
-    daddr = secaddr * d->dk_bytesec;	/* Disk addr in bytes */
+    daddr = ((osdaddr_t)secaddr) * d->dk_bytesec; /* Disk addr in bytes */
     if (!os_fdseek(d->dk_fd, daddr)) {
-	vdkerror(d, "vdk_read: seek failed for %ld., errno = %d",
+	vdkerror(d, "vdk_read: seek failed for %" OSDADDR_FMT "d, errno = %d",
 			daddr, errno);
 	d->dk_err = errno;		/* OS DEP!! */
 	return 0;
@@ -457,8 +465,8 @@ vdk_write(register struct vdk_unit *d,
 
 	if (err || (secdone != secwant)) {
 	    d->dk_err = errno;			/* OS DEP!!! */
-	    vdkerror(d, "vdk_write: failed, cnt %ld., ret %ld., errno = %d",
-			    bcnt, ndone, errno);
+	    vdkerror(d, "vdk_write: failed, cnt %ld, ret %ld, errno = %d",
+			    (long)bcnt, (long)ndone, errno);
 	    break;
 	}
     }
@@ -892,13 +900,13 @@ vdk_mapcreate(register struct vdk_unit *d)
     /* Now initialize the diskfile.  Assume just created, so at start. */
     if (!os_fdwrite(d->dk_fd, (char *) &(d->dk_dfh), sizeof(struct vdk_header), &err)
       || err != sizeof(struct vdk_header)) {
-	vdkerror(d, "vdk_mapcreate: write failed for cnt %ld., errno = %d",
+	vdkerror(d, "vdk_mapcreate: write failed for cnt %ld, errno = %d",
 			(long)sizeof(struct vdk_header), errno);
 	return 0;
     }
     if (!os_fdwrite(d->dk_fd, (char *) d->dk_map, mapsiz, &err)
       || err != mapsiz) {
-	vdkerror(d, "vdk_mapcreate: write failed for cnt %ld., errno = %d",
+	vdkerror(d, "vdk_mapcreate: write failed for cnt %ld, errno = %d",
 				(long)mapsiz, errno);
 	return 0;
     }
@@ -924,7 +932,7 @@ vdk_mapload(register struct vdk_unit *d)
     }
     if (!os_fdread(d->dk_fd, (char *) &(d->dk_dfh), sizeof(struct vdk_header), &err)
       || err != sizeof(struct vdk_header)) {
-	vdkerror(d, "vdk_mapload: read failed for cnt %ld., errno = %d",
+	vdkerror(d, "vdk_mapload: read failed for cnt %ld, errno = %d",
 			(long)sizeof(struct vdk_header), errno);
 	return 0;
     }
@@ -947,7 +955,7 @@ vdk_mapload(register struct vdk_unit *d)
 
     if (!os_fdread(d->dk_fd, (char *) d->dk_map, mapsiz, &err)
        || err != mapsiz) {
-	vdkerror(d, "vdk_mapload: read failed for cnt %ld., errno = %d",
+	vdkerror(d, "vdk_mapload: read failed for cnt %ld, errno = %d",
 				(long)mapsiz, errno);
 	return 0;
     }
@@ -989,7 +997,7 @@ vdk_mapio(struct vdk_unit *d,
 	    bcnt = d->dk_wdsblk;
 	bytes = bcnt * sizeof(w10_t);
 	if (blkno >= d->dk_nblks) {
-	    vdkerror(d, "vdk_mapread: Non-ex block %ld.", (long)blkno);
+	    vdkerror(d, "vdk_mapread: Non-ex block %ld", (long)blkno);
 	    return 0;
 	}
 	d->dk_mupdate = FALSE;
@@ -1004,14 +1012,14 @@ vdk_mapio(struct vdk_unit *d,
 	    }
 	}
 	if (!os_fdseek(d->dk_fd, da)) {
-	    vdkerror(d, "vdk_mapread: seek failed for %ld., errno = %d",
-			(long)da, errno);
+	    vdkerror(d, "vdk_mapread: seek failed for %" OSDADDR_FMT
+		     "d, errno = %d", (long)da, errno);
 	    return 0;		/* Later do something better */
 	}
 	if (!(wrtf
 	      ? os_fdwrite(d->dk_fd, (char *)vp, bytes, &err)
 	      ? os_fdread(d->dk_fd, (char *)vp, bytes, &err))) {
-	    vdkerror(d, "vdk_mapio: %s failed for cnt %ld., ret %ld., errno = %d",
+	    vdkerror(d, "vdk_mapio: %s failed for cnt %ld, ret %ld, errno = %d",
 			wrtf ? "write" : "read",
 			(long)(bytes), (long)err, errno);
 	    return 0;		/* Later do something better */
@@ -1023,7 +1031,7 @@ vdk_mapio(struct vdk_unit *d,
 		goto rdone;
 	    }
 #endif
-	    vdkerror(d, "vdk_mapio: r/w failed for cnt %ld., ret %ld., errno = %d",
+	    vdkerror(d, "vdk_mapio: r/w failed for cnt %ld, ret %ld, errno = %d",
 			(long)bytes, (long)err, errno);
 	    return 0;		/* Later do something better */
 	}
@@ -1034,21 +1042,21 @@ vdk_mapio(struct vdk_unit *d,
 		bytes = sizeof(w10_t)*(d->dk_wdsblk - bcnt);
 		memset(d->dk_blkbuf, 0, bytes);
 		if (!os_fdwrite(d->dk_fd, d->dk_blkbuf, bytes, &err)) {
-		    vdkerror(d, "vdk_mapio: w failed for cnt %ld., ret %ld., errno = %d",
-			(long)bytes, (long)err, errno);
+		    vdkerror(d, "vdk_mapio: w failed for cnt %ld, ret %ld, errno = %d",
+			     (long)bytes, (long)err, errno);
 		    return 0;
 		}
 	    }
 
 	    da = sizeof(struct vdk_header) + (blkno * sizeof(osdaddr_t));
 	    if (!os_fdseek(d->dk_fd, da)) {
-		vdkerror(d, "vdk_mapio: seek failed, map update at %ld., errno = %d",
-				(long)da, errno);
+		vdkerror(d, "vdk_mapio: seek failed, map update at %"
+			 OSDADDR_FMT "d, errno = %d", da, errno);
 		return 0;
 	    }
 	    if (!os_fdwrite(d->dk_fd, (char *)&(d->dk_freep),
 				sizeof(osdaddr_t), &err)) {
-		vdkerror(d, "vdk_mapio: w failed for cnt %ld., ret %ld., errno = %d",
+		vdkerror(d, "vdk_mapio: w failed for cnt %ld, ret %ld, errno = %d",
 			(long)sizeof(osdaddr_t), (long)err, errno);
 		return 0;
 	    }

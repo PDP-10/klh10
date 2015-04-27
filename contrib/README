@@ -7,4 +7,5 @@ licensing terms are probably what was intended, but could be wrong.
 
 	supdup/   (Unix C version of ITS SUPDUP)
 	read20/   (Unix utility to read TOPS-20 DUMPER tape images)
+	backwr/   (Unix utility to create TOPS-10 BACKUP tape images)
 

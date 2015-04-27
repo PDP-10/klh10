@@ -1,6 +1,6 @@
 /* INJRST.C - Jump (and Stack) instruction routines
 */
-/* $Id: injrst.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: injrst.c,v 2.4 2002/03/21 09:50:55 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: injrst.c,v $
+ * Revision 2.4  2002/03/21 09:50:55  klh
+ * Fixed refs of fe_debug to use mr_debug
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -31,7 +34,7 @@
 #include <stdio.h>	/* For debug output */
 
 #ifdef RCSID
- RCSID(injrst_c,"$Id: injrst.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(injrst_c,"$Id: injrst.c,v 2.4 2002/03/21 09:50:55 klh Exp $")
 #endif
 
 /* Imported functions */
@@ -113,7 +116,8 @@ insdef(i_jra)				/* JRA */
 
     va_lmake(va, PC_SECT,ac_getlh(ac));	/* Make AC.lh a local address */
     ac_set(ac, vm_read(va));		/* Get c(AC.lh) into AC */
-    PC_JUMP(e);				/* Jump to E */
+    va_lmake(va, PC_SECT, va_insect(e));
+    PC_JUMP(va);			/* Jump to PC section,,RH(E) */
     return PCINC_0;
 }
 
@@ -202,7 +206,7 @@ static pcinc_t dorstf(register w10_t w, vaddr_t e)
     register uint18 newf;	/* New flags to restore */
 
 #if KLH10_DEBUG
-    if (cpu.fe.fe_debug) {
+    if (cpu.mr_debug) {
 	putc('[', stderr);
 	pishow(stderr); pcfshow(stderr, cpu.mr_pcflags);
 #if KLH10_EXTADR
@@ -244,7 +248,7 @@ static pcinc_t dorstf(register w10_t w, vaddr_t e)
 	** appropriate one for the previous context.
 	*/
 #if KLH10_DEBUG
-    if (cpu.fe.fe_debug) {
+    if (cpu.mr_debug) {
 	pishow(stderr); pcfshow(stderr, cpu.mr_pcflags);
 #if KLH10_EXTADR
 	if (pcsf) fprintf(stderr, "(PCS:%o)", pag_pcsget());
@@ -358,7 +362,7 @@ insdef(ij_jrst10)
     PC_JUMP(e);			/* Take the jump... */
 
 #if KLH10_DEBUG
-    if (cpu.fe.fe_debug) {
+    if (cpu.mr_debug) {
 	fprintf(stderr,"[ -> ");
 	pishow(stderr); pcfshow(stderr, cpu.mr_pcflags);
 	fprintf(stderr,"%lo:]\r\n", (long) PC_30);

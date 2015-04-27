@@ -1,6 +1,6 @@
 /* DVRH20.C - Emulates RH20 disk devices for KL10
 */
-/* $Id: dvrh20.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvrh20.c,v 2.4 2003/02/23 18:16:54 klh Exp $
 */
 /*  Copyright © 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: dvrh20.c,v $
+ * Revision 2.4  2003/02/23 18:16:54  klh
+ * Add <string.h> to predeclare memset.
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -34,6 +37,7 @@ static int decosfcclossage;
 #if KLH10_DEV_RH20		/* Moby conditional for entire file */
 
 #include <stddef.h>	/* For size_t etc */
+#include <string.h>	/* For memset etc */
 #include <errno.h>
 #include <stdio.h>
 
@@ -43,7 +47,7 @@ static int decosfcclossage;
 #include "dvrh20.h"
 
 #ifdef RCSID
- RCSID(dvrh20_c,"$Id: dvrh20.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvrh20_c,"$Id: dvrh20.c,v 2.4 2003/02/23 18:16:54 klh Exp $")
 #endif
 
 struct rh20 {

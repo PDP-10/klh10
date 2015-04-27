@@ -1,6 +1,6 @@
 /* OSDSUP.C - OS-Dependent Support for KLH10
 */
-/* $Id: osdsup.c,v 2.6 2001/11/19 12:09:58 klh Exp $
+/* $Id: osdsup.c,v 2.11 2003/02/23 18:18:01 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,21 @@
 */
 /*
  * $Log: osdsup.c,v $
+ * Revision 2.11  2003/02/23 18:18:01  klh
+ * Tweak cast to avoid warning on NetBSD/Alpha.
+ *
+ * Revision 2.10  2002/05/21 16:27:36  klh
+ * (MRC) Another os_tmget tweak - T20 expects DTE timezone to ignore DST.
+ *
+ * Revision 2.9  2002/04/24 07:56:08  klh
+ * Add os_msleep, using nanosleep
+ *
+ * Revision 2.8  2002/03/26 06:18:24  klh
+ * Add correct timezone to DTE's time info
+ *
+ * Revision 2.7  2002/03/21 09:50:08  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.6  2001/11/19 12:09:58  klh
  * Disable shared mem hacking if no DPs
  *
@@ -110,7 +125,7 @@
 extern void fe_shutdown(void);
 
 #ifdef RCSID
- RCSID(osdsup_c,"$Id: osdsup.c,v 2.6 2001/11/19 12:09:58 klh Exp $")
+ RCSID(osdsup_c,"$Id: osdsup.c,v 2.11 2003/02/23 18:18:01 klh Exp $")
 #endif
 
 /* OS-dependent program startup and exit.
@@ -189,19 +204,10 @@ os_strerror(int err)
 
 /* Controlling terminal stuff
 **
-** Note current hack to support background mode without changing a lot of
-** other stuff.  If the local "ttyback" flag is set, all os_tty functions
-** pretend to work but don't actually do anything other than output, which
-** is assumed to have been redirected on the command line to some file/pipe.
-**
-** This should be fixed later to introduce another layer of TTY support, which
-** can then be moved to a module that knows how to accept commands from
-** a socket or file.  The OS_TTY functions should then be restored to their
-** former low-level operations (to enhance portability) which the higher
-** FE/CTY layer can then use as needed.
+** Note hack to support background mode; see fecmd.c
 */
 
-static int ttyback = FALSE;	/* Initially false, not in background */
+static int osttyback = FALSE;	/* Initially false, not in background */
 
 #if CENV_SYS_UNIX
 static int ttystated = FALSE;
@@ -218,9 +224,9 @@ static struct ttystate {
 # endif
 }
     inistate,	/* Initial state at startup, restored on exit */
-    cmdstate,	/* State while waiting for command char */
-    linstate,	/* State while collecting command line */
-    runstate;	/* State while KLH10 running */
+    cmdstate,	/* State while waiting for command line */
+    cmrstate,	/* State while collecting command line & KN10 running */
+    runstate;	/* State while KN10 running, CTY I/O */
 
 static void
 ttyget(register struct ttystate *ts)
@@ -256,11 +262,11 @@ ttyset(register struct ttystate *ts)
 }
 #endif /* CENV_SYS_UNIX */
 
-#if 0
 /* This routine is needed on systems that inherited the original unix
 ** genetic defect wherein a caught signal de-installs
 ** the original handler.  
 */
+#if CENV_SYS_MAC && !CENV_USE_COMM_TOOLBOX
 static void (*intsighan)();
 static void
 intresig(void)
@@ -270,47 +276,53 @@ intresig(void)
 }
 #endif
 
-/* TTY background mode stuff - see comments at start of page
+/* TTY background mode stuff
  */
-#if CENV_SYS_UNIX
-static void
-os_sigtermhdl(int sig)
+void
+os_ttybkgd(ossighandler_t *rtn)
 {
-    if (ttyback) {
-	printf("[SIGTERM received - invoking auto-shutdown!]\n");
-	fe_shutdown();
+    if (rtn && !osttyback) {
+	/* Turn on background mode */
+	osttyback = TRUE;	/* Say running in bkgd */
+#if CENV_SYS_UNIX
+	/* Clear TTY state in case it's ever referenced by accident */
+	memset((void *)&inistate, 0, sizeof(inistate));
+	ttystated = TRUE;
+	(void) osux_signal(SIGTERM, rtn);
+#endif /* CENV_SYS_UNIX */
+
+    } else if (!rtn && osttyback) {
+	/* Turn off background mode */
+	osttyback = FALSE;
+#if CENV_SYS_UNIX
+	ttystated = FALSE;	/* Must get new tty state */
+	(void) osux_signal(SIGTERM, SIG_DFL);
+#endif /* CENV_SYS_UNIX */
     }
 }
-#endif /* CENV_SYS_UNIX */
 
+/* Initialize controlling TTY.
+** This routine now takes an attribute struct!
+*/
 void
-os_ttybkgd(void)
-{
-    ttyback = TRUE;		/* Say running in bkgd */
-
-#if CENV_SYS_UNIX
-    /* Clear TTY state in case it's ever referenced by accident */
-    memset((void *)&inistate, 0, sizeof(inistate));
-    ttystated = TRUE;
-
-    (void) osux_signal(SIGTERM, os_sigtermhdl);
-#endif /* CENV_SYS_UNIX */
-}
-
-void
-os_ttyinit(ossighandler_t *rtn)
+os_ttyinit(osttyinit_t *osti)
 {
 #if CENV_SYS_UNIX
-    /* Set up SIGINT to trap to FE (KLH10 command processor).
-    ** SIGINT is used instead of (eg) SIGQUIT because SIGINT is the
-    ** only appropriate value available from the ANSI C standard.
-    */
-    osux_signal(SIGINT, rtn);	/* Use native SIGINT */
-
     /* Turn off SIGQUIT since the last thing we want to do with
     ** a 32MB data segment is dump core!
     */
     osux_signal(SIGQUIT, SIG_IGN);
+
+    /* Set up SIGINT to trap to FE (KLH10 command processor).
+    ** SIGINT is used instead of (eg) SIGQUIT because SIGINT is the
+    ** only appropriate value available from the ANSI C standard.
+    */
+    osux_signal(SIGINT, osti->osti_inthdl);	/* Use native SIGINT */
+
+    if ((osti->osti_attrs & OSTI_BKGDF)
+      && osti->osti_bkgdf) {
+	os_ttybkgd(osti->osti_trmhdl);	/* This will set ttystated=TRUE */
+    }
 
     if (!ttystated) {		/* If first time, */
 	ttyget(&inistate);	/* remember initial TTY state */
@@ -318,19 +330,24 @@ os_ttyinit(ossighandler_t *rtn)
     }
 
     /* Now set up various states as appropriate */
-    cmdstate = linstate = runstate = inistate;	/* Start with known state */
+    cmdstate = cmrstate = runstate = inistate;	/* Start with known state */
 
-  if (!ttyback) {
+  if (!osttyback) {
 # if CENV_SYSF_TERMIOS
     runstate.tios.c_iflag = IMAXBEL;		/* Minimal input processing */
     runstate.tios.c_oflag &= ~OPOST;		/* No output processing */
     runstate.tios.c_cflag &= ~(CSIZE|PARENB|PARODD);
     runstate.tios.c_cflag |= CS8;		/* No parity, 8-bit chars */
-    runstate.tios.c_lflag = ISIG;		/* Allow just ctl sigs */
+    runstate.tios.c_lflag = ISIG;		/* Allow sigs for VINTR */
     memset(runstate.tios.c_cc, -1, sizeof(runstate.tios.c_cc));
-    runstate.tios.c_cc[VINTR] = cpu.fe.fe_intchr;
+    runstate.tios.c_cc[VINTR] = osti->osti_intchr;
     runstate.tios.c_cc[VMIN] = 1;
     runstate.tios.c_cc[VTIME] = 0;
+
+    /* Command-run mode settings */
+    cmrstate.tios.c_lflag |= ISIG;		/* Allow sigs for VINTR */
+    cmrstate.tios.c_cc[VINTR] = osti->osti_intchr;
+    cmdstate = cmrstate;			/* Duplicate for cmd mode */
 
 # else
     cmdstate.sg.sg_flags |= CBREAK;		/* Want CBREAK for cmds */
@@ -343,15 +360,15 @@ os_ttyinit(ossighandler_t *rtn)
     ** possible debugging.
     */
     if (cpu.fe.fe_intchr) {
-	runstate.t.t_intrc = cpu.fe.fe_intchr;
+	runstate.t.t_intrc = osti->osti_intchr;
 	runstate.t.t_quitc =
 	runstate.t.t_startc =
 	runstate.t.t_stopc =
 	runstate.t.t_eofc = -1;
 	
-	/* At this point, OK for cmd and cmdline input */
-	linstate.t = cmdstate.t = runstate.t;
-	linstate.lt = cmdstate.lt = runstate.lt;
+	/* At this point, OK for cmd and cmdrun input */
+	cmrstate.t = cmdstate.t = runstate.t;
+	cmrstate.lt = cmdstate.lt = runstate.lt;
 
 	/* Now finish clearing decks for run state */
 	runstate.t.t_brkc = -1;
@@ -365,15 +382,15 @@ os_ttyinit(ossighandler_t *rtn)
 #  endif /* CENV_SYSF_BSDTTY */
 # endif /* !CENV_SYSF_TERMIOS */
 
-  }	/* end of if(!ttyback) */
+  }	/* end of if(!osttyback) */
 
 #elif CENV_SYS_MAC
 # if CENV_USE_COMM_TOOLBOX
-    HaltRoutine = rtn;		/* Command-. calls HaltRoutine, */
-    tty_crlf_mode = FALSE;	/*    returning to FE cmd level */
+    HaltRoutine = osti->osti_inthdl;	/* Command-. calls HaltRoutine, */
+    tty_crlf_mode = FALSE;		/*    returning to FE cmd level */
 # else
-    intsighan = rtn;		/* Remember actual handler to use */
-    signal(SIGINT, intresig);	/* Command-. returns to FE cmd level */
+    intsighan = osti->osti_inthdl;	/* Remember actual handler to use */
+    signal(SIGINT, intresig);		/* Command-. returns to FE cmd level */
 # endif
 
 #else
@@ -382,11 +399,11 @@ os_ttyinit(ossighandler_t *rtn)
 }
 
 #if KLH10_CTYIO_INT
+/* Set TTY I/O signal handler
+ */
 void
 os_ttysig(ossighandler_t *rtn)
 {
-    if (ttyback) return;
-
 # if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_XBSD || CENV_SYS_LINUX
     osux_signal(SIGIO, rtn);
 # elif CENV_SYS_SOLARIS
@@ -395,21 +412,61 @@ os_ttysig(ossighandler_t *rtn)
 #  error "Unimplemented OS routine os_ttysig()"
 # endif
 }
+
+/* Enable TTY I/O signalling
+ */
+static void
+tty_iosigon(void)
+{
+#if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_XBSD || CENV_SYS_LINUX
+    fcntl(0, F_SETFL, FASYNC);	/* Set asynch-operation flag */
+# if CENV_SYS_FREEBSD || CENV_SYS_NETBSD || CENV_SYS_LINUX
+    /* FreeBSD for sure, NetBSD probably, Linux almost certainly */
+    /* On these systems, it isn't sufficient to simply set FASYNC
+       (what they now call O_ASYNC).  The F_SETOWN function must *ALSO*
+       be called in order to set the process (or process group) that will
+       receive the SIGIO or SIGURG signal; it doesn't default!  Argh!!
+       On OSF/1 this applies only to SIGURG, which we aren't using.
+     */
+    {
+	static int doneonce = 0;
+	if (!doneonce) {
+	    fcntl(0, F_SETOWN, getpid());
+	    doneonce = TRUE;
+	}
+    }
+# endif
+
+#elif CENV_SYS_SOLARIS
+    ioctl(0, I_SETSIG, S_INPUT);	/* Set stream to signal on input */
+
+#else
+# error "Unimplemented OS routine tty_iosigon()"
+#endif
+}
+
+/* Disable TTY I/O signalling
+ */
+static void
+tty_iosigoff(void)
+{
+#if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_XBSD || CENV_SYS_LINUX
+    fcntl(0, F_SETFL, 0);	/* Clear asynch-operation flag */
+#elif CENV_SYS_SOLARIS
+    ioctl(0, I_SETSIG, 0);	/* Clear TTY stream signal behavior */
+#else
+# error "Unimplemented OS routine tty_iosigoff()"
+#endif
+}
+
 #endif /* KLH10_CTYIO_INT */
 
 void
 os_ttyreset(void)
 {
-    if (ttyback) return;
-
-#if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_XBSD || CENV_SYS_LINUX
+#if CENV_SYS_UNIX
 # if KLH10_CTYIO_INT
-    fcntl(0, F_SETFL, 0);	/* Clear asynch-operation flag */
-# endif
-    ttyset(&inistate);		/* Restore original TTY state */
-#elif CENV_SYS_SOLARIS
-# if KLH10_CTYIO_INT
-    ioctl(0, I_SETSIG, 0);	/* Clear TTY stream signal behavior */
+    tty_iosigoff();		/* Turn off TTY I/O signalling */
 # endif
     ttyset(&inistate);		/* Restore original TTY state */
 
@@ -429,18 +486,11 @@ os_ttyreset(void)
 void
 os_ttycmdmode(void)
 {
-    if (ttyback) return;
-
-#if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_XBSD || CENV_SYS_LINUX
+#if CENV_SYS_UNIX
 # if KLH10_CTYIO_INT
-    fcntl(0, F_SETFL, 0);	/* Clear asynch-operation flag */
+    tty_iosigoff();		/* Turn off TTY I/O signalling */
 # endif
-    ttyset(&cmdstate);		/* Restore original TTY state */
-#elif CENV_SYS_SOLARIS
-# if KLH10_CTYIO_INT
-    ioctl(0, I_SETSIG, 0);	/* Clear TTY stream signal behavior */
-# endif
-    ttyset(&cmdstate);		/* Restore original TTY state */
+    ttyset(&cmdstate);		/* Restore command-mode TTY state */
 
 #elif CENV_SYS_MAC
 # if CENV_USE_COMM_TOOLBOX
@@ -455,35 +505,32 @@ os_ttycmdmode(void)
 #endif
 }
 
+/* Hybrid mode: line command input, but signal if possible when ready.
+ */
+void
+os_ttycmdrunmode(void)
+{
+#if CENV_SYS_UNIX
+# if KLH10_CTYIO_INT
+    tty_iosigon();		/* Turn on TTY I/O signalling */
+# endif
+    ttyset(&cmrstate);		/* Change to command-run TTY state */
+
+#elif CENV_SYS_MAC
+    os_ttycmdmode();
+
+#else
+#  error "Unimplemented OS routine os_ttyrunmode()"
+#endif
+}
+
+
 void
 os_ttyrunmode(void)
 {
-    if (ttyback) return;
-
-#if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_XBSD || CENV_SYS_LINUX
+#if CENV_SYS_UNIX
 # if KLH10_CTYIO_INT
-    fcntl(0, F_SETFL, FASYNC);	/* Set asynch-operation flag */
-#  if CENV_SYS_FREEBSD || CENV_SYS_NETBSD || CENV_SYS_LINUX
-    /* FreeBSD for sure, NetBSD probably, Linux almost certainly */
-    /* On these systems, it isn't sufficient to simply set FASYNC
-       (what they now call O_ASYNC).  The F_SETOWN function must *ALSO*
-       be called in order to set the process (or process group) that will
-       receive the SIGIO or SIGURG signal; it doesn't default!  Argh!!
-       On OSF/1 this applies only to SIGURG, which we aren't using.
-     */
-    {
-	static int doneonce = 0;
-	if (!doneonce) {
-	    fcntl(0, F_SETOWN, getpid());
-	    doneonce = TRUE;
-	}
-    }
-#  endif
-# endif
-    ttyset(&runstate);		/* Change to "run" TTY state */
-#elif CENV_SYS_SOLARIS
-# if KLH10_CTYIO_INT
-    ioctl(0, I_SETSIG, S_INPUT);	/* Set stream to signal on input */
+    tty_iosigon();		/* Turn on TTY I/O signalling */
 # endif
     ttyset(&runstate);		/* Change to "run" TTY state */
 
@@ -511,8 +558,6 @@ static int macsavchar = -1;
 int
 os_ttyintest(void)
 {
-    if (ttyback) return 0;
-
 #if CENV_SYS_UNIX
   {
     /* OSD WARNING: the FIONREAD ioctl is defined to want a "long" on SunOS
@@ -567,11 +612,6 @@ os_ttyintest(void)
 int
 os_ttyin(void)
 {
-    if (ttyback) {
-	printf("[TTYIN while in background; invoking auto-shutdown!]\n");
-	fe_shutdown();
-    }
-
 #if CENV_SYS_UNIX
   {
     unsigned char buf;
@@ -642,11 +682,6 @@ os_ttysout(char *buf, int len)		/* Note length is signed int */
 int
 os_ttycmchar(void)
 {
-    if (ttyback) {
-	printf("[TTYCMCHAR while in background; invoking auto-shutdown!]\n");
-	fe_shutdown();
-    }
-
 #if CENV_SYS_MAC && CENV_USE_COMM_TOOLBOX
   {
     int ch;
@@ -666,11 +701,6 @@ os_ttycmchar(void)
 char *
 os_ttycmline(char *buffer, int size)
 {
-    if (ttyback) {
-	printf("[TTYCMLINE while in background; invoking auto-shutdown!]\n");
-	fe_shutdown();
-    }
-
 #if CENV_SYS_MAC && CENV_USE_COMM_TOOLBOX
   {
     /*--- Add rubout processing later ---*/
@@ -875,9 +905,22 @@ int
 os_rtmget(register osrtm_t *art)
 {
 #if CENV_SYSF_BSDTIMEVAL
-    if (gettimeofday(art, (struct timezone *)NULL) == 0)
-	return TRUE;
-    return FALSE;
+    static osrtm_t os_last_rtm = {0,0};
+    if (!gettimeofday(art, (struct timezone *)NULL) == 0)
+	return FALSE;
+				/* did time go backwards? */
+    if ((os_last_rtm.tv_sec > art->tv_sec) ||
+	((os_last_rtm.tv_sec == art->tv_sec) &&
+	 (os_last_rtm.tv_usec > art->tv_usec))) {
+				/* yes, advance 1usec from previous */
+      art->tv_sec = os_last_rtm.tv_sec;
+      art->tv_usec = ++os_last_rtm.tv_usec;
+    }
+    else {			/* advanced normally, save last time */
+      os_last_rtm.tv_sec = art->tv_sec;
+      os_last_rtm.tv_usec = art->tv_usec;
+    }
+    return TRUE;
 #elif CENV_SYS_MAC
     Microseconds(art);
     return TRUE;
@@ -1163,11 +1206,11 @@ os_v2rt_idle(ossighandler_t *hdlarg)
 #endif
 }
 
-/* OS_SLEEP - Sleep for N seconds.
+/* OS_SLEEP - Sleep for N seconds regardless of signals.
 **	This must not conflict with the behavior of os_timer().  Certain
 ** systems may require special hackery to achieve this.
-**	Currently this is only used by dvni20.c, where it is OK to suspend
-** all clock interrupts for the duration of the sleep.
+**	Currently this is only used by dvni20.c, where it is
+** OK to suspend all clock interrupts for the duration of the sleep.
 **
 **	On DEC OSF/1 the sleep() call uses a different mechanism independent
 **	of SIGALRM, which is good.
@@ -1175,25 +1218,16 @@ os_v2rt_idle(ossighandler_t *hdlarg)
 **	Solaris sleep() uses ITIMER_REAL and SIGALRM.  This is still true
 **		as of Solaris 5.8.
 **
-** Perhaps it would be good to move towards using POSIX nanosleep(),
-** which claims not to interfere with other timers or signals.
-**
-**	Solaris claims to support nanosleep():
-**		in 5.5: -lposix4
-**		in 5.8: -lrt
-**
-**	Tru64/FreeBSD/NetBSD/Linux support nanosleep().
-**
-** However, before running off to add CENV_SYSF_NANOSLEEP, need to make sure
-** this is the right thing; signals, in particular clock interrupts, can
-** interrupt the call and make it useless for the purpose: a forced
-** suspension of execution for N seconds.
+**	On FreeBSD sleep(3) is implemented using nanosleep(2).	
 */
 void
 os_sleep(int secs)
 {
-#if CENV_SYS_DECOSF
-    sleep(secs);		/* Independent of interval timers! */
+#if CENV_SYSF_NANOSLEEP
+    osstm_t stm;
+
+    OS_STM_SET(stm, secs);
+    while (os_msleep(&stm) > 0) ;
 
 #elif CENV_SYSF_BSDTIMEVAL
     /* Must save & restore ITIMER_REAL & SIGALRM, which conflict w/sleep() */
@@ -1210,6 +1244,54 @@ os_sleep(int secs)
     /* I don't think the Mac needs this --Moon */
 #else
 # error "Unimplemented OS routine os_sleep()"
+#endif
+}
+
+/* OS_MSLEEP - Sleep for N milliseconds or until interrupted.
+**	Returns > 0 if interrupted but time still remains (updates
+**		its osstm_t arg to indicate time left).
+**	Returns == 0 if time expired.
+**	Returns -1 for some other error.
+**
+** This is typically used where we want to wake up on signals to examine
+** our state, but not proceed with KN10 CPU execution until either the
+** state is satisfactory or time has expired.
+**
+**	This must not conflict with the behavior of os_timer().  Certain
+** systems may require special hackery to achieve this.
+**	Currently this is only used by dvni20.c and dvtm03.c, where it is
+** OK to suspend all clock interrupts for the duration of the sleep.
+**
+** Where possible this should use POSIX nanosleep(),
+** which claims not to interfere with other timers or signals.
+**
+**	Tru64/FreeBSD/NetBSD/Linux support nanosleep().
+**	Solaris claims to support nanosleep() but requires link hackery:
+**		in 5.5: -lposix4
+**		in 5.8: -lrt
+**
+** NOTE:
+**	On some systems, select() can be used for subsecond timeouts.
+** However, whether or not the time remaining is returned is OSD,
+** so this cannot be relied on to maintain an overall timeout;
+** for that, doing several sleeps may have to suffice.
+*/
+int
+os_msleep(osstm_t *stm)
+{
+#if CENV_SYSF_NANOSLEEP
+
+    if (nanosleep(stm, stm) == 0) {
+	stm->tv_sec = 0;	/* Make sure returns zero */
+	stm->tv_nsec = 0;
+	return 0;
+    }
+    return (errno == EINTR) ? 1 : -1;
+
+#elif CENV_SYS_MAC
+    /* I don't think the Mac needs this --Moon */
+#else
+# error "Unimplemented OS routine os_msleep()"
 #endif
 }
 
@@ -1345,25 +1427,77 @@ os_rtm_toklt(register osrtm_t *art)
 /* Miscellaneous stuff */
 
 /* OS_TMGET - Get current real-world time from OS in TM structure.
+**	This includes a painful timezone computation that is intended to be
+** portable for every system implementing the standard {gm,local}time()
+** facilities.  Unfortunately after many years the standards people STILL
+** can't agree on the need for tm_gmtoff, forcing everyone to do contortions
+** like this!
+**	Note this is invoked only by the DTE code during system startup,
+** so efficiency is not an issue; also, the timezone is in hours rather
+** than minutes or seconds because that's all that the DTE can handle.
+** If anything else needs localtime values on a more frequent or precise
+** basis, some changes will be needed.
+**	The time zone that the DTE wants is the TOPS-20 timezone, which is
+** represented as the number of hours west of UTC in standard time.  For
+** example, the west coast of North America is always 8 regardless of
+** summer time.  There is a separate flag to indicate that summer time is
+** in effect.
+**	This differs from what most people think of as a timezone value,
+** which is the number of hours/minutes east of UTC in local time.  For
+** example, the west coast of North America is -0800 in winter and -0700
+** in summer.
 */
 int
-os_tmget(register struct tm *tm)
+os_tmget(register struct tm *tm, int *zone)
 {
     time_t tad;
+    int julian, zn;
 
     if (time(&tad) == (time_t)-1)
 	return 0;
-#if 0 /* CENV_SYS_DECOSF Needs libc_r.a instead of libc.a, sigh */
-    if (localtime_r(&tad, tm) != 0)
+
+    /* To derive timezone, break TAD down into both local time and GMT (UTC)
+     * and find the difference between them.  This code came from MRC.
+     */
+#if 1
+    if (gmtime_r(&tad, tm) == NULL)
+        return 0;
+    zn = tm->tm_hour * 60 + tm->tm_min;
+    julian = tm->tm_yday;
+    if (localtime_r(&tad, tm) == NULL)
 	return 0;			/* Some problem */
 #else
+    /* Alternative code if system doesn't have the _r facilities */
   {
     register struct tm *stm;
+    if (!(stm = gmtime(&tad)))
+        return 0;
+    zn = stm->tm_hour * 60 + stm->tm_min;
+    julian = stm->tm_yday;
     if (!(stm = localtime(&tad)))
 	return 0;			/* Some problem */
     *tm = *stm;				/* Copy static to dynamic stg */
   }
 #endif
+					/* minus UTC minutes since midnight */
+    zn = tm->tm_hour * 60 + tm->tm_min - zn;
+    /* julian can be one of:
+     *  36x  local time is December 31, UTC is January 1, offset -24 hours
+     *    1  local time is 1 day ahead of UTC, offset +24 hours
+     *    0  local time is same day as UTC, no offset
+     *   -1  local time is 1 day behind UTC, offset -24 hours
+     * -36x  local time is January 1, UTC is December 31, offset +24 hours
+     */
+    if (julian = (tm->tm_yday - julian))
+	zn += ((julian < 0) == (abs(julian) == 1)) ? -24*60 : 24*60;
+
+    /* At this point zn contains the numer of minutes east of UTC in local
+     * time.  We divide by 60 to get integral hours, negate to make it be
+     * hours west of UTC, and add one if summer time to get the standard
+     * time hour offset.
+     * Resulting zone must be an integral hour.
+     */
+    *zone = -(zn / 60) + (tm->tm_isdst ? 1 : 0);
     return 1;
 }
 
@@ -1487,7 +1621,7 @@ os_mmcreate(register size_t memsiz,
 
     /* Attempt to attach segment into our address space */
     ptr = (char *)shmat(shmid, (void *)0, SHM_RND);
-    if ((int)ptr == -1) {
+    if (ptr == (char *)-1) {
 	fprintf(stderr, "[os_mmcreate: shmat failed for %ld bytes - %s]\n",
 			    (long)memsiz, os_strerror(errno));
 

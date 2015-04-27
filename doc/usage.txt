@@ -1,6 +1,6 @@
 /* USAGE.TXT - KLH10 Usage Instructions
 */
-/* $Id: usage.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+/* $Id: usage.txt,v 2.4 2002/03/21 09:43:01 klh Exp $
 */
 /*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -11,30 +11,33 @@
 **  and should always accompany this Distribution.
 */
 
-	This file provides basic pointers for using the KLH10.
-See "install.txt" for information on installing and configuring the KLH10.
+	This file provides basic pointers for KLH10 operation.  See
+"install.txt" for information on KLH10 installation and configuration.
 
 KLH10 STARTUP:
 
-	You should not start the KLH10 unless you have installed it in
-its "home directory" and are connected to that directory (see the file
-"install.txt" if necessary).  Then simply give the following shell
-command:
-		% klh10
+	A KLH10 installation has several binaries; the one you want to
+start is normally called either "kn10-ks" or "kn10-kl" depending on
+the version you have built.  These should all be installed in a KLH10
+"home directory" and you should be connected to that directory (see
+the file "install.txt" if necessary).  Then simply give the following
+shell command:
 
-The KLH10 will start up, allocate and clear KN10 memory, and begin
-reading commands from the default file "klh10.ini".  If you wish to
-use a different init file, you can specify it on the command line, for
-example:
-		% klh10 test.ini	; Use "test.ini" instead of "klh10.ini"
-		% klh10 /dev/null	; Use nothing
+	 % ./kn10-kl			; or ./kn10-ks
+
+The KN10 process will start up, allocate and clear KN10 memory, and
+begin reading commands from the default file "klh10.ini".  If you wish
+to use a different init file, you can specify it on the command line,
+for example:
+		% ./kn10-kl test.ini	; Use "test.ini" instead of "klh10.ini"
+		% ./kn10-kl /dev/null	; Use nothing
 
 Or you can simply edit or delete "klh10.ini" itself.
 
 
 KLH10 COMMAND PARSER:
 
-	After starting the KLH10 you will be talking to the command
+	After starting the KN10 you will be talking to the command
 parser.  This serves a function very similar to that of the RSX20F
 PARSER front-end program for a real KL10.  However, the KLH10 commands
 are nothing like PARSER commands.  For a list of the commands, see
@@ -44,18 +47,18 @@ the files "cmdsum.txt" and "cmdref.txt".
 parser is to get the KN10 configured, load a bootstrap program, and
 start it; from there on you interact only with the KN10.  This can all
 be done automatically by commands in the "klh10.ini" file, and it is
-highly advisable to at least configure the KN10 devices this way,
+highly advisable to at least configure the KN10's devices this way,
 using the information in "install.txt".
 
 
 KLH10 BOOTSTRAPPING:
 
-	The KLH10 is capable of loading PDP-10 binary files directly
-into its KN10 memory with the "load" command.  The KLH10 uses the
-native OS filesystem as its "front-end filesystem", and does not
-require a special area on a virtual disk.  Ordinarily you will use
-this capability to load a PDP-10 bootstrap program, which when started
-will then load either the TOPS-10 or TOPS-20 monitor.  For example:
+	KLH10 is capable of loading PDP-10 binary files directly into
+its KN10 memory with the "load" command; it uses the native OS
+filesystem as its "front-end filesystem", and does not require a
+special area on a virtual disk.  Ordinarily you will use this
+capability to load a PDP-10 bootstrap program, which when started will
+then load either the TOPS-10 or TOPS-20 monitor.  For example:
 
 	    KLH10> load boot.exe
 
@@ -100,30 +103,47 @@ building a "front-end filesystem" area is not necessary.  See the file
 
 KLH10 COMMANDS vs KN10 EXECUTION:
 
-	It is very important to understand that the KLH10 is always
-doing only one of two things.  It is either reading and executing
-commands typed to it, or it is running the KN10 which is executing
-PDP-10 instructions.  There is no way to enter KLH10 commands without
-temporarily suspending KN10 execution.
+	Previous KLH10 versions had no way to enter KLH10 commands
+without suspending KN10 execution.  This is no longer the case, and
+there are now 3 principal modes of console input:
 
-	While the KLH10 is reading commands, nothing else is
-happening, and your typein is seen only by the KLH10 command parser.
-The KN10 does not run until you give an explicit command to start or
-resume execution.
+    [1] Simple command mode, prompt "KLH10>" (or "KLH10#" during init).
+	The KN10 is halted.
+	CTY input goes to the KLH10 command parser.
+	CTY output is halted as the KN10 is halted.
 
-	While the KN10 is running, your typein is seen only by the
+    [2] Concurrent command mode, prompt "KLH10>>".
+	The KN10 is running.
+	CTY input goes to the KLH10 command parser.
+	CTY output is accepted from the KN10.
+
+    [3] CTY I/O mode, no prompt.
+	The KN10 is running.
+	CTY input/output goes to/from the KN10.
+
+The latter two modes are similar to the way a real KL system works,
+with its front-end PDP-11 independent of the KL10 CPU.
+
+In "simple" mode, the KLH10 is always doing only one of two things.
+It is either reading and executing KLH10 commands typed to it, or it
+is running the KN10 which is executing PDP-10 instructions.  While the
+KLH10 parser is reading commands, nothing else is happening, and your
+typein is seen only by the parser.  The KN10 does not run until you
+give an explicit command to start or resume execution.
+
+In "CTY" mode, the KN10 is running and your typein is seen only by the
 PDP-10, as CTY input.  You can return to the KLH10 command parser at
 any time by typing the command escape character (^\, CONTROL-\, ASCII
-"FS", octal 034), which suspends KN10 execution.  Control also returns
-to the command parser if the KN10 halts for any reason.
+"FS", octal 034).  This normally suspends KN10 execution and enters
+"simple" mode, but if the fe_runenable variable is "on" then it will
+enter "concurrent" mode.
 
-	Future versions of the KLH10 may allow concurrent execution so
-that KLH10 commands can be given while the KN10 continues to run,
-similar to the way a real KL system works with its front-end PDP-11
-independent of the KL10 CPU.  For now, simplicity is stability.
+Control also returns to the command parser if the KN10 halts for any
+reason.
+
 	
 
-STOPPING THE KLH10:
+STOPPING THE KN10:
 
 	Normally, you will be running a PDP-10 monitor.  Bring it down
 as you would for a real KL10, except that at the point where you type
@@ -214,6 +234,8 @@ background:
 
     (3) Terminate the emulator by sending a SIGTERM signal, e.g.
 		% kill <pid>
+	This will attempt to perform a graceful shutdown of the OS by
+	internally executing the SHUTDOWN command.
 
 Check the log file to make sure that everything went OK.  This file
 simply records all output to the emulated CTY.  If you wish to observe
@@ -222,7 +244,7 @@ it while the emulator is running, do "tail -f logfile".
 Again, UNIX unfortunately provides no mechanism for re-attaching a
 terminal to a background process, so there is currently no way to provide
 input to the emulated CTY in this situation.  Eventually this feature
-will be provided by a front-end daemon that can be connected to at will.
+may be provided by a front-end daemon that can be connected to at will.
 
 
 USING VIRTUAL TAPES:

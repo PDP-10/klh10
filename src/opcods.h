@@ -1,6 +1,6 @@
 /* OPCODS.H - Definitions of all PDP-10 instruction opcodes
 */
-/* $Id: opcods.h,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: opcods.h,v 2.4 2002/05/21 16:54:32 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: opcods.h,v $
+ * Revision 2.4  2002/05/21 16:54:32  klh
+ * Add KLH10_I_CIRC to allow any sys to have CIRC
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -24,7 +27,7 @@
 
 #ifndef OPCODS_RCSID
 # define OPCODS_RCSID \
-    RCSID(opcods_h,"$Id: opcods.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
+    RCSID(opcods_h,"$Id: opcods.h,v 2.4 2002/05/21 16:54:32 klh Exp $")
 #endif
 
 /* This file is intended to be included multiple times, always within
@@ -185,7 +188,7 @@ idef(0244, "ASHC",  I_ASHC,  i_ashc,	IF_AR|IF_A2|IF_ME8)
 idef(0245, "ROTC",  I_ROTC,  i_rotc,	IF_AR|IF_A2|IF_ME8)
 idef(0246, "LSHC",  I_LSHC,  i_lshc,	IF_AR|IF_A2|IF_ME8)
 
-#if KLH10_SYS_ITS /* AI-KA and KL/KS:  ROTC WITH AC+1 GOING THE WRONG WAY */
+#if KLH10_I_CIRC /* AI-KA and KL/KS:  ROTC WITH AC+1 GOING THE WRONG WAY */
  idef(0247, "CIRC", I_CIRC, i_circ,	IF_AR|IF_A2|IF_ME8)
 #endif
 idef(0250, "EXCH",  I_EXCH,  i_exch,	IF_1XB)
@@ -593,11 +596,18 @@ idef(0777, NULL, I_IO77, i_777, IF_IO)
 
 	/* APR */
 iodef(IOINOP(0700, 0), "APRID", IO_APRID, io_aprid, IF_IO)	/* BI APR, */
-#if KLH10_CPU_KL
-	/* DATAI APR, - (KA/KI: Read console switches) */
+#if !KLH10_CPU_KS
+	/* DATAI APR, - (KL: Read address break)
+			(KA/KI: Read console switches) */
   iodef(IOINOP(0700, 01), NULL, IO_DI_APR, io_di_apr, IF_IO)	/* DI APR, */
+#endif
+#if KLH10_CPU_KL
   iodef(IOINOP(0700, 02), "WRFIL", IO_WRFIL, io_wrfil, IF_IO)	/* BO APR, */
-	/* DATAO APR, - (KA: set relocs) (KI: set maint) */
+#endif
+#if !KLH10_CPU_KS
+	/* DATAO APR, - (KL: Set Address Break)
+			(KI: set maint)
+	   		(KA: set relocs) */
   iodef(IOINOP(0700, 03), NULL, IO_DO_APR, io_do_apr, IF_IO)	/* DO APR, */
 #endif
 iodef(IOINOP(0700, 04), "WRAPR", IO_WRAPR,  io_wrapr,  IF_IO)	/* CO APR, */
@@ -615,9 +625,8 @@ iodef(IOINOP(0700, 07), NULL,    IO_SO_APR, io_so_apr, IF_IO)	/* SO APR, */
 #if KLH10_CPU_KL
   iodef(IOINOP(0700, 012),"SBDIAG",IO_SBDIAG,io_sbdiag,IF_IO)	/* BO PI, */
 #endif
-#if 0	 /* DATAO PI, - (KA/KI: Disp data on console lites) */
-  iodef(IOINOP(0700, 013), NULL, IO_DO_PI, NULL, IF_IO)		/* DO PI, */
-#endif
+	 /* DATAO PI, - (KA/KI: Disp data on console lites) */
+iodef(IOINOP(0700, 013), NULL, IO_DO_PI, io_do_pi, IF_IO)	/* DO PI, */
 iodef(IOINOP(0700, 014), "WRPI", IO_WRPI, io_wrpi, IF_IO)	/* CO PI, */
 iodef(IOINOP(0700, 015), "RDPI", IO_RDPI, io_rdpi, IF_IO)	/* CI PI, */
 iodef(IOINOP(0700, 016), NULL, IO_SZ_PI, io_sz_pi, IF_IO)	/* SZ PI, */

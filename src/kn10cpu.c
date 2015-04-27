@@ -1,6 +1,6 @@
 /* KN10CPU.C - Main Processor Operations (APR, PI, PAG)
 */
-/* $Id: kn10cpu.c,v 2.5 2001/11/19 10:43:28 klh Exp $
+/* $Id: kn10cpu.c,v 2.9 2002/05/21 16:54:32 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,18 @@
 */
 /*
  * $Log: kn10cpu.c,v $
+ * Revision 2.9  2002/05/21 16:54:32  klh
+ * Add KLH10_I_CIRC to allow any sys to have CIRC
+ *
+ * Revision 2.8  2002/05/21 16:25:26  klh
+ * Fix typo
+ *
+ * Revision 2.7  2002/05/21 10:03:02  klh
+ * Fix SYNCH implementation of KL timebase
+ *
+ * Revision 2.6  2002/03/21 09:50:08  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.5  2001/11/19 10:43:28  klh
  * Add os_rtm_adjust_base for ITS on Mac
  *
@@ -36,11 +48,12 @@
 #include "dvcty.h"	/* For cty_ stuff */
 
 #ifdef RCSID
- RCSID(kn10cpu_c,"$Id: kn10cpu.c,v 2.5 2001/11/19 10:43:28 klh Exp $")
+ RCSID(kn10cpu_c,"$Id: kn10cpu.c,v 2.9 2002/05/21 16:54:32 klh Exp $")
 #endif
 
 /* Exported functions */
 void apr_init(void);
+void apr_init_aprid(void);
 int apr_run(void);
 void pi_devupd(void);
 void apr_check(void);
@@ -102,40 +115,8 @@ apr_init(void)
     cpu.mr_pcflags = 0;
     PC_SET30(0);
     PCCACHE_RESET();
-#if KLH10_CPU_KS
-# if KLH10_SYS_ITS
-    LRHSET(cpu.mr_hsb, 0, 0500);	/* Initial HSB base addr */
-    LRHSET(cpu.mr_aprid,		/* Set APR ID word */
-		AIF_ITS | KLH10_APRID_UCVER,	/* ITS ucode */
-		KLH10_APRID_SERIALNO);
-# else /* DEC */
-    LRHSET(cpu.mr_hsb, 0, 0376000);	/* Initial HSB base addr */
-    LRHSET(cpu.mr_aprid,		/* Set APR ID word */
-		AIF_UBLT		/* Have BLTUB, BLTBU */
-	/* The INHCST and NOCST bits shouldn't be on for T20, but T20
-	** ignores them while T10 expects them with KL paging, so always
-	** have them on. Sigh.
-	*/
-		| AIF_INHCST | AIF_NOCST	/* For T10 */
-		| (KLH10_PAG_KI ? AIF_KIPG : 0)
-		| (KLH10_PAG_KL ? AIF_KLPG : 0)
-		| KLH10_APRID_UCVER,
-		KLH10_APRID_SERIALNO);
-# endif /* DEC */
-
-#elif KLH10_CPU_KL
-    LRHSET(cpu.mr_aprid,
-	 (			   AIF_PMV
-		| (KLH10_PAG_KL  ? AIF_T20 : 0)
-		| (KLH10_EXTADR  ? AIF_EXA : 0)
-		| (KLH10_CPU_KLX ? AIF_KLB : 0)
-		|	 KLH10_APRID_UCVER),
-	(			   AIF_CCA
-		|		   AIF_CHN
-		| (KLH10_MCA25   ? AIF_MCA : 0)
-		| (KLH10_CPU_KLX ? AIF_KLX : 0)
-		|     KLH10_APRID_SERIALNO));		/* SN # */
-#endif
+    cpu.mr_serialno = KLH10_APRID_SERIALNO;
+    apr_init_aprid();
 
     cpu.mr_usrmode = cpu.mr_inpxct = cpu.mr_intrap =
 			cpu.mr_injrstf = cpu.mr_inpi = 0;
@@ -151,6 +132,50 @@ apr_init(void)
     pi_init();			/* Init the PI system */
     pag_init();			/* Init the pager */
     tim_init();			/* Init the timers/clocks */
+}
+
+
+/* APR_INIT_APRID - Called to set APRID value
+*/
+void
+apr_init_aprid(void)
+{
+#if KLH10_CPU_KS
+# if KLH10_SYS_ITS
+    LRHSET(cpu.mr_hsb, 0, 0500);	/* Initial HSB base addr */
+    LRHSET(cpu.mr_aprid,		/* Set APR ID word */
+		AIF_ITS | KLH10_APRID_UCVER,	/* ITS ucode */
+		cpu.mr_serialno);
+# else /* DEC */
+    LRHSET(cpu.mr_hsb, 0, 0376000);	/* Initial HSB base addr */
+    LRHSET(cpu.mr_aprid,		/* Set APR ID word */
+		AIF_UBLT		/* Have BLTUB, BLTBU */
+	/* The INHCST and NOCST bits shouldn't be on for T20, but T20
+	** ignores them while T10 expects them with KL paging, so always
+	** have them on. Sigh.
+	*/
+		| AIF_INHCST | AIF_NOCST	/* For T10 */
+		| (KLH10_PAG_KI ? AIF_KIPG : 0)
+		| (KLH10_PAG_KL ? AIF_KLPG : 0)
+		| KLH10_APRID_UCVER,
+		cpu.mr_serialno);
+# endif /* DEC */
+
+#elif KLH10_CPU_KL
+    LRHSET(cpu.mr_aprid,
+	 (			   AIF_PMV
+		| (KLH10_PAG_KL  ? AIF_T20 : 0)
+		| (KLH10_EXTADR  ? AIF_EXA : 0)
+		| (KLH10_I_CIRC  ? AIF_SEX : 0)
+		| (KLH10_CPU_KLX ? AIF_KLB : 0)
+		|	 KLH10_APRID_UCVER),
+	(			   AIF_CCA
+		|		   AIF_CHN
+		|		   AIF_OSC
+		| (KLH10_MCA25   ? AIF_MCA : 0)
+		| (KLH10_CPU_KLX ? AIF_KLX : 0)
+		|     cpu.mr_serialno));	/* SN # */
+#endif
 }
 
 /* APR_RUN - Invoked by FE to start PDP-10 running!
@@ -448,7 +473,7 @@ apr_check(void)
 	if (INTF_TEST(cpu.intf_fecty)) {
 	    INTF_ACTBEG(cpu.intf_fecty);
 	    INTF_ACTEND(cpu.intf_fecty);	/* Immediately reset flag */
-	    apr_halt(HALT_FECTY);		/* And halt processor! */
+	    apr_halt(fe_haltcode());		/* And halt processor! */
 	}
 
 #if KLH10_EVHS_INT
@@ -1753,7 +1778,8 @@ tim_init(void)
 
     /* Initialize time base */
 #if KLH10_RTIME_SYNCH
-    cpu.tim.tim_tbase = 0;
+    cpu.tim.tim_ibased = 0;
+    cpu.tim.tim_ibaser = 0;
 #elif KLH10_RTIME_OSGET
     if (!os_rtmget(&cpu.tim.tim_osbase)) {	/* Get OS realtime */
 	fprintf(stderr, "tim_init: Cannot get OS realtime!\n");
@@ -1777,8 +1803,14 @@ static void
 tim_klupdate(void *ignored)		/* Arg is unused */
 {
 #if KLH10_RTIME_SYNCH
-    /* Update time base by adding # of usec since last itick update */
-    cpu.tim.tim_tbase += CLK_USECS_PER_ITICK;
+    /* Update time base by adding # of usec since last update, which
+     * may have been due to either this function or a RDTIME.
+     * Avoid bogus value in case interval period changed.
+     */
+    cpu.tim.tim_ibased +=
+	  (CLK_USECS_PER_ITICK < cpu.tim.tim_ibaser) ? 0
+	: (CLK_USECS_PER_ITICK - cpu.tim.tim_ibaser);
+    cpu.tim.tim_ibaser = 0;	/* Reset usec since last itick */
 #endif
 
     /* Attempt PI if interval done.
@@ -1880,24 +1912,33 @@ that value as its media ID.
 */
 ioinsdef(io_rdtime)
 {
-#if KLH10_RTIME_SYNCH
-    /* Update internal time base value.
-    ** Note post-update hair.  This is needed because CLK_USEC_SINCE_ITICK is
-    ** the # of usecs since last interval tick, and is not reset, so if
-    ** this was called repeatedly within one itick the timebase would
-    ** incorrectly have a lot of extra cticks added.  Sigh.
-    */
-    int32 cticks = CLK_USEC_SINCE_ITICK();
+    uint32 ibase;
 
-    cpu.tim.tim_tbase += cticks;
-    (void) mtr_store((cpu.mr_ebraddr + EPT_TBS),	/* EPT+510 */
-		&cpu.tim.tim_tbase,
-		e);
-    cpu.tim.tim_tbase = -cticks;		/* Reset with negative val! */
-    return PCINC_1;
+#if KLH10_RTIME_SYNCH
+    /* Find # usec since last RDTIME and add them into EPT timebase.
+    ** tim_ibased is always added directly - it accounts for usec
+    **    since last RDTIME, up to the most recent interval tick.
+    ** tim_ibaser however is only used to remember the last value of
+    **    CLK_USEC_SINCE_ITICK(), ie usec since the most recent interval tick.
+    **    The difference between the new value and the old one is the
+    **    # of usec elapsed since the last update of tim_ibased.
+    */
+    uint32 cticks = CLK_USEC_SINCE_ITICK();
+
+    if (cticks >= cpu.tim.tim_ibaser) {
+	ibase = cpu.tim.tim_ibased + (cticks - cpu.tim.tim_ibaser);
+    } else {
+	/* Shouldn't happen, but be prepared if weird change to interval
+	** period causes this.
+	*/
+	fprintf(stderr, "[io_rdtime: tim_ibaser skew, %ld < %ld]\r\n",
+		(long)cticks, (long)cpu.tim.tim_ibaser);
+	ibase = cpu.tim.tim_ibased;
+    }
+    cpu.tim.tim_ibaser = cticks;	/* Remember last subinterval cnt */
+    cpu.tim.tim_ibased = 0;
 
 #elif KLH10_RTIME_OSGET
-    uint32 ibase;
     osrtm_t rtm, rtmbase;
 
     if (!os_rtmget(&rtm))			/* Get OS realtime */
@@ -1906,10 +1947,13 @@ ioinsdef(io_rdtime)
     os_rtmsub(&rtm, &cpu.tim.tim_osbase);	/* Find elapsed realtime  */
     cpu.tim.tim_osbase = rtmbase;		/* Set base for next time */
     ibase = os_rtm_toklt(&rtm);			/* Convert diff to KL ticks */
+#else
+    ibase = 0;
+#endif
+
     return mtr_store((cpu.mr_ebraddr + EPT_TBS),	/* EPT+510 */
 		&ibase,
 		e);
-#endif
 }
 
 /* WRPAE (70210 = BLKO TIM,) Write Performance Analysis Enables
@@ -1966,7 +2010,7 @@ ioinsdef(io_co_tim)
 	    ** midstream.
 	    ** Note previous code that prevents newper from being 0.
 	    */
-#if KLH10_ITIME_SYNCH
+#if 0 /* KLH10_ITIME_SYNCH */
 	    /* For now, ignore "minor" change attempts.  T10 tries to
 	    ** twiddle this incessantly for a "leap jiffy" and it will
 	    ** never do any good.  So avoid wasting the overhead...
@@ -1976,7 +2020,7 @@ ioinsdef(io_co_tim)
 	    if (((int)(newper - cpu.tim.tim_intper)) > 2)
 		clk_itickset(((uint32)newper)*10);
 
-#elif KLH10_ITIME_INTRP
+#elif 1 /* KLH10_ITIME_INTRP */
 	    /* Go ahead and ask the clock code for a new timer period.
 	    ** Normally this request will be ignored in favor of a fixed
 	    ** runtime parameter (clk_ithzfix), unless the user has cleared it.
@@ -2131,7 +2175,8 @@ ioinsdef(io_wrtime)
 	cpu.tim.tim_tbon = MTR_TBON;
     if (erh & MTR_TBCLR) {	/* Reset time base hardware ctr */
 #if KLH10_RTIME_SYNCH
-	cpu.tim.tim_tbase = -CLK_USEC_SINCE_ITICK();	/* Note neg offset! */
+	cpu.tim.tim_ibased = 0;
+	cpu.tim.tim_ibaser = CLK_USEC_SINCE_ITICK();
 #elif KLH10_RTIME_OSGET
 	(void) os_rtmget(&cpu.tim.tim_osbase);
 #endif

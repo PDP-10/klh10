@@ -1,6 +1,6 @@
 /* DVUBA.C - KLH10 Emulation of KS10 Unibus Adapters
 */
-/* $Id: dvuba.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvuba.c,v 2.4 2002/05/21 09:44:52 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: dvuba.c,v $
+ * Revision 2.4  2002/05/21 09:44:52  klh
+ * Complain about bad unibus refs only if ub_debug set
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -52,7 +55,7 @@ static int decosfcclossage;
 #include "dvuba.h"
 
 #ifdef RCSID
- RCSID(dvuba_c,"$Id: dvuba.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvuba_c,"$Id: dvuba.c,v 2.4 2002/05/21 09:44:52 klh Exp $")
 #endif
 
 /* Imported functions */
@@ -71,6 +74,7 @@ static uint32 ubapag_read(struct ubctl *, dvuadr_t);
 **	Easier debugging, too.
 */
 struct ubctl dvub1, dvub3;
+int ub_debug;		/* Not a full debug trace, just prints warnings */
 
 static void ub_pifun(struct device *, int);
 
@@ -239,7 +243,8 @@ ub_devfind(register struct ubctl *ub,
 static void
 ub_badctl(char *fn, w10_t ioaddr, int bflag)
 {
-    fprintf(stderr, "%s: Bad UB ctlr in IO addr: %lo,,%lo\r\n",
+    if (ub_debug)
+	fprintf(stderr, "%s: Bad UB ctlr in IO addr: %lo,,%lo\r\n",
 		fn, (long)LHGET(ioaddr), (long)RHGET(ioaddr));
     pag_iofail(((paddr_t)LHGET(ioaddr))<<18 | RHGET(ioaddr), bflag);
 }
@@ -247,7 +252,8 @@ ub_badctl(char *fn, w10_t ioaddr, int bflag)
 static void
 ub_badaddr(char *fn, dvuadr_t uaddr, int bflag)
 {
-    fprintf(stderr, "%s: Bad unibus IO addr: %lo\r\n", fn, (long)uaddr);
+    if (ub_debug)
+	fprintf(stderr, "%s: Bad unibus IO addr: %lo\r\n", fn, (long)uaddr);
     pag_iofail((paddr_t)uaddr, bflag);
 }
 

@@ -1,6 +1,6 @@
 /* KLH10.C - Main for KLH10 (also Front End Console for now)
 */
-/* $Id: klh10.c,v 2.4 2001/11/10 21:28:59 klh Exp $
+/* $Id: klh10.c,v 2.9 2002/05/21 16:54:32 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,22 @@
 */
 /*
  * $Log: klh10.c,v $
+ * Revision 2.9  2002/05/21 16:54:32  klh
+ * Add KLH10_I_CIRC to allow any sys to have CIRC
+ *
+ * Revision 2.8  2002/05/21 10:01:22  klh
+ * Add ub_debug param.
+ * Allow access to HZ vars even if using synch clock.
+ *
+ * Revision 2.7  2002/04/24 07:56:08  klh
+ * Add os_msleep, using nanosleep
+ *
+ * Revision 2.6  2002/03/28 16:51:04  klh
+ * Tweak to fc_quit
+ *
+ * Revision 2.5  2002/03/21 09:50:08  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.4  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -37,6 +53,7 @@
 #include "kn10dev.h"
 #include "kn10ops.h"
 #include "wfio.h"
+#include "fecmd.h"
 #include "feload.h"
 #include "prmstr.h"
 #include "dvcty.h"	/* For cty_ functions */
@@ -46,11 +63,12 @@
 #endif
 
 #ifdef RCSID
- RCSID(klh10_c,"$Id: klh10.c,v 2.4 2001/11/10 21:28:59 klh Exp $")
+ RCSID(klh10_c,"$Id: klh10.c,v 2.9 2002/05/21 16:54:32 klh Exp $")
 #endif
 
 /* Exported functions */
 void klh10_main(int argc, char **argv);
+void fe_aprcont(int, int, vaddr_t, int);
 void fe_shutdown(void);
 void fe_traceprint(w10_t, vaddr_t);
 void fe_begpcfdbg(FILE *f);
@@ -62,6 +80,7 @@ void insprint(FILE *, int);
 
 /* Imported functions */
 extern void apr_init(void);
+extern void apr_init_aprid(void);
 extern int apr_run(void);
 
 /* Local function kept external for easier debug access  */
@@ -70,21 +89,15 @@ void errpt(void);
 
 /* Local variables */
 
-static char licwarn[] ="\n\
-===============\n\
-This is proprietary and confidential code of Ken Harrenstien\n\
-and may only be used under the terms of the license agreement.\n\
-!! DECOMPILATION OF THIS SOFTWARE VIOLATES THE LICENSE AGREEMENT !!\n\
-===============\n";
-
 int proc_bkgd = FALSE;	/* TRUE if want to run in background */
 int fedevchkf = FALSE;	/* TRUE to do periodic device attention checks */
 ospri_t proc_pri = 0;	/* CPU process priority on host OS */
+int cmdpromptnew = TRUE;	/* Set whenever cmdprompt changed */
 char *cmdprompt =	/* Set initial command prompt */
 #ifdef KLH10_CMDPROMPT
 	KLH10_CMDPROMPT;
 #else
-	"KLH10> ";
+	":KLH10# :KLH10> :KLH10>> ";
 #endif
 
 char *ld_fmt = NULL;	/* Current load file format */
@@ -118,12 +131,10 @@ void pinstr(FILE *, w10_t, int, vaddr_t);
 
 /* Local Function predeclarations */
 
-void int_fecty(int);
 static void klh10_init(void);
 static void mem_init(void), mem_term(void);
 static int mem_setlock(FILE *, FILE *, int);
 static void swinit(int, char **);
-static void aprcont(int, vaddr_t);
 static int aprhalted(void);
 static void wd1print(FILE *, w10_t);
 static void wd2print(FILE *, w10_t);
@@ -257,10 +268,17 @@ CMDDEF(cd_dep,   fc_dep,    CMRF_TOKS,	"<addr> <val>",
 				"Deposit value at address", "")
 CMDDEF(cd_bkpt,  fc_bkpt,   CMRF_TLIN,	"<addr>",
 				"Set breakpoint at PC loc", "")
+#if 1 /* New setup */
+CMDDEF(cd_step,  fc_step,   CMRF_TLIN,	"<#>",
+				"Single-Step # KN10 instrs", "")
+CMDDEF(cd_proc,  fc_proc,   CMRF_NOARG,	NULL,
+				"Proceed KN10 without CTY", "")
+#else
 CMDDEF(cd_step,  fc_step,   CMRF_NOARG,	NULL,
 				"Single-Step KN10", "")
 CMDDEF(cd_proc,  fc_proc,   CMRF_TLIN,	"<#>",
 				"Proceed # instrs", "")
+#endif
 CMDDEF(cd_cont,  fc_cont,   CMRF_NOARG,	NULL,
 				"Continue KN10", "")
 CMDDEF(cd_view,  fc_view,   CMRF_NOARG,	NULL,
@@ -306,6 +324,10 @@ CMDDEF(cd_devdbg,fc_devdbg,    CMRF_TLIN,
 CMDDEF(cd_devwait,fc_devwait,   CMRF_TLIN,
 			"[<devid>] [<secs>]",
 			"Wait for device (or all devs)", "")
+#if KLH10_DEV_LITES
+CMDDEF(cd_lights,  fc_lights,   CMRF_TLIN,	"<hexaddr>",
+				"Set console lights I/O base address", "")
+#endif
 
 
 #define KEYSBEGIN(name)	struct cmkey_s name[] = {
@@ -346,6 +368,9 @@ KEYSBEGIN(fectbkeys)
 #endif
     KEYDEF("dev",	cd_dev_cmd)
     KEYDEF("devload",	cd_devload)
+#if KLH10_DEV_LITES
+    KEYDEF("lights",	cd_lights)
+#endif
 KEYSEND
 
 static void error(char *, ...), syserr(int, char *, ...);
@@ -400,6 +425,7 @@ pconfig(FILE *f)
     /* Show hardware emulation stuff first, then software features */
     fprintf(f, "\t Other:%s\n",
 	    KLH10S_MCA25
+	    KLH10S_I_CIRC
 	    KLH10S_JPC
 	    KLH10S_DEBUG
 	    KLH10S_PCCACHE
@@ -461,22 +487,21 @@ klh10_main(int argc,
 
     os_init();			/* Initialize any OS-dependent stuff */
 
-    /* Set up some TTY stuff.  Ensure stdout is unbuffered, like stderr,
-    ** to avoid the otherwise confusing skews between the two streams.
+    /* Ensure stdout is unbuffered, like stderr, to avoid the otherwise
+    ** confusing skews between the two streams.  This must be done prior to
+    ** any output on stdout.
     */
     setbuf(stdout, (char *)NULL);
-    if (proc_bkgd) {
+    if (proc_bkgd)
 	fprintf(stderr, "[Running in background]\n");
-	os_ttybkgd();		/* Hack for now - use this to inform OS code */
-    }
-
     pgreeting(stdout);		/* Print greeting message if one */
+
     klh10_init();		/* Do machine init and configuring */
+    fe_ctyinit();		/* Initialize console, KLH10 UI */
 
     if (!setjmp(errenv)) {
-	/* Do once-only first-time stuff that might interrupt */
+	/* Once-only first-time stuff */
 	initdone = TRUE;	/* errenv jmpbuf now set */
-	os_ttyinit(int_fecty);	/* Initialize our terminal, provide int hook */
 
     } else {
 	/* Recover from error catch - something called errpt(). */
@@ -488,35 +513,90 @@ klh10_main(int argc,
 	    printf("[Aborted input from \"%s\"]\n", cminfname);
 	}
     }
-    os_ttyreset();		/* Reset our terminal mode stuff */
-
-    /* Enter command parser loop */
-    printf("\n");			/* Make sure we prompt on a new line */
-    cmdinit(&command, cmdprompt, cmdbuf, sizeof(cmdbuf));
-    for (;;) {				/* Loop here... */
-	if (!cmdlsetup(&command)) {	/* Read typein command line */
-	    printf("\n");		/* If failed, try again */
-	    continue;
-	}
-	if (fedevchkf)			/* If checking for dev attn, */
-	    fedevchkf = dev_dpchk_ctl(TRUE);	/* do so here */
-	(void) cmdexec(&command);	/* Parse and execute */
-    }
+    fe_cmdloop();
 }
 
 void
-int_fecty(int sig)
+fe_cmdloop(void)
 {
-    INTF_SET(cpu.intf_fecty);	/* Say FE CTY interrupt went off */
-    INSBRKSET();		/* Say something happened */
+    enum femode omode = -1;
+    int prompted = FALSE;
+
+    fe_ctyreset();		/* Reset our terminal mode stuff */
+    printf("\n");		/* Make sure we prompt on a new line */
+
+    /* Enter command parser loop */
+    for (;;) {
+
+	/* Determine new prompt if necessary */
+	if (cmdpromptnew || (omode != cpu.fe.fe_mode)) {
+	    cmdinit(&command, fe_cmprompt(cpu.fe.fe_mode),
+		    cmdbuf, sizeof(cmdbuf));
+	    omode = cpu.fe.fe_mode;
+	    prompted = FALSE;
+	    cmdpromptnew = FALSE;
+	}
+	if (cpu.fe.fe_debug)
+	    fprintf(stderr, "[femode %d prompt %d]", omode, prompted);
+
+	switch (omode) {
+	case FEMODE_CMDCONF:
+	case FEMODE_CMDHALT:
+	    if (prompted)
+		command.cmd_flags |= CMDF_NOPRM;
+	    else
+		command.cmd_flags &= ~CMDF_NOPRM;
+	    if (!cmdlsetup(&command)) {	/* Read typein command line */
+		printf("\n");		/* If failed, try again */
+		break;
+	    }
+	    if (fedevchkf)			/* If checking for dev attn, */
+		fedevchkf = dev_dpchk_ctl(TRUE);	/* do so here */
+	    (void) cmdexec(&command);	/* Parse and execute */
+	    break;
+
+	case FEMODE_CMDRUN:
+	    /* See if input available.  If so, parse and execute, else
+	       run the CPU.
+	    */
+	    if (cminfile || fe_ctyintest()) {
+		if (prompted)
+		    command.cmd_flags |= CMDF_NOPRM;
+		else
+		    command.cmd_flags &= ~CMDF_NOPRM;
+		if (!cmdlsetup(&command)) {	/* Read input cmd line */
+		    printf("\n");		/* If failed, try again */
+		    break;
+		}
+		(void) cmdexec(&command);	/* Parse and execute */
+		break;
+	    }
+
+	    /* Nothing to do, start running! */
+	    if (!prompted) {
+		fputs(fe_cmprompt(cpu.fe.fe_mode), stdout);
+		prompted = TRUE;
+	    }
+	    fe_aprcont(FEMODE_CMDRUN, 0, 0, 0);	/* Resume KN10 */
+	    continue;		/* No cmd done, so don't reset "prompted" */
+
+	case FEMODE_CTYRUN:	/* Should not happen */
+	default:
+	    cpu.fe.fe_mode = FEMODE_CMDHALT;
+	    error("[FE invalid mode %d]", omode);
+	}
+	prompted = FALSE;
+    }
 }
 
 
 void
 fc_quit(struct cmd_s *cm)
 {
+    if (!aprhalted())
+	printf("KN10 still running!\n");
     printf("Are you sure you want to quit? [Confirm]");
-    os_ttycmforce();
+    fe_ctycmforce();
     switch (cminchar()) {
     case '\r':
     case '\n':
@@ -787,7 +867,7 @@ cminchar(void)
     register int ch;
 
     if (!cminfile)
-	return os_ttyin();
+	return fe_ctyin();
 
     if ((ch = getc(cminfile)) == EOF) {
 	fclose(cminfile);
@@ -796,7 +876,7 @@ cminchar(void)
 	ch = '\n';		/* Try to end gracefully */
     } else {
 	putc(ch, stdout);	/* Echo file input char */
-	os_ttycmforce();	/* Ensure it's out */
+	fe_ctycmforce();	/* Ensure it's out */
     }
     return ch;
 }
@@ -810,7 +890,7 @@ cmdaccum(struct cmd_s *cm)
     if ((cm->cmd_flags & CMDF_INACCUM) == 0) {
 	printf("%s", cm->cmd_prm ? cm->cmd_prm : ">");
 	cm->cmd_flags |= CMDF_INACCUM;
-	os_ttycmforce();	/* Force out any pending tty output */
+	fe_ctycmforce();	/* Force out any pending tty output */
     }
 
     for (;;) {
@@ -821,7 +901,7 @@ cmdaccum(struct cmd_s *cm)
 	    error("Command line overflow (%d chars!); \"%.10s...\" flushed.\n",
 			(int)cm->cmd_blen, cm->cmd_buf);
 #if 0
-	    os_ttyinflush();		/* Flush any pending input */
+	    fe_ctyinflush();		/* Flush any pending input */
 #endif
 	    cmdreset(cm);
 	    return cmdaccum(cm);
@@ -860,6 +940,11 @@ cmdexec(struct cmd_s *cm)
     struct cmkey_s *key, *key2;
     register struct cmrtn_s *cd;
     int argc;
+
+    if (cpu.fe.fe_debug) {
+	*(cm->cmd_inp) = '\0';
+	fprintf(stderr, "[cmdexec \"%s\"]", cm->cmd_rdp);
+    }
 
     /* Get first token on line */
     cp = s_1token(&tcp, &tcnt, &cm->cmd_rdp, &fcnt);
@@ -926,11 +1011,14 @@ cmdlsetup(struct cmd_s *cm)
     char *cp;
     size_t len;
 
+    if (cpu.fe.fe_debug)
+	fprintf(stderr, "[cmdlsetup]");
+
     if (!(cm->cmd_flags & CMDF_NOPRM) && cm->cmd_prm) {
 	fputs(cm->cmd_prm, stdout);
     }
 
-    os_ttycmforce();		/* Force out any pending tty output */
+    fe_ctycmforce();		/* Force out any pending tty output */
     cmdreset(cm);
     if (cminfile) {
 	cp = fgets(cm->cmd_inp, (int)cm->cmd_left-1, cminfile);
@@ -942,7 +1030,7 @@ cmdlsetup(struct cmd_s *cm)
 	}
 	fputs(cp, stdout);		/* Echo the input line */
     } else {
-	cp = os_ttycmline(cm->cmd_inp, (int)cm->cmd_left-1);
+	cp = fe_ctycmline(cm->cmd_inp, (int)cm->cmd_left-1);
 	if (cp == NULL)
 	    return NULL;
     }
@@ -1063,6 +1151,24 @@ fc_ques(struct cmd_s *cm)
 }
 
 static void
+helpline(register struct cmkey_s *kp)
+{
+    int cols;
+    register char *cp;
+
+    if ((cols = 20 - strlen(kp->cmk_key)) < 0)
+	cols = 0;
+    if (!(cp = kp->cmk_p->cmn_rtn.cmr_synt))
+	cp = "";
+    if (cols < strlen(cp))	/* Key and syntax too long? */
+	printf("%s %s\n                      %s\n",
+		kp->cmk_key, cp, kp->cmk_p->cmn_rtn.cmr_help);
+    else
+	printf("%s %-*s %s\n",
+		kp->cmk_key, cols, cp, kp->cmk_p->cmn_rtn.cmr_help);
+}
+
+static void
 fc_help(struct cmd_s *cm)
 {
     struct cmkey_s *kp, *key2;
@@ -1074,16 +1180,7 @@ fc_help(struct cmd_s *cm)
 
     if (!cp || !*cp) {		/* If no specific arg, show everything */
 	for (kp = fectbkeys; kp->cmk_key; ++kp) {
-	    if ((cols = 20 - strlen(kp->cmk_key)) < 0)
-		cols = 0;
-	    if (!(cp = kp->cmk_p->cmn_rtn.cmr_synt))
-		cp = "";
-	    if (cols < strlen(cp))	/* Key and syntax too long? */
-		printf("%s %s\n                      %s\n",
-			kp->cmk_key, cp, kp->cmk_p->cmn_rtn.cmr_help);
-	    else
-		printf("%s %-*s %s\n",
-			kp->cmk_key, cols, cp, kp->cmk_p->cmn_rtn.cmr_help);
+	    helpline(kp);
 	}
 	return;
     }
@@ -1095,16 +1192,16 @@ fc_help(struct cmd_s *cm)
 	return;
     }
     if (!key2) {		/* Just one match, so show it in detail */
-	printf("%s %s\n%s\n", kp->cmk_key,
-			kp->cmk_p->cmn_rtn.cmr_help,
-			kp->cmk_p->cmn_rtn.cmr_desc);
+	helpline(kp);
+	if ((cp = kp->cmk_p->cmn_rtn.cmr_desc) && *cp)
+	    printf("%s\n", cp);
 	return;
     }
 
     /* More than one match, show each one */
     for (kp = fectbkeys; kp->cmk_key; ++kp) {
 	if (smatch(cp, kp->cmk_key) > 0)
-	    printf("%s %s\n", kp->cmk_key, kp->cmk_p->cmn_rtn.cmr_help);
+	    helpline(kp);
     }
 }
 
@@ -1270,16 +1367,26 @@ mem_setlock(FILE *of, FILE *ef, int nlockf)
 /* Support routines for FC_SET - parameter parsing
 */
 
+static int cmvp_prompt(struct prmvcx_s *);
 static int cmvp_sethz(struct prmvcx_s *);
 static int cmvp_setpri(struct prmvcx_s *);
 static int cmvp_memlock(struct prmvcx_s *);
+static int cmvp_serialno(struct prmvcx_s *);
 
 extern int ld_debug;	/* From feload.c */
 #if KLH10_DEBUG && KLH10_CPU_KS
 extern int tim_debug;	/* From kn10cpu.c */
 #endif
+#if KLH10_CPU_KS
+extern int ub_debug;	/* From dvuba.c */
+#endif
 
 struct prmvar_s fecmvars[] = {
+#if KLH10_CPU_KL || KLH10_CPU_KS
+    PRMVAR("serialno", "CPU serial number",
+				PRMVT_DEC, &cpu.mr_serialno,
+							cmvp_serialno, NULL),
+#endif
     PRMVAR("sw", "Data switch word",
 				PRMVT_WRD, &cpu.mr_dsw, NULL, NULL),
     PRMVAR("mem_lock", "Set on to attempt locking memory",
@@ -1293,9 +1400,13 @@ struct prmvar_s fecmvars[] = {
     PRMVAR("fe_intchr", "KLH10 cmd escape char",
 				PRMVT_OCT, &cpu.fe.fe_intchr, NULL, NULL),
     PRMVAR("fe_prompt", "KLH10 cmd prompt",
-				PRMVT_STR, &cmdprompt, NULL, NULL),
+				PRMVT_STR, &cmdprompt, cmvp_prompt, NULL),
+    PRMVAR("fe_runenable", "Enable running KN10 during KLH10 cmd processing",
+				PRMVT_BOO, &cpu.fe.fe_runenable, NULL, NULL),
+    PRMVAR("fe_debug", "FE debug trace",
+				PRMVT_BOO, &cpu.fe.fe_debug, NULL, NULL),
     PRMVAR("cty_debug", "CTY debug trace",
-				PRMVT_BOO, &cty_debug, NULL, NULL),
+				PRMVT_BOO, &cpu.fe.fe_ctydebug, NULL, NULL),
 #if KLH10_SYS_T20 && KLH10_CPU_KS
     PRMVAR("cty_iowait", "CTY output delay, usec",
 				PRMVT_DEC, &cpu.fe.fe_iowait, NULL, NULL),
@@ -1308,6 +1419,10 @@ struct prmvar_s fecmvars[] = {
     PRMVAR("tim_debug", "KS timebase debug trace",
 				PRMVT_BOO, &tim_debug, NULL, NULL),
 #endif
+#if KLH10_CPU_KS
+    PRMVAR("ub_debug", "KS unibus debug info (bad ctl/addr warnings)",
+				PRMVT_BOO, &ub_debug, NULL, NULL),
+#endif
     PRMVAR("ld_fmt", "LOAD/DUMP word format",
 				PRMVT_STR, &ld_fmt, NULL, NULL),
     PRMVAR("ld_debug", "LOAD debug trace",
@@ -1318,7 +1433,8 @@ struct prmvar_s fecmvars[] = {
     PRMVAR("clk_ipms", "Instrs per virt msec",
 				PRMVT_DEC, &cpu.clk.clk_ipmsrq,
 	  						cmvp_sethz,NULL),
-#elif KLH10_CLKTRG_OSINT
+#endif
+#if 1 /* KLH10_CLKTRG_OSINT */
     PRMVAR("clk_ithz", "OS interval timer - current value in Hz",
 				PRMVT_DEC, &cpu.clk.clk_ithzcmreq,
 							cmvp_sethz, NULL),
@@ -1353,10 +1469,29 @@ struct prmvar_s fecmvars[] = {
     PRMVAR("pilev_dtereq", "DTE20 PI reqs",
 				PRMVT_OCT, &cpu.pi.pilev_dtereq, NULL, NULL),
 #endif
+    PRMVAR("feiosignulls", "# SIGIOs with no input",
+				PRMVT_DEC, &feiosignulls, NULL, NULL),
+    PRMVAR("feiosiginps", "# SIGIOs with CTY input",
+				PRMVT_DEC, &feiosiginps, NULL, NULL),
+    PRMVAR("feiosigtests", "# non-SIGIO tests in above",
+				PRMVT_DEC, &feiosigtests, NULL, NULL),
     PRMVAR(NULL, "", PRMVT_NULL, NULL, NULL, NULL)
 };
 
 /* Various parameter get/set auxiliary functions */
+
+static int
+cmvp_prompt(register struct prmvcx_s *cx)
+{
+    /* First just set requested value normally */
+    if (!prmvp_set(cx))
+	return FALSE;	/* Problem setting param?  Already reported */
+
+    /* Then must do special re-init stuff */
+    fe_cmpromptset(cmdprompt);
+    cmdpromptnew = TRUE;
+    return TRUE;
+}
 
 static int
 cmvp_memlock(register struct prmvcx_s *cx)
@@ -1409,6 +1544,33 @@ cmvp_sethz(register struct prmvcx_s *cx)
 #endif
     return TRUE;
 }
+
+static int
+cmvp_serialno(register struct prmvcx_s *cx)
+{
+#if KLH10_CPU_KL
+    if (cx->prmvcx_val.vi <= 1024)
+	fprintf(cx->prmvcx_of, "KL serial number should be > 1024\n");
+    else if (cx->prmvcx_val.vi > 07777) {
+	fprintf(cx->prmvcx_of, "Invalid KL serial number %ld\n",
+						(long)cx->prmvcx_val.vi);
+	return FALSE;
+    }
+#elif KLH10_CPU_KS
+    if (cx->prmvcx_val.vi <= 4096)
+	fprintf(cx->prmvcx_of, "KS serial number should be > 4096\n");
+    else if (cx->prmvcx_val.vi > 077777) {
+	fprintf(cx->prmvcx_of, "Invalid KS serial number %ld\n",
+						(long)cx->prmvcx_val.vi);
+	return FALSE;
+    }
+#endif
+    if (!prmvp_set(cx))
+	return FALSE;	/* Problem setting param?  Already reported */
+    apr_init_aprid();		/* Reset APR ID */
+    return TRUE;
+}
+
 
 
 static int
@@ -1687,6 +1849,7 @@ fc_devwait(struct cmd_s *cm)
 {
     char *dev;
     long totsec = -1;
+    osstm_t stm;	/* Sleep time spec */
 
     /* Consume first two tokens on line.  OK if NULL. */
     switch (cmdargs_n(cm, 2)) {
@@ -1712,10 +1875,10 @@ fc_devwait(struct cmd_s *cm)
     }
 
     /* OK, now start the wait. */
+    OS_STM_SET(stm, totsec);
     while (dev_waiting(stdout, dev)) {
-	if (totsec > 0 && --totsec == 0)
+	if (os_msleep(&stm) <= 0)
 	    break;		/* Stop waiting if timed out */
-	os_sleep(1);
     }
 }
 
@@ -1731,6 +1894,11 @@ fc_devboot(struct cmd_s *cm)
 {
     int opthalt = FALSE;
     vaddr_t bootsa;
+
+    if (!aprhalted()) {
+	printf("KN10 still running!  Halt or Reset it first.\n");
+	return;
+    }
 
     /* Consume first two tokens on line */
     switch (cmdargs_n(cm, 2)) {
@@ -1764,8 +1932,7 @@ fc_devboot(struct cmd_s *cm)
 	return;
     }
     printf("Bootstrap read in\n");
-    cpu.mr_1step = 0;
-    aprcont(1, bootsa);
+    fe_aprcont(FEMODE_CTYRUN, FEAPRF_START, bootsa, 0);
 }
 
 /* FC_RESET - Halts and Resets PDP-10 (clears all status)
@@ -1787,6 +1954,11 @@ fc_go(struct cmd_s *cm)
     enum fevmmode mode;
     char *sloc = cm->cmd_arglin;
 
+    if (!aprhalted()) {
+	printf("KN10 still running!  Halt or Reset it first.\n");
+	return;
+    }
+
     if (sloc && *sloc) {
 	if (!addrparse(sloc, &loc, &mode)) {
 	    printf("?Bad address\n");
@@ -1800,53 +1972,65 @@ fc_go(struct cmd_s *cm)
 	}
 	ddt_loadsa = loc;	/* Mode will always be current */
     }
-    cpu.mr_1step = 0;
-    aprcont(1, ddt_loadsa);
+    fe_aprcont(FEMODE_CTYRUN, FEAPRF_START, ddt_loadsa, 0);
 }
 
 /* FC_CONT - Continues PDP-10 at current PC.
+**	Safe to call this even if KN10 is running.
+**	
 */
 static void
 fc_cont(struct cmd_s *cm)
 {
-    cpu.mr_1step = 0;
-    aprcont(-1, 0);
+    fe_aprcont(FEMODE_CTYRUN,
+	       (aprhalted() ? FEAPRF_VERBOSE : 0),
+	       0, 0);
 }
 
-/* APRCONT - Resume execution.
-**	+1 start, 0 continue, -1 continue verbosely
+/* FE_APRCONT - Resume execution.
+**	(old startf: +1 start, 0 continue, -1 continue verbosely)
 */
-static void
-aprcont(int startf,
-	vaddr_t newpc)
+void
+fe_aprcont(int femode,
+	   int startf,
+	   vaddr_t newpc,
+	   int nsteps)
 {
     int res;
 
-    if (!aprhalted()) {
-	printf("PDP10 still running!  Halt or Reset it first.\n");
-	return;
-    }
+    if (cpu.fe.fe_debug)
+	fprintf(stderr, "[aprcont %o 0x%x %d, intf_fecty %d]",
+		femode, startf, nsteps, cpu.intf_fecty);
+
     if (fedevchkf)
 	fedevchkf = dev_dpchk_ctl(FALSE);	/* Turn off dev checking! */
-    if (startf > 0)
+    if (startf & FEAPRF_START)
 	PC_SET(newpc);
 
-    if (startf)
+    if (startf & (FEAPRF_START | FEAPRF_VERBOSE))
 	printf("%s KN10 at loc %#lo...\n",
-			(startf>0 ? "Starting" : "Continuing"),
+			((startf&FEAPRF_START) ? "Starting" : "Continuing"),
 			(long)PC_30);
 
     /* Set up TTY handling appropriately for running */
-    cty_enable();		/* No echo, no CR/LF hacks, no delay */
+    fe_ctyenable(femode);	/* No echo, no CR/LF hacks, no delay */
+    cpu.mr_running = TRUE;
+    cpu.mr_1step = nsteps;
     res = apr_run();		/* Go! */
-    cty_disable();		/* Restore normal mode */
-
+    cpu.mr_running = FALSE;
+    fe_ctydisable((res == HALT_FECMD)	/* Restore TTY mode if necessary */
+		  ? FEMODE_CMDRUN
+		  : FEMODE_CMDHALT);
     switch (res) {
 	case HALT_PROG:		/* Program halt (JRST 4,) */
 	    printf("[HALTED: Program Halt, PC = %lo]\n", (long)PC_30);
 	    break;
+
 	case HALT_FECTY:	/* FE Console interrupt */
 	    printf("[HALTED: FE interrupt]\n");
+	    break;
+
+	case HALT_FECMD:	/* FE Console command ready to execute */
 	    break;
 
 	case HALT_BKPT:		/* Hit breakpoint */
@@ -1869,6 +2053,8 @@ aprcont(int startf,
 
 static int aprhalted(void)
 {
+    if (cpu.fe.fe_mode == FEMODE_CMDRUN)
+	return FALSE;
     return TRUE;
 }
 
@@ -1896,6 +2082,12 @@ fc_shutdown(struct cmd_s *cm)
 static void
 fc_halt(struct cmd_s *cm)
 {
+    if (aprhalted()) {
+	printf("KN10 already halted.\n");
+	return;
+    }
+    cpu.fe.fe_mode = FEMODE_CMDHALT;
+    printf("[HALTED: FE command, PC = %lo]\n", (long)PC_30);
 }
 
 
@@ -1941,17 +2133,32 @@ fc_debug(void)
 }
 #endif
 
-/* FC_STEP - Single-steps by one instruction
+/* FC_STEP - Single-steps by N instructions.
 */
 static void
 fc_step(struct cmd_s *cm)
 {
+    char *snum = cm->cmd_arglin;
+    long n = 1;
+
+    if (!aprhalted()) {
+	printf("KN10 still running!  Halt it first.\n");
+	return;
+    }
+
+    if (snum && *snum)
+	if (!s_tonum(snum, &n)) {
+	    printf("?Bad count syntax\n");
+	    return;
+	}
+    if (n <= 0) {
+	printf("?Bad step count\n");
+	return;
+    }
+    fe_aprcont(FEMODE_CTYRUN, 0, 0, n);
     putchar('\n');
-    cpu.mr_1step = 1;
-    aprcont(0, 0);
     nextinsprint(stdout, PINSTR_OPS);
 }
-
 
 /* FC_BKPT - Sets location to stop at.  0 clears.
 */
@@ -1979,28 +2186,21 @@ fc_bkpt(struct cmd_s *cm)
 }
 
 
-/* FC_PROC - Proceeds for N instructions.
+/* FC_PROC - Proceed KN10 without CTY
 */
 static void
 fc_proc(struct cmd_s *cm)
 {
-    char *snum = cm->cmd_arglin;
-    long n = 1;
-
-    if (snum && *snum)
-	if (!s_tonum(snum, &n)) {
-	    printf("?Bad count syntax\n");
-	    return;
-	}
-    if (n <= 0) {
-	printf("?Bad proceed count\n");
+    if (!aprhalted()) {
+	/* Should only happen if already in FEMODE_CMDRUN */
+	printf("KN10 already running\n");
 	return;
     }
-    cpu.mr_1step = n;
-    aprcont(0, 0);
-    putchar('\n');
-    nextinsprint(stdout, PINSTR_OPS);
+    cpu.fe.fe_mode = FEMODE_CMDRUN;	/* Change mode! */
 }
+
+
+
 
 /* FC_EXNEXT - Examine next word
 ** FC_EXPREV - Previous word
@@ -2169,7 +2369,9 @@ fevm_tryeacalc(register w10_t *wp,
 static void
 fc_view(struct cmd_s *cm)
 {
-    printf("KN10 status: %s", (cpu.mr_usrmode ? "USER" : "EXEC"));
+    printf("KN10 status: %s %s",
+	   (cpu.fe.fe_mode == FEMODE_CMDRUN ? "RUNNING" : "STOPPED"),
+	   (cpu.mr_usrmode ? "USER" : "EXEC"));
     if (cpu.mr_inpxct) printf(" PXCT-%o", cpu.mr_inpxct);
     if (cpu.mr_intrap) printf(" TRAP-%o", cpu.mr_intrap);
     if (cpu.mr_injrstf) printf(" JRSTF");	/* Either on or off */
@@ -2427,7 +2629,7 @@ fc_load(struct cmd_s *cm)
 	return;
 
     if (!aprhalted()) {
-	printf("PDP10 still running!  Halt or Reset it first.\n");
+	printf("KN10 still running!  Halt or Reset it first.\n");
 	return;
     }
 
@@ -2512,7 +2714,7 @@ fc_dump(struct cmd_s *cm)
     if (!cmdargs_one(cm, &farg))
 	return;
     if (!aprhalted()) {
-	printf("PDP10 still running!  Halt or Reset it first.\n");
+	printf("KN10 still running!  Halt or Reset it first.\n");
 	return;
     }
     /* Open file for writing */
@@ -2556,6 +2758,32 @@ fc_dump(struct cmd_s *cm)
     fclose(f);
 }
 
+
+/* FC_LIGHTS - Sets console lights I/O base address
+** Currently only allow LPT1 and LPT2 ports on PC.
+*/
+static void
+fc_lights(struct cmd_s *cm)
+{
+    unsigned long port = 0;
+    int c;
+    char *sloc = cm->cmd_arglin;
+
+    if (sloc && *sloc) {
+        while(isxdigit(c = *sloc++)) {
+	    port *= 16;
+	    port += c - (isdigit(c) ? '0' : (islower(c) ? 'a' : 'A'));
+	}
+	if (!c) switch(port) {
+	case 0x378:		/* LPT1 */
+	case 0x278:		/* LPT2 */
+	    if (!lites_init((unsigned int) port))
+		printf("?Can't init lights -- probably not root\n");
+	    return;
+	}
+    }
+    printf("?Bad address\n");
+}
 
 /* Instruction printing routines */
 

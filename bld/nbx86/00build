@@ -1,0 +1,2 @@
+#!/bin/sh
+make base-kl CONFFLAGS_AUX=-DKLH10_I_CIRC=1

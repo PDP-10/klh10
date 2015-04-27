@@ -1,6 +1,6 @@
 /* VMTAPE.H - Virtual Magnetic-Tape support definitions
 */
-/* $Id: vmtape.h,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: vmtape.h,v 2.4 2002/03/28 16:57:39 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,10 @@
 */
 /*
  * $Log: vmtape.h,v $
+ * Revision 2.4  2002/03/28 16:57:39  klh
+ * First pass at using LFS (Large File Support)
+ * RAW format code revised
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -26,7 +30,7 @@
 #define VMTAPE_INCLUDED 1
 
 #ifdef RCSID
- RCSID(vmtape_h,"$Id: vmtape.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(vmtape_h,"$Id: vmtape.h,v 2.4 2002/03/28 16:57:39 klh Exp $")
 #endif
 
 #include "cenv.h"	/* Ensure have OSD target stuff */
@@ -52,11 +56,31 @@
 # define VMTAPE_RAW 1	/* Always; conditional is mainly to clarify code */
 #endif
 
-
 #if VMTAPE_ITSDUMP || VMTAPE_T20DUMP	/* Need this if doing word I/O */
 # include "word10.h"
 # include "wfio.h"
 #endif
+
+/* Attempt to determine max size and type of tape position information.
+ * This is most important when running on platforms that only support
+ * 64-bit integers with a non-long data type.
+ */
+#ifndef VMTAPE_POS_T
+# if CENV_SYSF_LFS == 0
+#  define VMTAPE_POS_T long
+# else
+#  define VMTAPE_POS_T off_t
+# endif
+# if CENV_SYSF_FSEEKO
+#  define VMTAPE_POS_FSEEK(f,pos) fseeko((f), (off_t)(pos), SEEK_SET)
+# else
+#  define VMTAPE_POS_FSEEK(f,pos) fseek((f), (long)(pos), SEEK_SET)
+# endif
+# define VMTAPE_POS_FMT CENV_SYSF_LFS_FMT
+#endif
+
+typedef VMTAPE_POS_T vmtpos_t;
+
 
 /*			TAPE FORMATS
 
@@ -220,16 +244,16 @@ struct vmttdrdef {
     int tdfmt;			/* Format of data in tape data file */
 				/* (unused; assumes one byte per frame) */
     char *tdfname;		/* M Name of tape data file */
-    struct vmtrecdef *tdrd;	/* M Pointer to circ list of records/marks */
-    struct vmtrecdef *tdcur;	/*   Current record being read */
+    struct vmtrecdef *tdrd;	/* M Start of circ list of record/mark defs */
+    struct vmtrecdef *tdcur;	/*   Current record def */
     int tdrncur;		/*   Current # of record in *tdcur */
     long tdrfcnt;		/*   # frames left to read in current record */
 
     /* Stats */
-    int tdfils;		/* Total # files */
-    int tdrecs;		/* Total # records */
-    long tdbytes;	/* Total # bytes (frames) */
-    long tdmaxrsiz;	/* # bytes in longest record known */
+    unsigned long tdfils;	/* Total # files */
+    unsigned long tdrecs;	/* Total # records */
+    unsigned long tdmaxrsiz;	/* # bytes in longest record known */
+    vmtpos_t tdbytes;		/* Total # bytes (frames) */
 };
 
 /* Tape spec and status block.
@@ -291,11 +315,10 @@ enum {	TS_CLOSED=0,	/* All: No tape open */
 	TS_FHEAD,	/* ITSDUMP: Reading file header */
 	TS_FDATA,	/* ITSDUMP: Reading file data */
 	TS_FEOF,	/* ITSDUMP: Reading tapemark (file EOF) */
-	TS_EOT,		/* Raw, ITSDUMP: Reading EOT */
-	TS_REOF,	/* Raw: Read EOF on next input */
+	TS_EOT,		/* ITSDUMP: Reading EOT */
 	TS_RDATA,	/* Raw, TPS/TPE: Idle or Reading data */
 	TS_RWRITE,	/* Raw, TPS/TPE: Writing tape */
-	TS_ERR		/* All: Error if try to read */
+	TS_ERR		/* All: Error, try to re-synch on next I/O */
 };
 
 
@@ -345,11 +368,9 @@ extern int  vmt_attrmount(struct vmtape *t, struct vmtattrs *ta);
 extern int  vmt_unmount(struct vmtape *);
 extern int  vmt_rewind(struct vmtape *);
 
-extern void vmt_iobeg(struct vmtape *, int);
-extern int  vmt_ioend(struct vmtape *);
 extern int  vmt_rget(struct vmtape *, unsigned char *, size_t);
 extern int  vmt_rput(struct vmtape *, unsigned char *, size_t);
-extern int  vmt_eput(struct vmtape *, int, int);
+extern int  vmt_eput(struct vmtape *, int);
 
 extern int vmt_eof(struct vmtape *);
 extern int vmt_eot(struct vmtape *);

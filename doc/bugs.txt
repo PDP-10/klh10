@@ -1,0 +1,67 @@
+/* BUGS.TXT - KLH10 known bug list
+*/
+/* $Id$
+*/
+/*  Copyright © 2002 Kenneth L. Harrenstien
+**  All Rights Reserved.
+**
+**  This file is part of the KLH10 Distribution.  Use, modification, and
+**  re-distribution is permitted subject to the terms in the file
+**  named "LICENSE", which contains the full text of the legal notices
+**  and should always accompany this Distribution.
+*/
+
+
+KNOWN BUGS
+==========
+
+    - KS TOPS-10 7.03 disk boot produces:
+	KLH10 PANIC: rh11_iobeg: drv/ctrlr mismatch: 7/0
+	Reported by Quebbeman 23-Nov-2001.
+	(Another race condition?  Unable to reproduce.)
+
+    - KS TOPS-10 7.03 install from tape periodically hangs on MT.
+	(This is believed to be race condition similar to KL boot,
+	 thus fixed in 2.0E, but must confirm.)
+
+Weirdness.  From msg to Supnik:
+
+Date: Tue, 30 Apr 2002 3:34:23 EDT
+From: Ken Harrenstien <klh@panix.com>
+To: Bob Supnik <bsupnik@us.inter.net>
+Cc: klh@panix.com
+Subject: Interesting T10+KS10 CTY interaction
+Message-ID: <CMM.0.90.4.1020152063.klh@panix2.panix.com>
+
+I was trying to clean out my bug list and looked into the one where
+TOPS-10 on a KLH10 KS10 sometimes complains "?Device hung" while reading
+from magtape.
+
+I don't yet know the exact sequence of events, but it turns out this
+is directly affected by the duration between TOPS-10 giving the FE
+a CTY output character, and the FE's "done" interrupt of the KS10.
+
+By default I have this delay set to roughly 50 instructions for
+TOPS-20, which is needed to get around some poor driver code.  TOPS-10
+seemed to work fine with the same default so I left it as is.
+However, if I reset this delay to 0 (same as for the ITS version), I
+get no magtape hangs!
+
+This is really bizarre.  I am used to problems caused by devices that
+are too fast, or CPU loops that are too fast, but this one doesn't fit
+the pattern.  It means that an instantaneous response from the FE
+works, but one delayed by a mere 50 instructions will repeatably screw
+something up -- perhaps losing a RH11 interrupt or something.  This
+happens using "synchronous" debugging mode where one virtual usec is
+one instruction execution, so there are no real-time factors and
+everything is in theory reproducible.
+
+My question is, for SIMH did you encounter anything similar, or are
+you aware of anything in the TOPS-10 monitor that might be relevant?
+
+I notice that your FE implementation defaults to a SERIAL_OUT_WAIT
+delay of "10", though I'm not sure what that means (10 what?).  Since
+that's generic for all of your simulated machines I assume it doesn't
+necessarily have KS10 implications.
+
+--Ken

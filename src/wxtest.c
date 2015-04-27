@@ -1,6 +1,6 @@
 /* WXTEST.C - Test program for word10.h definitions
 */
-/* $Id: wxtest.c,v 2.5 2001/11/19 10:19:55 klh Exp $
+/* $Id: wxtest.c,v 2.8 2002/05/21 09:56:10 klh Exp $
 */
 /*  Copyright © 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,17 @@
 */
 /*
  * $Log: wxtest.c,v $
+ * Revision 2.8  2002/05/21 09:56:10  klh
+ * Fixed 32-bit conversion tests to catch problems in high 4 bits.
+ * Fixed 36-bit conversion tests to run whenever possible, not just
+ *     when w10_t is an integer type.
+ *
+ * Revision 2.7  2002/04/26 05:21:28  klh
+ * Add missing include of <string.h>
+ *
+ * Revision 2.6  2002/03/28 16:56:33  klh
+ * Adapt to new word10.h
+ *
  * Revision 2.5  2001/11/19 10:19:55  klh
  * Solaris port: rename INTMAX_MAX to INTMAX_SMAX
  *
@@ -36,12 +47,13 @@ this for all possible variations.
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "rcsid.h"
 #include "word10.h"
 
 #ifdef RCSID
- RCSID(wxtest_c,"$Id: wxtest.c,v 2.5 2001/11/19 10:19:55 klh Exp $")
+ RCSID(wxtest_c,"$Id: wxtest.c,v 2.8 2002/05/21 09:56:10 klh Exp $")
 #endif
 
 #ifndef TRUE
@@ -95,10 +107,10 @@ main(int argc, char **argv)
 /* Note using "INTMAX_SMAX" instead of "INTMAX_MAX" -- latter conflicts
    with a Solaris def
 */
-#if defined(ULLONG_MAX)
+#if defined(WORD10_LLONG_MAX)
 # define INTMAX long long
 # define INTMAX_NAME "long long"
-# define INTMAX_SMAX LLONG_MAX
+# define INTMAX_SMAX WORD10_LLONG_MAX
 # define  SUFF(v) v ## LL
 # define USUFF(v) v ## ULL
 #elif defined(ULONG_MAX)
@@ -206,7 +218,7 @@ txtest(void)
 	case WORD10_TX_INT:   uv = (UINTMAX) ((unsigned int)-1); break;
 	case WORD10_TX_LONG:  uv = (UINTMAX) (~(unsigned long)0); break;
 	case WORD10_TX_LLONG:
-#ifdef ULLONG_MAX
+#ifdef WORD10_LLONG_MAX
 	    uv = (UINTMAX) ~((unsigned long long)0);
 #else
 	    uv = 0;
@@ -436,6 +448,9 @@ tinttypes(void)
  */
 
 #ifdef WORD10_INT
+
+#define SIGN36 (USUFF(1)<<35)
+
 int
 test36(void)
 {
@@ -470,14 +485,14 @@ test36(void)
 		W10_S36SET(w, var);	\
 	    else W10_U36SET(w, var);	\
 	    if (getsign)		\
-		umax = W10_S36(w);	\
+		umax = (INTMAX)W10_S36(w);	\
 	    else umax = W10_U36(w);	\
 	/* Do own conversion for check */\
 	    if (varsign)		\
 		vown = ((INTMAX)var)&MASK36; \
 	    else				\
 		vown = ((UINTMAX)var)&MASK36;	\
-	    if (getsign && (vown & W10SIGN))	\
+	    if (getsign && (vown & SIGN36))	\
 		vown |= ~(UINTMAX)MASK36;	\
 	    if (vown != umax) {		\
 		printf("test36: %s %d: %lo,,%lo != %lo,,%lo\n", desc, i, \
@@ -545,6 +560,8 @@ test36(void)
  define W10SIGN32 (((uint32)1)<<31)	/* Word sign bit of a 32-bit value */
 #endif
 
+#define SIGN32 (USUFF(1)<<31)
+
 int
 test32(void)
 {
@@ -584,28 +601,45 @@ test32(void)
 
 #undef PATTEST
 #define PATTEST(desc,varsign,var,init,iter,setsign,getsign) \
-	for (i = 0, var = init; var; iter, ++i) { \
-	    UINTMAX umax, vown;		\
-	    if (setsign)		\
-		W10_S32SET(w, var);	\
-	    else W10_U32SET(w, var);	\
-	    if (getsign)		\
-		umax = W10_S32(w);	\
-	    else umax = W10_U32(w);	\
-	/* Do own conversion for check */\
-	    if (varsign)		\
-		vown = ((INTMAX)var)&MASK32; \
-	    else				\
-		vown = ((UINTMAX)var)&MASK32;	\
-	    if (getsign && (vown & W10SIGN32))	\
-		vown |= ~(UINTMAX)MASK32;	\
-	    if (vown != umax) {		\
-		printf("test32: %s %d: %lo,,%lo != %lo,,%lo\n", desc, i, \
-		       WXPARGS((UINTMAX)vown), WXPARGS(umax)); \
-		++nerrs;		\
-		break;			\
-	    }				\
-	}
+    for (i = 0, var = init; var; iter, ++i) { \
+	UINTMAX umax, vown;		\
+	uint32 mylh, myrh;		\
+	if (setsign) {			\
+	    W10_S32SET(w, var);		\
+	    myrh =  (((int32)var) & MASK18); \
+	    mylh = ((((int32)var)>>18) & MASK18); \
+	    if (((int32)var) & SIGN32)	\
+		mylh |= 0760000;	\
+	} else {			\
+	    W10_U32SET(w, var);		\
+	    myrh =  (((uint32)var) & MASK18); \
+	    mylh = ((((uint32)var)>>18) & MASK18); \
+	}				\
+	/* Verify word rep is correct */\
+	if (W10_LH(w) != mylh || W10_RH(w) != myrh) { \
+	    printf("test32: %s %d: wd rep differs: %lo,,%lo != %lo,,%lo\n", \
+		   desc, i, (long)W10_LH(w), (long)W10_RH(w), \
+		   (long)mylh, (long)myrh); \
+	    ++nerrs;			\
+	    break;			\
+	}				\
+	if (getsign)			\
+	    umax = (INTMAX)W10_S32(w);	\
+	else umax = W10_U32(w);	\
+    /* Do own conversion for check */	\
+	if (varsign)			\
+	    vown = ((INTMAX)var)&MASK32; \
+	else				\
+	    vown = ((UINTMAX)var)&MASK32;	\
+	if (getsign && (vown & SIGN32))	\
+	    vown |= ~(UINTMAX)MASK32;	\
+	if (vown != umax) {		\
+	    printf("test32: %s %d: %lo,,%lo != %lo,,%lo\n", desc, i, \
+		   WXPARGS((UINTMAX)vown), WXPARGS(umax)); \
+	    ++nerrs;			\
+	    break;			\
+	}				\
+    }
 
 #define SI 1
 #define UI 0

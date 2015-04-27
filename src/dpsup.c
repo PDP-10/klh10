@@ -1,6 +1,6 @@
 /* DPSUP.C - Device sub-Process Support facilities (OSD) for KLH10
 */
-/* $Id: dpsup.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dpsup.c,v 2.5 2003/02/23 18:16:05 klh Exp $
 */
 /*  Copyright © 1994, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: dpsup.c,v $
+ * Revision 2.5  2003/02/23 18:16:05  klh
+ * Tweak casts to avoid warnings on NetBSD/Alpha.
+ *
+ * Revision 2.4  2002/04/24 07:46:15  klh
+ * Change dpx_cnt from int to size_t, modify prototypes to match
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -56,7 +62,7 @@ static int decosfcclossage;
 #endif /* CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_XBSD || CENV_SYS_LINUX */
 
 #ifdef RCSID
- RCSID(dpsup_c,"$Id: dpsup.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dpsup_c,"$Id: dpsup.c,v 2.5 2003/02/23 18:16:05 klh Exp $")
 #endif
 
 static int dp_cxinit(struct dpc_s *, int, int, int, size_t, size_t);
@@ -111,7 +117,7 @@ int dp_init(register struct dp_s *dp, size_t dpcsiz,
 
     /* Attempt to attach segment into our address space */
     dpc = (struct dpc_s *)shmat(shmid, (void *)0, SHM_RND);
-    if ((int)dpc == -1) {
+    if (dpc == (struct dpc_s *)-1) {
 	shmctl(shmid, IPC_RMID, (struct shmid_ds *)NULL);
 	fprintf(stderr, "[dp_init: shmat failed - %d]\r\n", errno);
 	return FALSE;
@@ -368,7 +374,7 @@ int dp_main(register struct dp_s *dp, int argc, char **argv)
 
     /* Got shmid for segment from our parent, try attaching it! */
     dpc = (struct dpc_s *)shmat((int)shmarg, (void *)NULL, SHM_RND);
-    if ((int)dpc == -1) {
+    if (dpc == (struct dpc_s *)-1) {
 	fprintf(stderr, "[%s: Couldn't attach shmid 0x%lx]\r\n",
 				argv[0], shmarg);
 	return 0;
@@ -557,7 +563,7 @@ void dp_xswake(register struct dpx_s *dx)	/* Send; say message ready */
 }
 
 void dp_xsend(register struct dpx_s *dx,
-	      int cmd, int cnt)		/* Send cmd and data */
+	      int cmd, size_t cnt)		/* Send cmd and data */
 {
     switch (dx->dpx_type) {
     case DP_XT_MSIG:
@@ -638,7 +644,7 @@ int dp_xrcmd(register struct dpx_s *dx)		/* Get command */
     return 0;
 }
 
-int dp_xrcnt(register struct dpx_s *dx)		/* Get data count */
+size_t dp_xrcnt(register struct dpx_s *dx)	/* Get data count */
 {
     switch (dx->dpx_type) {
     case DP_XT_MSIG:

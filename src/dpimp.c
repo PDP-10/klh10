@@ -1,6 +1,6 @@
 /* DPIMP.C - ARPANET IMP device emulator
 */
-/* $Id: dpimp.c,v 2.4 2001/11/19 10:31:57 klh Exp $
+/* $Id: dpimp.c,v 2.5 2003/02/23 18:07:35 klh Exp $
 */
 /*  Copyright © 1992-1999, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: dpimp.c,v $
+ * Revision 2.5  2003/02/23 18:07:35  klh
+ * Add NetBSD read loop fix for bpf.
+ *
  * Revision 2.4  2001/11/19 10:31:57  klh
  * Major revision of ARP code to do full ARP request/reply handling,
  * needed for Linux; may come in handy for other ports.
@@ -228,7 +231,7 @@ default for every OS that implements /dev/tun.
 #include "dpimp.h"	/* DPIMP specific defs, grabs DPSUP if needed */
 
 #ifdef RCSID
- RCSID(dpimp_c,"$Id: dpimp.c,v 2.4 2001/11/19 10:31:57 klh Exp $")
+ RCSID(dpimp_c,"$Id: dpimp.c,v 2.5 2003/02/23 18:07:35 klh Exp $")
 #endif
 
 
@@ -1519,29 +1522,41 @@ imptohost(register struct dpimp_s *dpimp)
 #else
 	if (cnt <= ETHER_HDRSIZ) {
 #endif
-#if KLH10_NET_PFLT
-	    /* If call times out due to EIOCSRTIMEOUT, will return 0 */
+	    /* If call times out due to E/BIOCSRTIMEOUT, will return 0 */
 	    if (cnt == 0 && dpimp->dpimp_rdtmo)
 		continue;		/* Just try again */
-#endif
 	    if (DBGFLG)
-		fprintf(stderr, "[dpimp-R: ERead=%d, Err=%d]\r\n",
-					cnt, errno);
+		dbprintln("ERead=%d, Err=%d", cnt, errno);
 
-	    if (cnt < 0 && (errno == EINTR))	/* Ignore spurious signals */
+	    if (cnt >= 0) {
+		dbprintln("Eread = %d, %s", cnt,
+			  (cnt > 0) ? "no ether data" : "no packet");
+		continue;
+	    }
+
+	    /* System call error of some kind */
+	    if (errno == EINTR)		/* Ignore spurious signals */
 		continue;
 
-	    /* Error of some kind */
-	    fprintf(stderr, "[dpimp-R: Eread = %d, ", cnt);
-	    if (cnt < 0) {
-		if (--stoploop <= 0)
-		    efatal(1, "Too many retries, aborting]");
-		fprintf(stderr, "errno %d = %s]\r\n",
-				errno, dp_strerror(errno));
-	    } else if (cnt > 0)
-		fprintf(stderr, "no ether data]\r\n");
-	    else fprintf(stderr, "no packet]\r\n");
-
+#if CENV_SYS_NETBSD
+	    /* NetBSD bpf is broken.
+	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
+	       understand why this crock is necessary.
+	       Always block for at least 1 sec, will wake up sooner if
+	       input arrives.
+	     */
+	    if (errno == EWOULDBLOCK) {
+		int ptimeout = (dpimp->dpimp_rdtmo ? dpimp->dpimp_rdtmo : 1);
+		struct pollfd myfd;
+		myfd.fd = pffd;
+		myfd.events = POLLIN;
+		(void) poll(&myfd, 1, ptimeout*1000);
+		continue;
+	    }
+#endif
+	    syserr(errno, "Eread = %d, errno %d", cnt, errno);
+	    if (--stoploop <= 0)
+		efatal(1, "Too many retries, aborting");
 	    continue;		/* For now... */
 	}
 	if (DBGFLG) {
@@ -1551,7 +1566,7 @@ imptohost(register struct dpimp_s *dpimp)
 		fprintf(stderr, "]");
 	    }
 	    else
-		fprintf(stderr, "[dpimp-R: Read=%d]", cnt);
+		dbprint("Read=%d", cnt);
 	}
 
 	/* Have packet, now dispatch it to host */

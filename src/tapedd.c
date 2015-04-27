@@ -1,6 +1,6 @@
 /* TAPEDD.C - Utility to copy tapes
 */
-/* $Id: tapedd.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: tapedd.c,v 2.5 2002/03/28 16:52:31 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: tapedd.c,v $
+ * Revision 2.5  2002/03/28 16:52:31  klh
+ * First pass at using LFS (Large File Support)
+ *
+ * Revision 2.4  2002/03/10 22:17:02  klh
+ * Fix LOGTAPE macro for virtual format case
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -83,7 +89,7 @@
 #define FALSE 0
 
 #ifdef RCSID
- RCSID(tapedd_c,"$Id: tapedd.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(tapedd_c,"$Id: tapedd.c,v 2.5 2002/03/28 16:52:31 klh Exp $")
 #endif
 
 /* For now, must include VMT source directly, so as to avoid compile-time
@@ -228,13 +234,13 @@ Usage: tdcopy <sws> <tapedir filespec>\n\
 typedef unsigned long rsiz_t;	/* Type to hold size of record */
 
 /* Switch parameters */
-int sw_tdtest = FALSE;
-int sw_peot = FALSE;
-int sw_verbose = FALSE;
-int sw_maxrec = 0;
-int sw_maxfile = 0;
-int sw_recskip = 0;
-int sw_fileskip = 0;
+int  sw_tdtest = FALSE;
+int  sw_peot = FALSE;
+int  sw_verbose = FALSE;
+long sw_maxrec = 0;
+long sw_maxfile = 0;
+long sw_recskip = 0;
+long sw_fileskip = 0;
 rsiz_t sw_bothsiz = 0;
 char *sw_logpath = NULL;
 FILE *logf = NULL;
@@ -254,17 +260,16 @@ struct dev {
 
 	/* Hardware tape info */
 	int d_fd;
-	int
-		mta_herr,	/* Hard errors (unrecoverable) */
+	long	mta_herr,	/* Hard errors (unrecoverable) */
 		mta_serr,	/* Soft errors (includes retries) */
-		mta_bot,	/* TRUE if BOT seen */
+		mta_frms;	/* # frames (bytes) read in record */
+	int	mta_bot,	/* TRUE if BOT seen */
 		mta_eot,	/* TRUE if EOT seen */
 		mta_eof,	/* TRUE if EOF (tapemark) seen */
-		mta_frms,	/* # frames (bytes) read in record */
 		mta_retry;	/* # times to retry a failing op */
 
-	long d_tloc;		/* Location in bytes read/written from BOT */
-	int d_recs,		/* # recs in tape so far */
+	vmtpos_t d_tloc;	/* Location in bytes read/written from BOT */
+	long d_recs,		/* # recs in tape so far */
 		d_frecs,	/* # recs in current file so far */
 		d_files,	/* # files (tapemarks) seen so far */
 		d_herrs,	/* Hard errors (unrecoverable) */
@@ -419,8 +424,8 @@ main(int argc, char **argv)
 			name, (d).d_path, mtypstr[(d).d_istape]); \
 	if ((d).d_istape == MTYP_VIRT) \
 	    fprintf(logf, " format: %s", vmt_fmtname((d).d_vfmt)); \
-	else \
-	    fprintf(logf, ")\n")
+	fprintf(logf, ")\n")
+
 	LOGTAPE(dvi, " Input");
 	LOGTAPE(dvo, "Output");
 #undef LOGTAPE
@@ -430,9 +435,9 @@ main(int argc, char **argv)
 	if (dvo.d_recsiz)
 	    fprintf(logf, "; Output record size %ld\n", (long)dvo.d_recsiz);
 	if (sw_maxfile)
-	    fprintf(logf, "; Max tapemarks (files) to process: %d\n", sw_maxfile);
+	    fprintf(logf, "; Max tapemarks (files) to process: %ld\n", sw_maxfile);
 	if (sw_maxrec)
-	    fprintf(logf, "; Max records to process: %d\n", sw_maxrec);
+	    fprintf(logf, "; Max records to process: %ld\n", sw_maxrec);
 	if (sw_logpath)
 	    fprintf(logf, "; Using logging path %s\n", sw_logpath);
     }
@@ -479,7 +484,8 @@ main(int argc, char **argv)
     }
     for (d = &dvi; d; d = (d == &dvi) ? &dvo : NULL) {
 	if (d->d_istape)
-	    fprintf(logf, "; %3s: %d+%d errs, %d files, %d recs, %ld bytes\n",
+	    fprintf(logf, "; %3s: %ld+%ld errs, %ld files, %ld recs, %"
+		    VMTAPE_POS_FMT "d bytes\n",
 			d->d_pname, d->mta_herr, d->mta_serr,
 			d->d_files, d->d_recs, d->d_tloc);
     }
@@ -775,12 +781,12 @@ cmdsget(int ac, char **av)
 	    break;
 	case 4:
 	    if (strcmp(cp, "rcnt")==0) {
-		if (!arg || sscanf(arg, "%d", &sw_maxrec) != 1)
+		if (!arg || sscanf(arg, "%ld", &sw_maxrec) != 1)
 		    swerror("Bad arg to rcnt: \"%s\"", arg ? arg : "");
 		continue;
 	    }
 	    if (strcmp(cp, "fcnt")==0) {
-		if (!arg || sscanf(arg, "%d", &sw_maxfile) != 1) {
+		if (!arg || sscanf(arg, "%ld", &sw_maxfile) != 1) {
 		    swerror("Bad arg to fcnt: \"%s\"", arg ? arg : "");
 		}
 		continue;
@@ -796,12 +802,12 @@ cmdsget(int ac, char **av)
 	    break;
 	case 5:
 	    if (strcmp(cp, "rskip")==0) {
-		if (!arg || sscanf(arg, "%d", &sw_recskip) != 1)
+		if (!arg || sscanf(arg, "%ld", &sw_recskip) != 1)
 		    swerror("Bad arg to rskip: \"%s\"", arg ? arg : "");
 		continue;
 	    }
 	    if (strcmp(cp, "fskip")==0) {
-		if (!arg || sscanf(arg, "%d", &sw_fileskip) != 1) {
+		if (!arg || sscanf(arg, "%ld", &sw_fileskip) != 1) {
 		    swerror("Bad arg to fskip: \"%s\"", arg ? arg : "");
 		}
 		continue;
@@ -992,7 +998,7 @@ int devopen(register struct dev *d, int wrtf)
 		d->d_blen = d->d_recsiz;	/* adjust quietly */
 	    else				/* else warn user */
 		fprintf(logf, "; Tapedir forcing larger %sput record size (%ld instead of %ld)\n",
-			d->d_pname, d->d_blen, d->d_recsiz);
+			d->d_pname, (long)d->d_blen, (long)d->d_recsiz);
 
 	}
     } else				/* No tapedir, use spec if any */
@@ -1151,10 +1157,10 @@ int devwrite(struct dev *d, unsigned char *buff, rsiz_t len)
 int devwerr(struct dev *d, int err)
 {
     if (d->d_istape == MTYP_VIRT)
-	return vmt_eput(&(d->d_vmt), err, TRUE);
+	return vmt_eput(&(d->d_vmt), err);
 
     if (d->d_cpath) {		/* Have tapedir? */
-	if (!td_recapp(&d->d_vmt.mt_tdr, (long)0, 1, err)) {
+	if (!td_recapp(&d->d_vmt.mt_tdr, (long)0, 0, err)) {
 	    fprintf(logf, "devwerr: td_recapp malloc failed");
 	    return FALSE;
 	}
@@ -1171,9 +1177,7 @@ int devweof(struct dev *d)
 	ret = vmt_eof(&(d->d_vmt));
     else {
 	if (d->d_cpath) {		/* Have tapedir? */
-	    /* Extracted from vmt_eof(), see comments there */
-	    vmt_iobeg(&d->d_vmt, TRUE);			/* Set up for write */
-	    if (!td_recapp(&d->d_vmt.mt_tdr, (long)0, 0, 0)) {
+	    if (!td_recapp(&d->d_vmt.mt_tdr, (long)0, 1, 0)) {
 		fprintf(logf, "devweof: td_recapp malloc failed");
 		ret = FALSE;
 	    }
@@ -1361,7 +1365,7 @@ int os_mtread(struct dev *dp)
 		}
 	    } else
 		if (dp->mta_frms >= dp->d_blen)
-		    fprintf(logf, "; Warning: read max rec size %d!\n",
+		    fprintf(logf, "; Warning: read max rec size %ld!\n",
 					dp->mta_frms);
 
 
@@ -1433,7 +1437,7 @@ int os_mtwrite(struct dev *dp)
 	}
 	/* Error of some kind */
 	dp->mta_serr++;
-	fprintf(logf, "; (Rec %d, try %d) ",
+	fprintf(logf, "; (Rec %ld, try %d) ",
 			dp->d_recs, dp->mta_retry - retry);
 	if (ret < 0) {
 	    fprintf(logf, "Tape write error: %s\n", os_strerror(-1));

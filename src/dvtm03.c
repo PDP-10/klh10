@@ -1,6 +1,6 @@
 /* DVTM03.C - Emulates TM03 tape controller under RH20 for KL10
 */
-/* $Id: dvtm03.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvtm03.c,v 2.8 2002/05/21 09:40:26 klh Exp $
 */
 /*  Copyright © 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,23 @@
 */
 /*
  * $Log: dvtm03.c,v $
+ * Revision 2.8  2002/05/21 09:40:26  klh
+ * Fix duplicate path check - only applies if using subprocs
+ *
+ * Revision 2.7  2002/04/24 07:50:06  klh
+ * Turn max rec-space cmd into a file-space cmd
+ * Add blocking wait on DP when booting, to avoid DEC boot races
+ *
+ * Revision 2.6  2002/04/10 16:06:20  klh
+ * Fix spurious complaint about duplicate paths.
+ *
+ * Revision 2.5  2002/03/28 16:50:30  klh
+ * Uniquize tape device serial numbers (just as for disks)
+ *
+ * Revision 2.4  2002/03/13 12:36:17  klh
+ * Changed to allow NOP to be executed while rewinding without sticking
+ * in CSR (ITS depends on this).
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -53,7 +70,7 @@ static int decosfcclossage;
 #endif
 
 #ifdef RCSID
- RCSID(dvtm03_c,"$Id: dvtm03.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvtm03_c,"$Id: dvtm03.c,v 2.8 2002/05/21 09:40:26 klh Exp $")
 #endif
 
 /* Some notes on TM03 support:
@@ -66,6 +83,56 @@ The best documentation on the TM02/3 is the DEC Technical
 Manual titled "TM03 Magnetic Tape Formatter", part EK-0TM03-TM-003.
 The last known edition was Dec 1983.  Having the prints also would
 be nice...
+
+Some notes on PDP-10 expectations:
+---------------------------------
+
+	ITS driver: nmtape >
+	T10 driver: tm2kon.mac
+	T20 driver: phym2.mac
+
+Tapemark status:
+
+	The TM03 tech doc is clear that status bit 04 (Tape Mark Detected)
+is set whenever passing over a tapemark in the forward direction.
+It is not as clear whether this applies to the reverse direction, or
+if a tapemark was just written.
+
+All 3 systems DO expect to see this bit when moving back
+over a tapemark, and rely on it.
+
+Regarding setting if just written: the hardware appears to be set up
+so that anything written will immediately pass under the read head.
+This implies that a written tapemark will be immediately detected.
+
+The TOPS-10 driver (tm2kon.mac) does expect to see EOF set when it just
+wrote one - this is used to help maintain tape position information -
+although it avoids passing the flag (as RB.STM) to the user program
+TAPUUO in that case.
+
+The other 2 drivers don't have similarly explicit comments and it
+doesn't appear to matter to them.
+
+	CONCLUSION: try to set the EOF/TM flag in all those situations.
+
+
+Frame Count: 
+
+	ITS never reads the frame count register except when reading
+a data record.  Even then, it checks the tape status reg for
+EOF/tapemark before looking at the frame count to see how much
+data it grabbed.
+
+T10 similarly pays no attention to FC except when reading.
+
+T20 does check the result on tape movement, but the exact value
+seems not to matter.  If FC is 0 then it is assumed the operation
+succeeded; if it's non-zero then the other bits are checked to
+make sure it stopped early for a good reason (BOT,EOT,TM).
+
+	CONCLUSION: Must maintain an accurate frame count for reading,
+		but otherwise it's OK to settle for just ensuring it's
+		0 on full success and non-zero on partial completion.
 
 */
 
@@ -192,7 +259,7 @@ static void revfictowds(vmptr_t vp, unsigned char *ucp, int wc, int revf);
     prmdef(TMP_FMTR,"fmtr"),	/* Formatter type (eg TM03) */\
     prmdef(TMP_TYP, "type"),	/* Slave type (eg TU45) */\
     prmdef(TMP_PATH,"path"),	/* Initial mount path of file or raw device */\
-    prmdef(TMP_SN,  "sn"),	/* Serial number */\
+    prmdef(TMP_SN,  "sn"),	/* Formatter Serial number */\
     prmdef(TMP_DPDBG,"dpdebug"), /* Initial DP debug value */\
     prmdef(TMP_DP,  "dppath")	/* Device subproc pathname */
 
@@ -231,7 +298,11 @@ tm03_conf(FILE *f, char *s, struct tmdev *tm)
     DVDEBUG(tm) = FALSE;
     tm->tm_typ = TM_DTTM03;		/* Say formatter is TM03 for now */
     tm->tm_styp = TM_DT45;		/* Say slave is TU45 for now */
-    TMREG(tm, RHR_SN) = (7<<8)|(5<<4)|9;	/* Serial Number register */
+    TMREG(tm, RHR_SN) =			/* Serial Number register (BCD) */
+		  (((9    / 1000)%10) << 12)
+		| (((9    /  100)%10) <<  8)
+		| (((ntms /   10)%10) <<  4)
+		| (((ntms       )%10)      );
 #if KLH10_DEV_DPTM03
     tm->tm_dpname = "dptm03";		/* Subproc executable */
     tm->tm_spath[0] = '\0';		/* Nothing mounted yet */
@@ -331,6 +402,35 @@ tm03_conf(FILE *f, char *s, struct tmdev *tm)
     }
 
     /* Param string all done, do followup checks or cleanup */
+
+    /* Helpful checks to avoid shooting self in foot. */
+
+    /*  Ensure the drive serial # isn't duplicated, otherwise TOPS-10/20
+	will think it's a dual-ported drive and get very confused.
+	Do similar check for hard-mount device path as well.
+    */
+    for (i = 0; i < ntms; ++i) {	/* Step thru all known TM devs */
+	struct tmdev *cktm;
+
+	if (!(cktm = dvtm03[i]) || (cktm == tm))
+	    continue;
+	if (TMREG(cktm, RHR_SN) == TMREG(tm, RHR_SN)) {
+	    fprintf(f, "TM03 serial num duplicated! %d%d%d%d\n",
+			(TMREG(tm, RHR_SN) >> 12) & 017,
+			(TMREG(tm, RHR_SN) >>  8) & 017,
+			(TMREG(tm, RHR_SN) >>  4) & 017,
+			(TMREG(tm, RHR_SN)      ) & 017);
+	    ret = FALSE;
+	    break;
+	}
+#if KLH10_DEV_DPTM03
+	if (tm->tm_spath[0] && (strcmp(cktm->tm_spath, tm->tm_spath) == 0)) {
+	    fprintf(f, "TM03 path duplicated! \"%s\"\n", tm->tm_spath);
+	    ret = FALSE;
+	    break;
+	}
+#endif /* KLH10_DEV_DPTM03 */
+    }
 
     return ret;
 }
@@ -530,14 +630,21 @@ tm_cmdwait(register struct tmdev *tm,
 	   int secs)
 {
     int cnt;
+    osstm_t stm;
+    
+    OS_STM_SET(stm, secs);
 
-    for (cnt = 0; !dp_xstest(dpx); ++cnt) {
-	if (cnt > secs) {
+    cnt = secs - 2;
+    while (!dp_xstest(dpx)) {
+	if (os_msleep(&stm) <= 0)
 	    return 0;
-	} else if (cnt & 01)	/* Every other sec */
+	dev_evcheck();		/* See if got any device completion ints */
+
+	/* Every other sec print progress */
+	if (OS_STM_SEC(stm) < cnt) {
 	    if (f) fprintf(f, "[TM03 busy, waiting...]\n");
-	os_sleep(1);
-	dev_evcheck();
+	    cnt = OS_STM_SEC(stm) - 2;
+	}
     }
     if (f) fprintf(f, "[TM03 ready]\n");
     return 1;
@@ -651,6 +758,18 @@ tm_dpcmd(register struct tmdev *tm, int cmd, size_t arg)
     tm->tm_state = TM03_ST_BUSY;
 
     dp_xsend(dpx, cmd, arg);		/* Send command! */
+
+    /* CROCK to get around race problem with DEC boot code (both KL and KS).
+     * If PI not turned on, assume we're in boot code, and block here
+     * (thus blocking KN10) until tape drive is ready again.
+     */
+    if (!cpu.pi.pisys_on) {
+	/* 15 sec should be plenty!  Any more and probably a real error */
+	if (!tm_cmdwait(tm, (DVDEBUG(tm) ? DVDBF(tm) : NULL), dpx, 15)) {
+	    if (DVDEBUG(tm))
+		fprintf(DVDBF(tm), "[tm_dpcmd: boot-mode wait timed out]\r\n");
+	}
+    }
 }
 
 
@@ -1251,6 +1370,10 @@ tm_ssta(register struct tmdev *tm)
 ** true.  However, it will sit in the CSR and not actually be executed until
 ** the rewind is complete.  The tm_srew flag exists to help support this
 ** behavior.
+**	EXCEPTION: this code permits TM_NOP to be executed immediately,
+** without waiting for a rewind to finish.  This appears to violate the
+** blanket rule in the TM03 manual, but ITS relies on this working during
+** rewinds, so it must have been allowed...
 */
 static void
 tm_cmdxct(register struct tmdev *tm, int cmd)
@@ -1290,10 +1413,17 @@ tm_cmdxct(register struct tmdev *tm, int cmd)
 
     /* Now check for being in rewind state - if so, command must be left
     ** in CSR until rewind is done or something else (eg CLR) happens.
+    ** Note NOP is specially allowed here.
     */
     if (tm->tm_srew) {
-	if (DVDEBUG(tm))
-	    fprintf(DVDBF(tm), "[TM03 rewinding, cmd deferred]\r\n");
+	if (cmd == TM_NOP) {
+	    TMREG(tm, RHR_CSR) &= ~TM_1GO;	/* Turn off GO */
+	    if (DVDEBUG(tm))
+		fprintf(DVDBF(tm), "[TM03 rewinding, NOP executed]\r\n");
+	} else {
+	    if (DVDEBUG(tm))
+		fprintf(DVDBF(tm), "[TM03 rewinding, cmd deferred]\r\n");
+	}
 	return;
     }
 
@@ -2266,6 +2396,15 @@ revfictowds(register vmptr_t vp,
 ** include the tapemark; it only counts valid records.
 **	Also, media errors are ignored while spacing; they do not cause
 ** an error.
+**
+** As an efficiency hack, we check for the very common case of TMFC==0,
+** which means a maximum count and is ordinarily used when the PDP-10 OS
+** is trying to do a space-to-file operation; the TM03 does not support
+** this operation directly.  Fortunately, in this case no PDP-10 OS cares
+** about the resulting frame count, so it doesn't matter if that is
+** correct.  This allows us to be much faster when dealing with physical
+** tape drives where the actual # of records skipped will not normally
+** be available.
 */
 static void
 tm_space(register struct tmdev *tm, int revf)
@@ -2282,12 +2421,22 @@ tm_space(register struct tmdev *tm, int revf)
 	return;
     }
 
+    /* Get (negative 16-bit) count in positive form.  If FC was zero this
+     * results in 0200000 (1<<16).
+     */
     cnt = -(TMREG(tm, RHR_BAFC) | ~MASK16);
-    if (!cnt) cnt = MASK16+1;		/* Ugh, max count */
-
-    if (DVDEBUG(tm))
-	fprintf(DVDBF(tm), "[TM03  Space %s: %ld]\r\n",
-			(revf ? "Rev" : "Fwd"), (long)cnt);
+    if (cnt > MASK16) {
+	/* Ugh, max count */
+	cnt = 0;
+	if (DVDEBUG(tm))
+	    fprintf(DVDBF(tm), "[TM03  Space %s: 0 => File %s 1]\r\n",
+		    (revf ? "Rev" : "Fwd"),
+		    (revf ? "Rev" : "Fwd"));
+    } else {
+	if (DVDEBUG(tm))
+	    fprintf(DVDBF(tm), "[TM03  Space %s: %ld]\r\n",
+		    (revf ? "Rev" : "Fwd"), (long)cnt);
+    }
 
     /* Tape motion initiated, change status bits */
     TMREG(tm, RHR_STS) &= ~(TM_SBOT|TM_STM|TM_SEOT);
@@ -2295,14 +2444,20 @@ tm_space(register struct tmdev *tm, int revf)
     TMREG(tm, RHR_STS) &= ~TM_SDRY;	/* Drive busy, note GO still on! */
     TMREG(tm, RHR_STS) |= TM_SPIP;	/* Positioning in progress */
     tm_dpcmd(tm,			/* Send spacing command to DP */
-		(revf ? DPTM_SPR : DPTM_SPF),
-		(size_t)cnt);
+	     (cnt ? (revf ? DPTM_SPR : DPTM_SPF)
+	          : (revf ? DPTM_SFR : DPTM_SFF)),
+	     (cnt ? (size_t)cnt : (size_t)1));
 #else
-
-    if (!vmt_rspace(&tm->tm_vmt, revf, (unsigned long)cnt)) {	/* Do it */
-	/* Internal error */
-	tm_nxfn(tm);	
-	return;
+    if (cnt) {
+	if (!vmt_rspace(&tm->tm_vmt, revf, (unsigned long)cnt)) {
+	    /* Internal error */
+	    tm_nxfn(tm);	
+	}
+    } else {
+	if (!vmt_fspace(&tm->tm_vmt, revf, (unsigned long)1)) {
+	    /* Internal error */
+	    tm_nxfn(tm);	
+	}
     }
 #endif /* !KLH10_DEV_DPTM03 */
 }

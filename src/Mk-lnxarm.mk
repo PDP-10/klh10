@@ -1,5 +1,5 @@
 # KLH10 Makefile for Linux on ARM
-# $Id: Mk-lnxarm.mk,v 2.3 2001/11/10 21:28:59 klh Exp $
+# $Id: Mk-lnxarm.mk,v 2.4 2002/04/24 18:17:05 klh Exp $
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -21,7 +21,7 @@
 
 # Build definitions
 SRC = ../../src
-CFLAGS = -c -g3 -O -I. -I$(SRC)
+CFLAGS = -c -g3 -O3 -I. -I$(SRC)
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wstrict-prototypes -Wmissing-prototypes \
 		-Wmissing-declarations -Wredundant-decls

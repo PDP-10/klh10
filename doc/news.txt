@@ -1,6 +1,6 @@
 /* NEWS.TXT - KLH10 Change Summaries and other news
 */
-/* $Id: news.txt,v 2.1 2001/11/19 12:13:12 klh Exp $
+/* $Id: news.txt,v 2.6 2002/05/21 17:14:52 klh Exp $
 */
 /*  Copyright © 2001 Kenneth L. Harrenstien
 **  All Rights Reserved.
@@ -11,20 +11,37 @@
 **  and should always accompany this Distribution.
 */
 
-KNOWN BUGS
-==========
-
-Still outstanding:
-
-    - KS TOPS-10 7.03 install from tape periodically hangs on MT.
-    - KS TOPS-10 7.03 disk boot produces:
-	KLH10 PANIC: rh11_iobeg: drv/ctrlr mismatch: 7/0
-
-(Of course, this will never be a complete list!)
-
-
 KLH10 CHANGES
 =============
+
+KLH10 2.0G: 21-May-2002
+    - Fixed Large File Support for disks.
+    - New XBLT algorithm to fix obscure bug.
+    - Unibus warnings now suppressed unless ub_debug is set.
+    - NetBSD makefiles fixed.
+    - DTE timezone tweaked for DST compensation.
+    - Added KLH10_I_CIRC conditional to allow CIRC on non-ITS systems.
+
+KLH10 2.0E: 23-Apr-2002
+    - Added workaround for T10/T20 tape boot races (more prevalent
+	with ever-faster processors that zip through timing loops).
+    - Linux hardware tape support done for now, will be better when
+	Linux tape driver (st.c) is fixed.
+    - Now uses nanosleep() on systems supporting it.
+    - Changed all makefiles that invoke GCC to use -O3 instead of -O.
+	This should improve performance slightly, at some risk of
+	breakage.
+
+KLH10 2.0D: 28-Mar-2002
+    - Several VMTAPE bugs fixed; revised RAW format code.
+    - DTE now reports correct local timezone (used by KL TOPS-20).
+    - Tape drive serial #s are now uniquized (like disks).
+    - Now uses Large File Support on systems that have it; can now
+	handle tapes of over 2GB on 32-bit systems.
+
+KLH10 2.0C: 20-Mar-2002
+    - Added concurrent command mode.
+    - Better Linux hardware tape support; still not complete.
 
 KLH10 2.0A: 19-Nov-2001
     - Revised ARP code in dpimp.c to fix problems with Linux port;

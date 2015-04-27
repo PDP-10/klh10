@@ -1,6 +1,6 @@
 /* DVRPXX.C - Emulates RP/RM disk drives under RH20 for KL10
 */
-/* $Id: dvrpxx.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvrpxx.c,v 2.4 2002/05/21 09:52:07 klh Exp $
 */
 /*  Copyright © 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: dvrpxx.c,v $
+ * Revision 2.4  2002/05/21 09:52:07  klh
+ * Change protos for vdk_read, vdk_write
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -56,7 +59,7 @@ static int decosfcclossage;
 #endif
 
 #ifdef RCSID
- RCSID(dvrpxx_c,"$Id: dvrpxx.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvrpxx_c,"$Id: dvrpxx.c,v 2.4 2002/05/21 09:52:07 klh Exp $")
 #endif
 
 #ifndef DVRP_NSUP		/* Max # of drives can create */
@@ -1896,7 +1899,7 @@ rp_wrfilbuf(register struct rpdev *rp)
 	rp->rp_sdprp->dprp_daddr = rp->rp_blkadr;
 	rp_dpcmd(rp, DPRP_WRDMA, (size_t)0 /* wc*128*sizeof(w10_t) */);
 #else
-	rp->rp_rescnt = vdk_write(&rp->rp_vdk, vp, rp->rp_blkadr, wc);
+	rp->rp_rescnt = vdk_write(&rp->rp_vdk, vp, (uint32)rp->rp_blkadr, wc);
 
 	/* Check for error -- if ran out of space, go offline! */
 	if ((rp->rp_reserr = rp->rp_vdk.dk_err) == ENOSPC) {
@@ -1987,7 +1990,7 @@ rp_wrfilbuf(register struct rpdev *rp)
     if (DVDEBUG(rp))
 	fprintf(DVDBF(rp), "[RP wrbuf: %d sec, %ld <- 0x%lx]\r\n",
 				wc, (long)rp->rp_blkadr, (long)vp);
-    rp->rp_rescnt = vdk_write(&rp->rp_vdk, vp, rp->rp_blkadr, wc);
+    rp->rp_rescnt = vdk_write(&rp->rp_vdk, vp, (uint32)rp->rp_blkadr, wc);
 
     /* Check for error -- if ran out of space, go offline! */
     if ((rp->rp_reserr = rp->rp_vdk.dk_err) == ENOSPC) {
@@ -2159,7 +2162,7 @@ rp_rdflsbuf(register struct rpdev *rp)
 # endif
 #else
 
-    rp->rp_rescnt = vdk_read(&rp->rp_vdk, vp, rp->rp_blkadr, wc);
+    rp->rp_rescnt = vdk_read(&rp->rp_vdk, vp, (uint32)rp->rp_blkadr, wc);
     rp->rp_reserr = rp->rp_vdk.dk_err;
 #endif
 

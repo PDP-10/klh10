@@ -1,5 +1,5 @@
 # KLH10 Makefile.
-# $Id: Makefile.mk,v 2.5 2001/11/19 12:10:25 klh Exp $
+# $Id: Makefile.mk,v 2.6 2002/03/21 09:44:05 klh Exp $
 #
 #  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -145,16 +145,16 @@ showdefs:
 
 # Generic header files
 
-CONFS = cenv.h klh10.h word10.h wfio.h feload.h \
+CONFS = cenv.h klh10.h word10.h wfio.h fecmd.h feload.h \
 	kn10mac.h kn10def.h kn10pag.h kn10clk.h kn10dev.h kn10ops.h \
 	opcods.h opdefs.h osdsup.h \
 	dvcty.h dvuba.h dvrh11.h dvlhdh.h dvdz11.h dvch11.h \
-	dvrh20.h dvrpxx.h dvtm03.h dvni20.h dvhost.h \
+	dvrh20.h dvrpxx.h dvtm03.h dvni20.h dvhost.h dvlites.h \
 	vmtape.h vdisk.h
 
 # Modules needed for KL10 version.
 
-OFILES_KL = klh10.o prmstr.o feload.o wfio.o osdsup.o \
+OFILES_KL = klh10.o prmstr.o fecmd.o feload.o wfio.o osdsup.o \
 	kn10cpu.o kn10pag.o kn10clk.o opdata.o kn10ops.o \
 	inmove.o inhalf.o inblsh.o intest.o \
 	infix.o  inflt.o  inbyte.o injrst.o \
@@ -163,11 +163,11 @@ OFILES_KL = klh10.o prmstr.o feload.o wfio.o osdsup.o \
 	vdisk.o  dvrpxx.o dvrh20.o	\
 	vmtape.o dvtm03.o	\
 	dvni20.o dpsup.o	\
-	dvhost.o
+	dvhost.o dvlites.o
 
 # Modules needed for KS10 version.
 
-OFILES_KS = klh10.o prmstr.o feload.o wfio.o osdsup.o \
+OFILES_KS = klh10.o prmstr.o fecmd.o feload.o wfio.o osdsup.o \
 	kn10cpu.o kn10pag.o kn10clk.o opdata.o kn10ops.o \
 	inmove.o inhalf.o inblsh.o intest.o \
 	infix.o  inflt.o  inbyte.o injrst.o \
@@ -177,7 +177,7 @@ OFILES_KS = klh10.o prmstr.o feload.o wfio.o osdsup.o \
 	vmtape.o dvtm03.o	\
 	dvlhdh.o dvdz11.o dvch11.o \
 	dpsup.o \
-	dvhost.o
+	dvhost.o dvlites.o
 
 # Device Processes (DPs) built concurrently with KN10
 
@@ -306,7 +306,7 @@ base-ks-its:
 		-DKLH10_MEM_SHARED=1 \
 		$(TINTFLAGS) \
 		$(DINTFLAGS) \
-		-DKLH10_APRID_SERIALNO=759 -DKLH10_DEVMAX=12 \
+		-DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 		-DKLH10_CLIENT=\\\"MyITS\\\" \
 		$(CONFFLAGS_AUX) \
 		-DVMTAPE_ITSDUMP=1 "
@@ -331,7 +331,7 @@ base-ks:
 		-DKLH10_MEM_SHARED=1 \
 		$(TINTFLAGS) \
 		$(DINTFLAGS) \
-		-DKLH10_APRID_SERIALNO=759 -DKLH10_DEVMAX=12 \
+		-DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 		-DKLH10_CLIENT=\\\"MyKS\\\" \
 		$(CONFFLAGS_AUX) "
 
@@ -356,7 +356,7 @@ base-kl:
 		-DKLH10_RTIME_OSGET=1	\
 		-DKLH10_ITIME_INTRP=1	\
 		-DKLH10_CTYIO_INT=1	\
-		-DKLH10_APRID_SERIALNO=1 \
+		-DKLH10_APRID_SERIALNO=3600 \
 		-DKLH10_CLIENT=\\\"MyKL\\\" \
 		$(CONFFLAGS_AUX) "
 
@@ -415,7 +415,7 @@ port-ks:
 		-DKLH10_CPU_KS=1	\
 		-DKLH10_SYS_T20=1	\
 		-DKLH10_RTIME_SYNCH=1	\
-		-DKLH10_APRID_SERIALNO=759 -DKLH10_DEVMAX=12 \
+		-DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 		-DKLH10_CLIENT=\\\"MyKS\\\" \
 		$(CONFFLAGS_AUX) "
 
@@ -613,8 +613,11 @@ dvdte.o: $(SRC)/dvdte.c $(SRC)/dvdte.h
 dvdz11.o: $(SRC)/dvdz11.c $(SRC)/dvdz11.h
 	$(BUILDMOD) $(SRC)/dvdz11.c
 
-dvhost.o: $(SRC)/dvhost.c $(SRC)/dvhost.h
+dvhost.o: $(SRC)/dvhost.c $(SRC)/dvhost.h $(SRC)/dvlites.h
 	$(BUILDMOD) $(SRC)/dvhost.c
+
+dvlites.o: $(SRC)/dvlites.c $(SRC)/dvlites.h
+	$(BUILDMOD) $(SRC)/dvlites.c
 
 dvlhdh.o: $(SRC)/dvlhdh.c $(SRC)/dvlhdh.h
 	$(BUILDMOD) $(SRC)/dvlhdh.c
@@ -636,6 +639,9 @@ dvtm03.o: $(SRC)/dvtm03.c $(SRC)/dvtm03.h
 
 dvuba.o: $(SRC)/dvuba.c $(SRC)/dvuba.h
 	$(BUILDMOD) $(SRC)/dvuba.c
+
+fecmd.o: $(SRC)/fecmd.c $(SRC)/fecmd.h
+	$(BUILDMOD) $(SRC)/fecmd.c
 
 feload.o: $(SRC)/feload.c $(SRC)/feload.h
 	$(BUILDMOD) $(SRC)/feload.c

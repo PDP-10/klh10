@@ -1,6 +1,6 @@
 /* VDKFMT.C - Utility to copy or format virtual disks.
 */
-/* $Id: vdkfmt.c,v 2.5 2001/11/19 10:51:43 klh Exp $
+/* $Id: vdkfmt.c,v 2.6 2002/05/21 09:51:26 klh Exp $
 */
 /*  Copyright © 1994, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: vdkfmt.c,v $
+ * Revision 2.6  2002/05/21 09:51:26  klh
+ * Change protos for vdk_read, vdk_write
+ *
  * Revision 2.5  2001/11/19 10:51:43  klh
  * Bugfix: was freeing d_path which is now static.
  *
@@ -61,7 +64,7 @@
 #define FALSE 0
 
 #ifdef RCSID
- RCSID(vdkfmt_c,"$Id: vdkfmt.c,v 2.5 2001/11/19 10:51:43 klh Exp $")
+ RCSID(vdkfmt_c,"$Id: vdkfmt.c,v 2.6 2002/05/21 09:51:26 klh Exp $")
 #endif
 
 /* Disk type configuration params.
@@ -570,7 +573,7 @@ int devread(struct devdk *d, long int daddr, w10_t *buff)
 	fprintf(logf, "; read daddr=%ld\n", daddr);
 #endif
 
-    nsec = vdk_read(&d->d_vdk, buff, (int32)daddr, 1);
+    nsec = vdk_read(&d->d_vdk, buff, (uint32)daddr, 1);
 
     if (d->d_vdk.dk_err
       || (nsec != 1)) {
@@ -592,7 +595,7 @@ int devwrite(struct devdk *d, long int daddr, w10_t *buff)
 	fprintf(logf, "; write daddr=%ld\n", daddr);
 #endif
 
-    nsec = vdk_write(&d->d_vdk, buff, (int32)daddr, 1);
+    nsec = vdk_write(&d->d_vdk, buff, (uint32)daddr, 1);
 
     if (d->d_vdk.dk_err
       || (nsec != 1)) {

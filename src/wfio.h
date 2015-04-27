@@ -1,6 +1,6 @@
 /* WFIO.H - 36-bit Word File I/O facilities
 */
-/* $Id: wfio.h,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: wfio.h,v 2.4 2002/03/28 16:54:04 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: wfio.h,v $
+ * Revision 2.4  2002/03/28 16:54:04  klh
+ * First pass at using LFS (Large File Support)
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -26,10 +29,12 @@
 #define WFIO_INCLUDED 1
 
 #ifdef RCSID
- RCSID(wfio_h,"$Id: wfio.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(wfio_h,"$Id: wfio.h,v 2.4 2002/03/28 16:54:04 klh Exp $")
 #endif
 
+#include "cenv.h"
 #include <stdio.h>	/* Needed for FILE definition */
+#include <sys/types.h>	/* For off_t until it's in C99 header file */
 
 #define WF_TYPENAMDEFS \
     wtdef(WFT_U36, "u36"), /* Unixified (Alan Bawden) */\
@@ -45,14 +50,20 @@ enum wftypes {
 #  undef wtdef
 };
 
+#if CENV_SYSF_LFS > 0
+typedef off_t wfoff_t;
+#else
+typedef long wfoff_t;
+#endif
+
 struct wfile {
 	enum wftypes wftype;
 	FILE *wff;
 	char *wftypnam;	/* Name of type (returned by wf_typnam) */
 	int wferrfmt;
 	int wferrlen;
-	long wfloc;	/* Word offset from starting location in file */
-	long wfsiop;	/* Starting location in file (as a stdio pointer) */
+	wfoff_t wfloc;	/* Word offset from starting location in file */
+	wfoff_t wfsiop;	/* Starting location in file (as a stdio pointer) */
 	int wflastch;	/* May hold last char read (U36, H36, TNL only) */
 #define WFC_NONE	(-1)	/* No value in lastch */
 #define WFC_PREREAD	(-2)	/* Must pre-read to get value (H36 only) */
@@ -68,7 +79,7 @@ struct wfile {
 extern void wf_init(WFILE *, int, FILE *);
 extern int wf_type(char *);		/* Given typename, return type # */
 extern int wf_rewind(WFILE *);
-extern int wf_seek(WFILE *, long);
+extern int wf_seek(WFILE *, wfoff_t);
 extern int wf_flush(WFILE *);
 extern int wf_get(WFILE *, w10_t *);
 extern int wf_put(WFILE *, w10_t);

@@ -1,5 +1,5 @@
 # KLH10 Makefile for Solaris on SUN Sparc
-# $Id: Mk-solsparc.mk,v 2.4 2001/11/19 10:16:02 klh Exp $
+# $Id: Mk-solsparc.mk,v 2.6 2002/04/24 18:25:59 klh Exp $
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -24,10 +24,11 @@
 # Mk-solsparc-cc.mk instead.
 
 # Build definitions
-#	These LIBS are needed only for things using osdnet.c.
+#	-lsocket and -lnsl are needed only for osdnet.c.
+#	-lrt is needed for nanosleep().
 CC=gcc
-CFLAGS = -c -g -O2
-LIBS = -lsocket -lnsl
+CFLAGS = -c -g -O3
+LIBS = -lsocket -lnsl -lrt
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wstrict-prototypes -Wmissing-prototypes \
 		-Wmissing-declarations -Wredundant-decls
@@ -35,7 +36,8 @@ CONFFLAGS_AUX= -DWORD10_USEGCCSPARC=1
 
 # Source definitions
 SRC = ../../src
-CENVFLAGS = -DCENV_CPU_SPARC=1 -DCENV_SYS_SOLARIS=1
+CENVFLAGS = -DCENV_CPU_SPARC=1 -DCENV_SYS_SOLARIS=1 \
+		-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 
 # Targets
 

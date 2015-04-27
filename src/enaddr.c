@@ -1,6 +1,6 @@
 /* ENADDR.C - Utility to manage ethernet interface addresses
 */
-/* $Id: enaddr.c,v 2.5 2001/11/19 10:18:34 klh Exp $
+/* $Id: enaddr.c,v 2.6 2002/03/18 04:19:17 klh Exp $
 */
 /*  Copyright © 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: enaddr.c,v $
+ * Revision 2.6  2002/03/18 04:19:17  klh
+ * Add promiscuous mode on/off
+ *
  * Revision 2.5  2001/11/19 10:18:34  klh
  * Solaris port: add dp_strerror def
  *
@@ -57,7 +60,7 @@
 #include "osdnet.h"
 
 #ifdef RCSID
- RCSID(enaddr_c,"$Id: enaddr.c,v 2.5 2001/11/19 10:18:34 klh Exp $")
+ RCSID(enaddr_c,"$Id: enaddr.c,v 2.6 2002/03/18 04:19:17 klh Exp $")
 #endif
 
 #ifndef TRUE
@@ -81,6 +84,9 @@ struct mcat {
 int nmcats = 0;
 struct mcat mcat[MAXMCAT];
 
+int promiscf   = FALSE;	/* True if promisc mode specified */
+int promiscon  = FALSE;	/* Desired mode (True = on) */
+
 unsigned char pa_cur[6];
 unsigned char pa_def[6];
 
@@ -97,7 +103,9 @@ Usage: enaddr [-v] [<ifc> [default | <ifaddr>] [+<addmcast>] [-<delmcast>]]\n\
    default  Reset ether addr to HW default, if known\n\
    <ifaddr> Set ether addr to this (form x:x:x:x:x:x)\n\
    +<mcast> Add    multicast addr  (same form)\n\
-   -<mcast> Delete multicast addr  (same form)\n";
+   -<mcast> Delete multicast addr  (same form)\n\
+   +promisc Turn on  promiscuous mode\n\
+   -promisc Turn off promiscuous mode\n";
 
 
 /* Error and Diagnostic logging stuff.
@@ -294,8 +302,15 @@ main(int argc, char **argv)
 		mcat[nmcats].mcdel = TRUE;
 		break;
 	    default:
-		printf("enaddr: bad multicast format \"%s\" - must prefix with + or -\n", argv[i]);
+		printf("enaddr: bad multicast/promisc format \"%s\" - must prefix with + or -\n", argv[i]);
 		exit(1);
+	}
+
+	if (strcmp(&argv[i][1], "promisc") == 0) {
+	    promiscf = TRUE;
+	    promiscon = (argv[i][0] == '+');
+	    --nmcats;
+	    continue;
 	}
 
 	if (!pareth(&argv[i][1], mcat[nmcats].mcaddr)) {
@@ -349,6 +364,18 @@ main(int argc, char **argv)
 		*/
 	    }
 	    printf("\n");
+	}
+
+	/* Finally, force promiscuous mode on or off if specified */
+	if (promiscf) {
+	    printf("Setting promiscuous mode to %s... ",
+		   (promiscon ? "ON" : "OFF"));
+	    fflush(stdout);
+	    if (!osn_ifmcset(s, ifc, !promiscon, NULL)) {
+		printf(" failed\n");
+		/* Continue anyway */
+	    } else
+		printf(" won!\n");
 	}
 
 	osn_ifclose(s);

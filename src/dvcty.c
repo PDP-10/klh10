@@ -1,6 +1,6 @@
 /* DVCTY.C - Support for Console TTY (FE TTY on some machines)
 */
-/* $Id: dvcty.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvcty.c,v 2.4 2002/03/21 09:47:52 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: dvcty.c,v $
+ * Revision 2.4  2002/03/21 09:47:52  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -27,17 +30,15 @@
 #include "klh10.h"
 #include "kn10def.h"
 #include "kn10ops.h"
+#include "fecmd.h"
 #include "dvcty.h"	/* Exported functions, etc */
 
 #ifdef RCSID
- RCSID(dvcty_c,"$Id: dvcty.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvcty_c,"$Id: dvcty.c,v 2.4 2002/03/21 09:47:52 klh Exp $")
 #endif
 
 /* Imported functions */
 extern int dte_ctysin(int);
-
-/* Exported data */
-int cty_debug = 0;		/* CTY I/O tracing initially OFF */
 
 /* Local functions & data */
 #if KLH10_CPU_KS
@@ -46,6 +47,97 @@ static int cty_sin(int cnt);
 
 static struct clkent *ctytmr;	/* For re-check of CTY input */
 
+
+/* CTY_CLKTMO - for use when doing without OS I/O interrupts and
+**	need to explicitly poll the CTY to see if input is available.
+**	ALSO used when 10 isn't accepting input fast enough, and we need
+**	to re-check later to see if it can accept more.
+**	This timeout routine is called at a synchronized (between-instr) point.
+**
+** Note: the call to cty_incheck is a bit risky as that routine may
+** hack the timer (generally not a good idea while still in its callout!)
+** but in this case it's safe as all it does is attempt to activate it,
+** which is a no-op in this context (already active).
+*/
+static int
+cty_clktmo(void *arg)	/* arg unused */
+{
+    if (cpu.fe.fe_debug)
+	fprintf(stderr, "[cty_clktmo]");
+
+#if KLH10_CTYIO_INT
+    fe_iosigtest();		/* Do a check this way */
+    return CLKEVH_RET_QUIET;	/* Go quiescent until re-activated */
+#else
+    cty_incheck();
+    return CLKEVH_RET_REPEAT;	/* No signals, always stay alive */
+#endif
+}
+
+void
+cty_init(void)
+{
+    /* Set up timeout call once per 1/30 sec -- should be enough. */
+    ctytmr = clk_tmrget(cty_clktmo, (void *)NULL, CLK_USECS_PER_SEC/30);
+
+#if KLH10_CTYIO_INT
+    clk_tmrquiet(ctytmr);	/* Disable timer for now */
+    INTF_INIT(cpu.intf_ctyio);
+    fe_ctysig(fe_iosig);	/* Set up TTY input signal handler */
+    fe_iosigtest();		/* Trigger initial call */
+#endif
+}
+
+
+/* CTY_INCHECK - Invoked either directly by timeout or indirectly by host-OS
+**	signal.
+**	Checks to see if TTY input is available, and if so does what's
+**	necessary to get it from host-OS and feed it to either the FE
+**	or the 10.
+*/
+void
+cty_incheck(void)
+{
+    register int inpend;
+
+    if (cpu.fe.fe_debug)
+	fprintf(stderr, "[cty_incheck: isigs %d nullsigs %d inp %d]\n",
+		feiosiginps, feiosignulls, cpu.fe.fe_ctyinp);
+
+    if ((inpend = cpu.fe.fe_ctyinp) > 0		/* See if any input waiting */
+      || (inpend = fe_ctyintest()) > 0) {	/* Think not, but check OS */
+
+	if (cpu.fe.fe_debug)
+	    fprintf(stderr, "[cty_incheck: %d inp]", inpend);
+
+	/* TTY input available!  See if FE needs it */
+	if (cpu.fe.fe_mode == FEMODE_CMDRUN) {
+	    INTF_SET(cpu.intf_fecty);	/* FE input avail, don't bump intcnt */
+	    return;
+	}
+
+	/* Get input string and transfer to 10.
+	** If didn't transfer it all, activate timer to check
+	** again later to see if 10 is accepting input.
+	*/
+#if KLH10_CPU_KS
+	if (((inpend =    cty_sin(inpend)) > 0)
+#elif KLH10_CPU_KL
+	if (((inpend = dte_ctysin(inpend)) > 0)
+#endif
+	  || (inpend = fe_ctyintest()) > 0) {
+	    clk_tmractiv(ctytmr);		/* Ensure timer active */
+	    if (cpu.fe.fe_ctydebug)
+		fprintf(stderr, "[cty tmract: %d]", inpend);
+	}
+    } else if (cpu.fe.fe_debug)
+	    fprintf(stderr, "[cty_incheck: null]");
+
+    cpu.fe.fe_ctyinp = inpend;
+}
+
+#if KLH10_CPU_KS	/* Rest of code is all for KS */
+
 /*
 	FE to KS10 communication routines.
 
@@ -86,115 +178,13 @@ from CTYOT.
 
 */
 
-/* SIGIO interrupt handler.
-**	Intention here is that this indicate input available on the TTY
-** input fd.
-**	It needs to read all available input as SIGIO only happens when
-** the input state changes from none to some.  Sets a flag which remembers
-** whether the last check indicated more input or not.
-*/
-#if KLH10_CTYIO_INT
-static void
-cty_isig(int junk)
-{
-    if ((cpu.fe.fe_ctyinp = os_ttyintest()) <= 0) {
-	return;
-    }
-    INTF_SET(cpu.intf_ctyio);	/* Say CTY input available */
-    INSBRKSET();
-}
-#endif
-
-/* CTY_CLKTMO - for use when doing without OS I/O interrupts and
-**	need to explicitly poll the CTY to see if input is available.
-**	ALSO used when 10 isn't accepting input fast enough, and we need
-**	to re-check later to see if it can accept more.
-**	This timeout routine is called at a synchronized (between-instr) point.
-*/
-static int
-cty_clktmo(void *arg)	/* arg unused */
-{
-#if KLH10_CTYIO_INT
-    cty_isig(0);		/* Do a check this way */
-	/* NOTE: Can't call cty_incheck as it would hack the
-	** timer while already in its callout!
-	*/
-    return CLKEVH_RET_QUIET;	/* Go quiescent until re-activated */
-#else
-    cty_incheck();
-    return CLKEVH_RET_REPEAT;	/* No signals, always stay alive */
-#endif
-}
-
-void
-cty_init(void)
-{
-    /* Set up timeout call once per 1/30 sec -- should be enough. */
-    ctytmr = clk_tmrget(cty_clktmo, (void *)NULL, CLK_USECS_PER_SEC/30);
-
-#if KLH10_CTYIO_INT
-    clk_tmrquiet(ctytmr);	/* Disable timer for now */
-    INTF_INIT(cpu.intf_ctyio);
-    os_ttysig(cty_isig);	/* Set up TTY input signal handler */
-    cty_isig(0);		/* Trigger initial call */
-#endif
-}
-
-void
-cty_enable(void)
-{
-    os_ttyrunmode();
-#if KLH10_CTYIO_INT
-    cty_isig(0);		/* Trigger initial test */
-#endif
-}
-
-void
-cty_disable(void)
-{
-    os_ttyreset();
-}
-
-/* CTY_INCHECK - Invoked either directly by timeout or indirectly by host-OS
-**	signal.
-**	Checks to see if TTY input is available, and if so does what's
-**	necessary to get it from host-OS and feed it to the 10.
-*/
-void
-cty_incheck(void)
-{
-    register int inpend;
-
-    if ((inpend = cpu.fe.fe_ctyinp) > 0		/* See if any input waiting */
-      || (inpend = os_ttyintest()) > 0) {	/* Think not, but check OS */
-
-	/* Get input string.  If didn't get it all, activate timer to check
-	** again later to see if 10 is accepting input.
-	*/
-#if KLH10_CPU_KS
-	if (((inpend =    cty_sin(inpend)) > 0)
-#elif KLH10_CPU_KL
-	if (((inpend = dte_ctysin(inpend)) > 0)
-#endif
-	  || (inpend = os_ttyintest()) > 0) {
-	    clk_tmractiv(ctytmr);		/* Ensure timer active */
-	    if (cty_debug)
-		fprintf(stderr, "[cty tmract: %d]", inpend);
-	}
-    }
-    cpu.fe.fe_ctyinp = inpend;
-}
-
-#if KLH10_CPU_KS
-    /* Rest of code is all for KS */
-
 static int
 cty_sin(int cnt)
 {
     register vmptr_t vp;
     register int ch, oldch;
 
-    if ((ch = os_ttyin()) < 0)		/* Get single char */
+    if ((ch = fe_ctyin()) < 0)		/* Get single char */
 	return 0;			/* None left */
 
     vp = vm_physmap(FECOM_CTYIN);
@@ -202,7 +192,7 @@ cty_sin(int cnt)
     if (oldch & 0400)
 	fprintf(stderr, "[CTYI: %o => %o, old %o]",
 		    ch, ch | 0400, oldch);
-    else if (cty_debug)
+    else if (cpu.fe.fe_ctydebug)
 	fprintf(stderr, "[CTYI: %o]", ch);
 
     /* Drop char in FE communication area */
@@ -266,8 +256,8 @@ cty_timeout(void)
     c = vm_pgetrh(vp);			/* Get RH of physical loc */
     if (c & 0400) {			/* Valid char? */
 	c &= 0377;
-	if (cty_debug) fprintf(stderr, "[CTYO: %o]", c);
-	os_ttyout(c);
+	if (cpu.fe.fe_ctydebug) fprintf(stderr, "[CTYO: %o]", c);
+	fe_ctyout(c);
 
 	/* Done, now send interrupt to KS10 saying output ready */
 	cpu.aprf.aprf_set |= APRF_FEINT;

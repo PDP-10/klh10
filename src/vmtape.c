@@ -1,6 +1,6 @@
 /* VMTAPE.C - Virtual Magnetic-Tape support routines
 */
-/* $Id: vmtape.c,v 2.5 2001/11/19 10:41:28 klh Exp $
+/* $Id: vmtape.c,v 2.8 2003/01/19 21:14:55 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,17 @@
 */
 /*
  * $Log: vmtape.c,v $
+ * Revision 2.8  2003/01/19 21:14:55  klh
+ * Fixes from Ken Stailey - remove excess fcloses in vmt_crmount().
+ *
+ * Revision 2.7  2002/04/24 07:48:48  klh
+ * Change tapemark semantics to match TM03 better
+ *
+ * Revision 2.6  2002/03/28 16:59:48  klh
+ * First pass at using LFS (Large File Support)
+ * RAW format code revised
+ * Fixed itsnet2qdat to not assume PST
+ *
  * Revision 2.5  2001/11/19 10:41:28  klh
  * Fix TPS format WEOF.
  *
@@ -101,6 +112,7 @@ hardware devices so as to finally provide a consistent interface.
 #include <ctype.h>
 #include <string.h>
 #include <stdarg.h>	/* For error-reporting functions */
+#include <limits.h>
 
 #include "klh10.h"
 #include "osdsup.h"
@@ -109,7 +121,7 @@ hardware devices so as to finally provide a consistent interface.
 #include "vmtape.h"
 
 #ifdef RCSID
- RCSID(vmtape_c,"$Id: vmtape.c,v 2.5 2001/11/19 10:41:28 klh Exp $")
+ RCSID(vmtape_c,"$Id: vmtape.c,v 2.8 2003/01/19 21:14:55 klh Exp $")
 #endif
 
 /* External OS-dependent definitions needed, acquired from file that
@@ -145,6 +157,8 @@ static struct vmtfmt_s vmtfmttab[] = {
 /* Predeclarations */
 static int  datf_open(struct vmtape *t, char *fname, char *mode);
 static void datf_close(struct vmtape *t);
+static int  vmt_iobeg(struct vmtape *t, int wrtf);
+static int  vmt_ioend(struct vmtape *t);
 static int  tdr_scan(struct vmtape *t, FILE *f, char *fname);
 static char *dupcstr(char *s);
 static void tdr_reset(struct vmtape *t);
@@ -284,46 +298,61 @@ static int its_wget(struct vmtape *t, w10_t *wp);
 ** structures, and externally is represented by an ASCII "control" or
 ** "tapedir" file.
 **	The reasons for using this technique rather than something
-** with internal structure (eg TPS) are largely historical -- in order 
+** with internal structure (eg TPS) are partly historical -- in order 
 ** to save tapes with the hardware I could access, they had to be copied
 ** directly onto media such as QIC tapes which had no concept of record
 ** length, and it wasn't clear whether anything better would come along.
+** But in practice RAW format has also proven quite useful, because any
+** tool that operates on files can be applied directly to the tape data
+** file, without needing to interpret undesirable record or tapemark info.
 **
 ** RAW tape state info:
 **
-** When idle:
-**    tdcur may be:
-**	NULL -- tape is at BOT or EOT depending on whether tdrncur is 0 or 1.
-**	Else points to LAST record def transferred.
-**		tdrncur likewise indicates last record # transferred; this
-**		will be a number from 1 to N.  If 0, none of the records
-**		in the current definition have been transferred yet.
-**		If N or N+1, all of the current record definition has been
-**		transferred.
-**	Note that a tapemark (EOF) is considered a record of itself, with
-**		a length & count of 0.  If tdcur points at a tapemark, tdrncur
-**		will be 0 to indicate a logical position before the tapemark,
-**		else >= 1 to indicate a position after it.
+** Logical position between operations:
+**   tdcur == NULL: tape head is at BOT or EOT.
+**	tdrncur==0: BOT (next record is *tdrd)
+**	tdrncur==1: EOT (prev record is *tdrd->rdprev)
+**		tdrd may also be NULL, in which case the entire tape is empty.
+**   tdcur != NULL: points to a record definition.
+**	tdcur->rdlen == 0: this recdef is one or more tapemarks.
+**	tdcur->rdlen >= 1: this recdef is one or more data records.
 **
-** The function vmt_iobeg() is used to initialize the tape state from
-** the above intermediate state to one of the states below:
+**	tdrncur == 0: positioned before 1st tapemark/record (not yet read).
+**		If tdcur==tdrd, then tape is at BOT.
+**	tdnrcur == 1: positioned after  1st tapemark/record (between #1,#2).
+**	tdnrcur == N: positioned after  Nth tapemark/record (between N,N+1).
+**		If N >= tdcur->rdcnt, positioned between this recdef
+**		and the next one.  If the next one is ==tdrd, then
+**		tape is at EOT.
+**
+** Note that it is possible to represent the same logical tape position in
+** a number of different ways; the end of one recdef is the same as the
+** beginning of the next.  Which representation is preferable depends on the
+** intent of the code; eg moving forward, or in reverse.
+**
+** For example, although logically BOT and EOT are both indicated when
+** tdrd==NULL to indicate an empty tape, only one of them must be
+** signalled, and that depends on what direction the tape was moving in.
+** At mount time the tape is always at BOT.  Moving forward will set
+** this to EOT; moving backward will reset it to BOT again.
+**
+** The function vmt_iobeg() is used to canonicalize the tape state from
+** the above idle states to one of the states below:
 **
 ** During read IO transfer (state TS_RDATA):
-**	tdcur -> the current record definition structure,
-**	tdrncur = (nonzero) indicates which of the possibly N records
-**		defined is actually about to be read by the next IO transfer.
-** During read IO transfer (state TS_REOF):
-**	tdcur -> the current tapemark record
-**	tdrncur = 0
-** During read IO transfer (state TS_EOT):
-**	tdcur = NULL
-**	tdrncur = 1
+**	tdcur -> the current record definition structure (if tape non-empty).
+**	tdrncur = Set just prior to record/tapemark about to be read by the
+**		next IO transfer (eg set 0 to read 1st record).
+**	fseek() - Set just prior to start of record data.
 **
 ** During write IO transfer (state TS_WRITE):
-**		tdcur = NULL 
-**		tdrncur = 1 to indicate tape is at EOT.
-**	The tape directory info has been munged to forget about all
-**	previous info after the current write point.
+**	The tape directory info will be munged to forget about all
+**	previous info after the current logical position.  Thus, at the
+**	time of actual write, the position will always be at the end.
+**
+**	tdcur -> the last record definition structure (if tape non-empty).
+**	tdrncur = Set just after the last record/tapemark.
+**
 **	When the IO transfer completes, the record or tapemark written
 **	will be appended to the end of the tape directory.
 */
@@ -331,11 +360,23 @@ static int its_wget(struct vmtape *t, w10_t *wp);
 struct vmtrecdef {	/* Always malloced */
     struct vmtrecdef *rdnext;	/* Next record */
     struct vmtrecdef *rdprev;	/* Prev record */
-    unsigned long rdloc;	/* Record loc */
-    unsigned long rdlen;	/* Record length (can be 0 if tapemark/err) */
-    unsigned int  rdcnt;	/* # of recs of this length (0 iff tapemark) */
+    vmtpos_t rdloc;		/* Record loc */
+    unsigned long rdlen;	/* Record length (0 if tapemark) */
+    unsigned int  rdcnt;	/* # of recs of this length (0 if err) */
     int           rderr;	/* If non-zero, error reading this record */
 };
+
+
+/* NB on tapemark and error recdefs:
+ * Prior to 2002-03-21 these used a slightly different convention.
+ * Error recdefs always have a non-zero rderr field.
+ *	Previously they were also indicated by len=0, cnt=1.
+ *	Now they may have any length, but a zero count.
+ * Tapemarks always have a zero length.
+ *	Previously they were also indicated by cnt=0 and there could be only
+ *	one tapemark per recdef.
+ *	Now they are consistent with data records and will have cnt >= 1.
+ */
 
 #endif /* VMTAPE_RAW */
 
@@ -634,7 +675,7 @@ static int
 vmt_crmount(register struct vmtape *t,
 	    register struct vmtattrs *ta)
 {
-    FILE *cf = NULL, *df;
+    FILE *cf = NULL, *df = NULL;
     char *cfn = NULL, *dfn = NULL;
 
     enum vmtfmt fmt = ta->vmta_fmtreq;
@@ -693,13 +734,11 @@ vmt_crmount(register struct vmtape *t,
 
     /* Now verify filenames don't already exist */
     if (cfn && (cf = fopen(cfn, "r"))) {
-	fclose(cf);
 	vmterror(t, "Tape control file \"%.256s\" already exists", cfn);
 	goto badret;
     }
 
     if (df = fopen(dfn, "rb")) {
-	fclose(df);
 	vmterror(t, "Tape data file \"%.256s\" already exists", dfn);
 	goto badret;
     }
@@ -711,8 +750,6 @@ vmt_crmount(register struct vmtape *t,
 	goto badret;
     }
     if (!(df = fopen(dfn, "w+b"))) {
-	fclose(df);
-	if (cfn) fclose(cf);
 	vmterror(t, "Cannot create tape data file \"%.256s\": %.80s",
 		 dfn, os_strerror(errno));
 	goto badret;
@@ -728,6 +765,7 @@ vmt_crmount(register struct vmtape *t,
     t->mt_format = fmt;
     t->mt_fmtp = fmtp;
     t->mt_state = TS_RWRITE;
+    t->mt_bot = TRUE;		/* At beginning of tape */
 #if 0
     switch (fmt) {
     case VMT_FMT_RAW:
@@ -950,6 +988,7 @@ vmt_rdmount(register struct vmtape *t,
 	t->mt_datpath = dfn;
 	t->mt_writable = FALSE;
 	t->mt_state = TS_RDATA;
+	t->mt_bot = TRUE;
 	break;
 
 #if VMTAPE_ITSDUMP
@@ -960,6 +999,7 @@ vmt_rdmount(register struct vmtape *t,
 	t->mt_ispipe = FALSE;
 	t->mt_writable = FALSE;
 	t->mt_state = TS_THEAD;	/* For now */
+	t->mt_bot = TRUE;
 	break;
 #endif
 
@@ -1626,8 +1666,7 @@ static int tps_recbwd(struct vmtape *t);
 static int tpc_recfwd(struct vmtape *t);
 static int raw_recfwd(struct vmtape *t);
 static int raw_recbwd(struct vmtape *t);
-static void rawposfix(struct vmtape *t);
-static int td_posstate(struct vmttdrdef *td);
+static int raw_posfix(struct vmtape *t, int revf);
 
 int
 vmt_rewind(register struct vmtape *t)
@@ -1655,7 +1694,7 @@ vmt_rewind(register struct vmtape *t)
 #endif
 
     case VMT_FMT_RAW:
-	t->mt_tdr.tdcur = NULL;	/* Clear vmtrecdefs */
+	t->mt_tdr.tdcur = t->mt_tdr.tdrd;	/* Go to BOT */
 	t->mt_tdr.tdrncur = 0;
 	/* Drop thru to common code */
 
@@ -1712,7 +1751,8 @@ vmt_rspace(register struct vmtape *t,
 	    return TRUE;
 	} else do {
 	    w10_t w;
-	    vmt_iobeg(t, FALSE);
+	    if (!vmt_iobeg(t, FALSE))
+		break;
 	    while (its_wget(t, &w));		/* Space forward a record */
 	    if (t->mt_frames)
 		--cnt;
@@ -1723,7 +1763,6 @@ vmt_rspace(register struct vmtape *t,
 #endif	/* VMTAPE_ITSDUMP */
     case VMT_FMT_RAW:
 	t->mt_eof = t->mt_eot = t->mt_bot = FALSE;
-	rawposfix(t);			/* Canonicalize current position */
 	if (revf) {
 	    while (raw_recbwd(t) > 0
 		&& !t->mt_eof && !t->mt_bot && --cnt) ;
@@ -1770,7 +1809,7 @@ vmt_rspace(register struct vmtape *t,
 */
 int
 vmt_fspace(register struct vmtape *t,
-	   int dir,		/* 0 forward, else backward */
+	   int revf,		/* 0 forward, else backward */
 	   unsigned long cnt)
 {
     long origcnt = cnt;
@@ -1778,7 +1817,7 @@ vmt_fspace(register struct vmtape *t,
     int (*recmove)(struct vmtape *);
 
     if (t->mt_debug)
-	vmterror(t, "vmt_fspace %ld %s", cnt, (dir ? "rev" : "fwd"));
+	vmterror(t, "vmt_fspace %ld %s", cnt, (revf ? "rev" : "fwd"));
 
     t->mt_frames = 0;
 
@@ -1787,21 +1826,20 @@ vmt_fspace(register struct vmtape *t,
 
     switch (t->mt_format) {
     case VMT_FMT_RAW:
-	rawposfix(t);		/* Ensure in canonical state */
-	recmove = dir ? raw_recbwd : raw_recfwd;
+	recmove = revf ? raw_recbwd : raw_recfwd;
 	break;
     case VMT_FMT_TPE:
     case VMT_FMT_TPS:
-	recmove = dir ? tps_recbwd : tps_recfwd;
+	recmove = revf ? tps_recbwd : tps_recfwd;
 	break;
     case VMT_FMT_TPC:
-	if (dir)		/* TPC cannot go backwards */
+	if (revf)		/* TPC cannot go backwards */
 	    return FALSE;
 	recmove = tpc_recfwd;
 	break;
 #if VMTAPE_ITSDUMP
     case VMT_FMT_ITS:
-	foo = dir ? its_filebwd : its_filefwd;
+	foo = revf ? its_filebwd : its_filefwd;
 	break;
 #endif
     default:
@@ -1813,7 +1851,7 @@ vmt_fspace(register struct vmtape *t,
 	register int fsret, res;
 	if (foo)
 	    fsret = (*foo)(t);
-	else if (dir) {
+	else if (revf) {
 	    /* Generic backward loop */
 	    t->mt_eof = t->mt_eot = t->mt_bot = FALSE;
 	    while ((res = (*recmove)(t)) > 0 && !t->mt_eof && !t->mt_bot) ;
@@ -1969,92 +2007,92 @@ fd_nextget(register struct vmtape *t)
 	   	RAW format positioning
  */
 
-static struct vmtrecdef *rd_prevget(struct vmtape *t);
-
-
-/* Move backwards over raw tape's previous record/tapemark.
-** 	rawposfix() must have been called prior to one or more calls
-** of this routine.
-*/
-static struct vmtrecdef *
-rd_prevget(register struct vmtape *t)
-{
-    register struct vmttdrdef *td = &t->mt_tdr;
-    register struct vmtrecdef *rd;
-
-    if (!(rd = td->tdcur)) {	/* At EOT? */
-	if (!(rd = td->tdrd)) {
-	    return NULL;	/* Cannot move back, still at EOT (& BOT) */
-	}
-	/* Back up from EOT.  rdprev will point to last record, so
-	** dropping through does the right thing.
-	*/
-    } else {
-	/* Back up from current location */
-	if (--(td->tdrncur) >= 0)	/* If all goes well, */
-	    return rd;			/* simply return this vmtrecdef! */
-
-	/* Oops, must get previous vmtrecdef */
-	if (rd == td->tdrd) {		/* If this vmtrecdef is already first */
-	    td->tdrncur = 0;		/* stay at BOT */
-	    return NULL;		/* and say couldn't move back */
-	}
-    }
-
-    /* Back up to end of previous vmtrecdef */
-    td->tdcur = rd = rd->rdprev;	/* Must back up to previous vmtrecdef */
-    if ((td->tdrncur = rd->rdcnt) != 0)	/* Unless it's a tapemark, */
-	--(td->tdrncur);		/* move over last record in it. */
-
-    return rd;
-}
-
-
 /* Canonicalize raw tape position prior to doing something
 **	Ensures that current position is correctly set up based on
 **	values of tdcur and tdrncur.  Ignores current state but sets it
-**	as if about to read next record or tapemark.
+**	as if about to read next record/tapemark (forward) or move
+**	(either direction).
+** Returns FALSE if detects that won't be able to move in the desired
+**	direction, and sets mt_bot or mt_eot appropriately.
+** Otherwise returns TRUE with no position flags set; the tape movement
+**	is expected to set them.
 */
-static void
-rawposfix(register struct vmtape *t)
+static int
+raw_posfix(register struct vmtape *t, int revf)
 {
     register struct vmttdrdef *td = &t->mt_tdr;
+    register struct vmtrecdef *rd = td->tdcur;
 
-    if (!td->tdcur) {			/* If no current record def */
-	if (!td->tdrncur) {		/* Check BOT or EOT */
-	    if (!(td->tdcur = td->tdrd))	/* BOT, try to start there */
-		td->tdrncur = 1;		/* Ugh, make it EOT. */
+    if (!rd) {				/* If no current record def */
+	if (!(td->tdcur = td->tdrd)) {	/* see if any tape at all */
+
+	    /* Tape empty; set up as if tried to move */
+	    if (revf) {
+		td->tdrncur = 0;	/* Reverse - say hit fake BOT */
+		t->mt_bot = TRUE;
+	    } else {
+		td->tdrncur = 1;	/* Forward - say hit fake EOT */
+		t->mt_eot = TRUE;
+	    }
+	    return FALSE;
 	}
-    } else if (td->tdrncur && td->tdrncur >= td->tdcur->rdcnt) {
-	/* Need next record def */
-	td->tdrncur = 0;		/* Read 1st record of next def */
-	if ((td->tdcur = td->tdcur->rdnext)
-			== td->tdrd) {
-	    td->tdcur = NULL;		/* Oops, reached EOT, so clobber. */
-	    td->tdrncur = 1;		/* Distinguish from BOT. */
+	/* Backward-compatible hack: should not be faking BOT/EOT if have
+	 * any recdefs, but if so, canonicalize to desired position.
+	 * We're already at real BOT, so only need to test whether EOT wanted.
+	 */
+	if (td->tdrncur > 0) {		/* If wanted EOT, set to real EOT */
+	    td->tdcur = rd = td->tdrd->rdprev;
+	    td->tdrncur = rd->rdcnt;
+	    t->mt_eot = TRUE;
+	}
+	return FALSE;
+    }
+
+    /* Have real position already set up, now canonicalize it.  This is
+     * desirable because of the ambiguity when the tape position is between
+     * two recdefs -- tdcur could be pointing to either recdef.  It is
+     * simpler for other code to make sure that tdcur is always pointing
+     * to the recdef that will actually be consumed by the forthcoming
+     * operation.
+     *
+     * If moving backward or writing forward:
+     *    forces an in-between position to be the FIRST recdef.
+     *    (writing forward wants this behavior so newly written records
+     *    can be easily merged with previous recdefs if they match)
+     *
+     * If moving forward or reading forward:
+     *    forces an in-between position to be the SECOND recdef.
+     */
+    if (revf) {
+	/* Moving back or writing forward */
+	if (td->tdrncur <= 0) {		/* If at start of (2nd) recdef */
+	    if (rd == td->tdrd) {	/* See if have a prev */
+		t->mt_bot = TRUE;	/* Nope, say at BOT */
+		return FALSE;
+	    }
+	    td->tdcur = rd = rd->rdprev;	/* Move to end of 1st recdef */
+	    td->tdrncur = rd->rdcnt;
+	}
+    } else {
+	/* Moving forward or reading forward */
+	if (td->tdrncur >= rd->rdcnt) {
+	    if (rd->rdnext == td->tdrd) {	/* If this is last recdef */
+		td->tdrncur = rd->rdcnt;	/* stay at EOT */
+		t->mt_eot = TRUE;
+		return FALSE;			/* and say couldn't read */
+	    }
+	    /* Move to first thing in next recdef */
+	    td->tdcur = rd->rdnext;
+	    td->tdrncur = 0;
 	}
     }
 
-    /* Now set tape state appropriately. */
-    t->mt_state = td_posstate(td);
+    return TRUE;
 }
 
-/* Return raw tape state (a TS_ value) based on its current
-** logical position.
-*/
-static int
-td_posstate(register struct vmttdrdef *td)
-{
-    return
-	  (td->tdcur == NULL) ? TS_EOT		/* Next read returns EOT */
-	: (td->tdcur->rdlen == 0
-	   || td->tdcur->rdcnt == 0) ? TS_REOF	/* Next read returns EOF */
-	: TS_RDATA;				/* Next read returns data */
-}
 
 /* Space 1 record forward.
-** 	rawposfix() must have been called prior to one or more calls
-** of this routine.
+**
 ** Returns 1 (true) on success,
 ** 0 (false) if cannot space forward (ie already at EOT)
 ** -1 if error (otherwise same as 0)
@@ -2063,37 +2101,63 @@ td_posstate(register struct vmttdrdef *td)
 static int
 raw_recfwd(register struct vmtape *t)
 {
+    register struct vmttdrdef *td = &t->mt_tdr;
     register struct vmtrecdef *rd;
 
-    if (!(rd = t->mt_tdr.tdcur)) {	/* If at EOT */
-	t->mt_eot = TRUE;
-	return 0;
+    if (!(rd = td->tdcur)			/* If tape maybe empty */
+	|| ++(td->tdrncur) > rd->rdcnt) {	/* or done with this recdef */
+	if (!raw_posfix(t, FALSE))		/* Set up next recdef */
+	    return FALSE;			/* None, at EOT */
+
+	/* Have new recdef, apply forward motion to it */
+	td->tdrncur = 1;		/* Go past 1st thing in recdef */
+	rd = td->tdcur;
     }
-    if (rd->rdlen == 0 || rd->rdcnt == 0)
+
+    if (rd->rdlen == 0)
 	t->mt_eof = TRUE;
     else if (t->mt_ispipe)
 	(void) vmtflushinp(t, (size_t)(rd->rdlen));
-
-    t->mt_tdr.tdrncur++;	/* Bump to next record */
-    rawposfix(t);		/* Canonicalize and set possibly new state */
-    return 1;
+#if 0
+    if (rd->rderr)
+	t->mt_err = TRUE;
+#endif
+    return TRUE;
 }
 
+/* Move backwards over raw tape's previous record/tapemark.
+**
+** Returns 1 (true) on success,
+** 0 (false) if cannot space backward (ie already at BOT)
+** A tapemark causes a success return with mt_eof set TRUE.
+** Note that a successful move backwards will never set mt_bot even if
+** it *is* at BOT; an actual attempt to move into BOT must happen, to
+** simulate the way real tapes appear to work.
+*/
 static int
 raw_recbwd(register struct vmtape *t)
 {
-    register struct vmtrecdef *rd;
+    register struct vmttdrdef *td = &t->mt_tdr;
 
-    if (!(rd = rd_prevget(t))) {
-	t->mt_bot = TRUE;		/* Couldn't move back, so fail */
-    } else if (t->mt_tdr.tdrncur == 0) {
-	if (rd->rdcnt == 0)		/* Backed up over a tapemark? */
-	    t->mt_eof = TRUE;
-	if (rd == t->mt_tdr.tdrd)
-	    t->mt_bot = TRUE;
+    if (!(td->tdcur)			/* If tape maybe empty */
+	|| --(td->tdrncur) < 0) {	/* or done with this recdef */
+	if (!raw_posfix(t, TRUE))	/* Set up prev recdef */
+	    return FALSE;		/* None, at BOT */
+
+	/* Have new recdef, apply reverse motion to it if possible */
+	if (td->tdrncur)
+	    --(td->tdrncur);
     }
-    t->mt_state = td_posstate(&t->mt_tdr);
-    return rd ? 1 : 0;
+
+    /* If moved over a tapemark, set EOF flag */
+    if (td->tdcur->rdlen == 0)
+	t->mt_eof = TRUE;
+#if 0
+    if (td->tdcur->rderr)
+	t->mt_err = TRUE;
+#endif
+
+    return TRUE;
 }
 
 /* =================================================
@@ -2112,8 +2176,8 @@ tps_recfwd(register struct vmtape *t)
     unsigned char header[4];
 
     /* Ensure set up for reading */
-    if (t->mt_state != TS_RDATA)
-	vmt_iobeg(t, FALSE);
+    if (!vmt_iobeg(t, FALSE))
+	return -1;
 
     if ((res = fread(header, 1, sizeof(header), t->mt_datf))
 	 != sizeof(header)) {
@@ -2170,8 +2234,8 @@ tps_recbwd(register struct vmtape *t)
     unsigned char header[4];
 
     /* Ensure set up for reading */
-    if (t->mt_state != TS_RDATA)
-	vmt_iobeg(t, FALSE);
+    if (!vmt_iobeg(t, FALSE))
+	return -1;
 
     if (t->mt_ispipe) {
 	vmterror(t, "Cannot backspace on pipe - data file \"%.256s\"",
@@ -2272,8 +2336,8 @@ tpc_recfwd(register struct vmtape *t)
     unsigned char header[2];
 
     /* Ensure set up for reading */
-    if (t->mt_state != TS_RDATA)
-	vmt_iobeg(t, FALSE);
+    if (!vmt_iobeg(t, FALSE))
+	return -1;
 
     if ((res = fread(header, 1, sizeof(header), t->mt_datf))
 	 != sizeof(header)) {
@@ -2317,12 +2381,11 @@ tpc_recfwd(register struct vmtape *t)
 
 /* Tape I/O - Start, end, EOF, EOT */
 
-void
+static int
 vmt_iobeg(register struct vmtape *t,
 	  int wrtf)			/* TRUE if about to write */
 {
     register struct vmttdrdef *td;
-    long ioptr;
 
     /* Caller should always check for writability first, but do a sanity
        check anyway to catch buggy code.
@@ -2330,9 +2393,8 @@ vmt_iobeg(register struct vmtape *t,
     if (wrtf && (!vmt_iswritable(t)
 		 || !(vmtfmttab[t->mt_format].tf_flags & VMTFF_WR))) {
 	vmterror(t, "write attempted to non-writable tape");
-	/* Later return false value? */
 	vmtseterr(t);
-	return;
+	return FALSE;
     }
 
     t->mt_frames = 0;		/* Updated by any I/O */
@@ -2347,11 +2409,15 @@ vmt_iobeg(register struct vmtape *t,
     case VMT_FMT_TPC:
 	if (t->mt_state != TS_RDATA) {	/* Paranoia check */
 	    vmtseterr(t);
+	    return FALSE;
 	}
 	break;
 
     case VMT_FMT_TPE:
     case VMT_FMT_TPS:
+      {
+	long ioptr;
+
 	if ((wrtf && (t->mt_state != TS_RWRITE))
 	    || (!wrtf &&  (t->mt_state != TS_RDATA))) {
 	    /* Must do a seek because we're changing read/write mode.
@@ -2363,14 +2429,17 @@ vmt_iobeg(register struct vmtape *t,
 			(wrtf ? "write" : "read"), t->mt_datpath);
 		/* What else to do??  Read/write gubbish... */
 		vmtseterr(t);
-		break;
+		return FALSE;
 	    }
 	    t->mt_state = (wrtf ? TS_RWRITE : TS_RDATA);
 	}
 	break;
+      }
 
     case VMT_FMT_RAW:
-	rawposfix(t);		/* Canonicalize read position */
+      {
+	vmtpos_t ioptr;
+
 	td = &t->mt_tdr;
 	if (wrtf) {
 	    /* Caller must already have checked vmt_iswritable() to make sure
@@ -2378,31 +2447,27 @@ vmt_iobeg(register struct vmtape *t,
 	    */
 	    t->mt_state = TS_RWRITE;
 
-	    if (td->tdcur)		/* If not at EOF, */
-		td_trunc(td);	/* Truncate tape at this location! */
+	    (void) raw_posfix(t, TRUE);	/* Canonicalize write position */
+	    t->mt_bot = FALSE;		/* Ignore BOT if one */
+	    td_trunc(td);		/* Truncate tape at this location! */
 
 	    /* Now find data file IO pointer value to use, and position it.
 	    ** May already be there, but must do it explicitly in case of
 	    ** intervening tape reads or position commands.
 	    */
-	    if (td->tdrd == NULL)
-		ioptr = 0;
-	    else {
-		/* Get pointer to last record def in list */
-		register struct vmtrecdef *rd = td->tdrd->rdprev;
-		ioptr = rd->rdloc + (rd->rdlen * rd->rdcnt);
-	    }
-	    td->tdbytes = ioptr;	/* Remember highest output so far */
+	    ioptr = td->tdbytes;	/* Remember highest output so far */
 
 	} else {
+	    /* Planning to read data */
+	    t->mt_state = TS_RDATA;
 
-	    /* If data is forthcoming, find data file IO pointer to use. */
-	    if (t->mt_state != TS_RDATA)
-		return;			/* No data, nothing to do now */
+	    if (!raw_posfix(t, FALSE))	/* Canonicalize read position */
+		return FALSE;		/* Empty tape or at EOT! */
 
-	    /* Aha, set up */
-	    ioptr = td->tdcur->rdloc + (td->tdcur->rdlen * td->tdrncur);
-	    td->tdrfcnt = td->tdcur->rdlen;
+	    if ((td->tdrfcnt = td->tdcur->rdlen) == 0)
+		break;			/* At tapemark, no seek needed */
+	    ioptr = td->tdcur->rdloc + (((vmtpos_t)(td->tdcur->rdlen))
+					* td->tdrncur);
 	}
 
 	/* Do seek on raw tape data file.
@@ -2412,18 +2477,23 @@ vmt_iobeg(register struct vmtape *t,
 	*/
 	if (t->mt_ispipe) {
 	    /* Do nothing and hope we're still in the right place! */
-	} else if (fseek(t->mt_datf, ioptr, SEEK_SET)) {
-	    vmterror(t, "%s fseek failed: data file \"%.256s\", loc %ld",
+	} else if (VMTAPE_POS_FSEEK(t->mt_datf, ioptr)) {
+	    vmterror(t, "%s fseek failed: data file \"%.256s\", loc %"
+		     VMTAPE_POS_FMT "d",
 		    (wrtf ? "write" : "read"),
-		    t->mt_datpath, (long)ioptr);
+		    t->mt_datpath, ioptr);
 	    /* What else to do??  Read/write gubbish... */
 	    vmtseterr(t);
+	    t->mt_state = TS_ERR;
+	    return FALSE;
 	}
 	break;
+      }
     }
+    return TRUE;
 }
 
-int
+static int
 vmt_ioend(register struct vmtape *t)
 {
     switch (t->mt_format) {
@@ -2436,20 +2506,21 @@ vmt_ioend(register struct vmtape *t)
 
     case VMT_FMT_RAW:		/* Handle raw tape */
 	/* Check to see if any I/O actually happened (record data or tapemark).
-	** It's possible for some errors to prevent I/O from happening, thus
-	** the logical position hasn't changed.
+	** It's possible for some errors to prevent I/O from happening, in
+	** which case the logical position doesn't change.
 	*/
-	if (!t->mt_frames && !t->mt_eof)
-	    return TRUE;
-
 	if (t->mt_iowrt) {			/* If writing, */
 	    if (t->mt_frames) {		/* force out any data */
 		fflush(t->mt_datf);
-		if (ferror(t->mt_datf))
+		if (ferror(t->mt_datf)) {
+		    vmterror(t, "vmt_ioend: file output error");
+		    t->mt_state = TS_ERR;	/* Must re-synch */
 		    return FALSE;
+		}
 		if (!td_recapp(&t->mt_tdr,	/* append new record def */
 			    t->mt_frames, 1, 0)) {
 		    vmterror(t, "vmt_ioend: td_recapp malloc failed");
+		    t->mt_state = TS_ERR;	/* Must re-synch */
 		    return FALSE;
 		}
 	    }
@@ -2464,16 +2535,15 @@ vmt_ioend(register struct vmtape *t)
 /* Write EOF (tapemark, filemark)
 **	Caller has already checked for ability to write.
 **	Returns FALSE if couldn't do it.
+**	Sets mt_eof, to emulate TM03 behavior.
 */
 int
 vmt_eof(register struct vmtape *t)
 {
-    if (!vmt_iswritable(t)) {
-	/* Read-only tape or format, cannot write */
-	t->mt_err++;
+    int res;
+
+    if (!vmt_iobeg(t, TRUE))			/* Set up for write */
 	return FALSE;
-    }
-    vmt_iobeg(t, TRUE);			/* Set up for write */
 
     switch (t->mt_format) {
     default:
@@ -2482,17 +2552,23 @@ vmt_eof(register struct vmtape *t)
     case VMT_FMT_TPE:
     case VMT_FMT_TPS:
 	/* Just write zero length "record" */
-	return vmt_rput(t, (unsigned char *)NULL, (size_t)0);
+	if (vmt_rput(t, (unsigned char *)NULL, (size_t)0)) {
+	    t->mt_eof = TRUE;
+	    return TRUE;
+	}
+	break;
 
     case VMT_FMT_RAW:
 	/* Instead of calling vmt_ioend(), invoke a slightly different
 	** operation and leave it at that.
 	** Failure return means malloc failed.
 	*/
-	if (!td_recapp(&t->mt_tdr, (long)0, 0, 0)) {	/* Append EOF */
+	if (!td_recapp(&t->mt_tdr, (long)0, 1, 0)) {	/* Append EOF */
 	    vmterror(t, "vmt_eof: td_recapp malloc failed");
+	    t->mt_state = TS_ERR;		/* Must re-synch */
 	    return FALSE;
 	}
+	t->mt_eof = TRUE;
 	return TRUE;
     }
     return FALSE;
@@ -2500,6 +2576,7 @@ vmt_eof(register struct vmtape *t)
 
 /* Write what amounts to EOT, when tape being unmounted or rewound.
 **	Finalize output data, write tape directory file.
+**	Tape position is ignored and unchanged.
 */
 int
 vmt_eot(register struct vmtape *t)
@@ -2681,7 +2758,8 @@ vmt_rget(register struct vmtape *t,
     register size_t nget;
     int res = FALSE;
 
-    vmt_iobeg(t, FALSE);	/* Set up for reading */
+    if (!vmt_iobeg(t, FALSE))	/* Set up for reading */
+	return FALSE;
 
     switch (t->mt_format) {
     default:
@@ -2733,20 +2811,16 @@ vmt_rget(register struct vmtape *t,
 
     case VMT_FMT_RAW:
 	switch (t->mt_state) {
-	case TS_EOT:
-	    t->mt_eot = TRUE;
-	    return FALSE;		/* Don't call vmt_ioend */
-
-	case TS_REOF:
-	    t->mt_eof = TRUE;
-	    t->mt_state = TS_RDATA;
-	    break;
-
 	case TS_RDATA:
+	    if (t->mt_eot)		/* Set up by vmt_iobeg if EOT */
+		return FALSE;
+	    if (t->mt_tdr.tdrfcnt == 0) {
+		t->mt_eof = TRUE;	/* Hit tapemark */
+		break;
+	    }
+
 	    if (len > t->mt_tdr.tdrfcnt) {
 		len = t->mt_tdr.tdrfcnt;	/* Truncate our request */
-		if (len <= 0) 
-		    break;			/* Nothing in record??? */
 	    }
 
 	    if ((nget = fread(buff, 1, len, t->mt_datf)) != len) {
@@ -2756,19 +2830,21 @@ vmt_rget(register struct vmtape *t,
 			 (long)nget, (long)len);
 		len = nget;
 		t->mt_eot = TRUE;
-		t->mt_state = TS_EOT;
+		t->mt_state = TS_ERR;
+	    } else if (t->mt_ispipe && (len < t->mt_tdr.tdrfcnt)) {
+		res = vmtflushinp(t, t->mt_tdr.tdrfcnt - len);
 	    }
 	    t->mt_frames += nget;
 	    t->mt_tdr.tdrfcnt -= nget;
 	    res = TRUE;
 	    break;
 
+	case TS_ERR:
 	default:		/* Bad state?? */
-	    /* Should return error indicator, but also try to get back into
-	       a good state.
+	    /* Return error indicator and leave state as is; should
+	       re-synch on next I/O attempt.
 	    */
 	    t->mt_err++;
-	    t->mt_state = TS_RDATA;	/* Wild guess */
 	    res = FALSE;
 	    break;
 	}
@@ -2946,17 +3022,8 @@ vmt_rput(register struct vmtape *t,
 {
     size_t nput;
 
-    if (!(t->mt_fmtp->tf_flags & VMTFF_WR)) {
-	/* Read-only format, cannot write */
-	t->mt_err++;
+    if (!vmt_iobeg(t, TRUE))
 	return FALSE;
-    }
-    vmt_iobeg(t, TRUE);
-
-    if (t->mt_state != TS_RWRITE) {
-	t->mt_err++;
-	return FALSE;
-    }
 
     switch (t->mt_format) {
 	int pad;
@@ -3002,18 +3069,18 @@ vmt_rput(register struct vmtape *t,
 
 /* Add error indication onto last record.
 **	Only intended for use by tdcopy program.
-**	If uselast is TRUE, uses last record (right after a vmt_ioend!)
-**	otherwise creates a new, null record to hold the error.
+**	Modifies last record read or written.
+**	May create a new record to hold the error.
 */
 int
 vmt_eput(register struct vmtape *t,
-	 int err, int uselast)
+	 int err)
 {
     switch (t->mt_format) {
     case VMT_FMT_RAW:
-	if (!uselast || !t->mt_tdr.tdrd || !t->mt_tdr.tdcur) {
-	    vmt_iobeg(t, TRUE);		/* Set up for write */
-	    if (!td_recapp(&t->mt_tdr, (long)0, 1, err)) {
+	/* XXX: Needs work, esp for records in middle of recdef! */
+	if (!t->mt_tdr.tdrd || !t->mt_tdr.tdcur) {
+	    if (!td_recapp(&t->mt_tdr, (long)0, 0, err)) {
 		vmterror(t, "vmt_eput: td_recapp malloc failed");
 		return FALSE;
 	    }
@@ -3100,7 +3167,7 @@ indication can be bound to it.
 
 static int fileread(FILE *f, char **acp, size_t *asz);
 static char *wdscan(char **acp);
-static int numscan(char *cp, char **acp, long int *aval);
+static int numscan(char *cp, char **acp, vmtpos_t *aval);
 static void filscan(struct vmtape *t, struct vmttdrdef *td, char *cp);
 #if VMTAPE_ITSDUMP
 static struct vmtfildef *itsparse(struct vmtape *t, char **acp);
@@ -3137,10 +3204,11 @@ tdr_scan(struct vmtape *t,
 	 char *fname)
 {
     struct vmttdrdef *td = &t->mt_tdr;
+    int res;
     int indent;
     char *cp;
     char *key, *num;
-    long tloc = 0;
+    vmtpos_t tloc = 0;
     size_t fsize = 0;
     char *line, *nline;
     char *savetpath = t->mt_filename;	/* Save & restore this */
@@ -3188,21 +3256,27 @@ tdr_scan(struct vmtape *t,
 	    continue;
 	}
 	*cp++ = 0;			/* Zap colon, move over */
-	if (numscan(key, &num, &tloc) && !*num) {	/* All digits? */
+	if (!(res = numscan(key, &num, &tloc)) && !*num) { /* All digits? */
 	    /* Assume it's a record definition */
 	    if (tloc == 0 && td->tdrd) {
 		TDRERR(t,(t, "Record descs seen before BOT"));
 	    } else if (tloc != td->tdbytes) {
 		if (tloc < td->tdbytes)
-		    TDRERR(t,(t, "Tape overlap?  Loc now %ld, TD file says %ld",
+		    TDRERR(t,(t, "Tape overlap?  Loc now %"
+			      VMTAPE_POS_FMT "d, TD file says %"
+			      VMTAPE_POS_FMT "d",
 					tloc, td->tdbytes));
 		else	/* Warning, not true error */
-		    tdrwarn(t, "Tape gap?  Loc now %ld, TD file says %ld",
+		    tdrwarn(t, "Tape gap?  Loc now %"
+			      VMTAPE_POS_FMT "d, TD file says %"
+			      VMTAPE_POS_FMT "d",
 					tloc, td->tdbytes);
 	    }
 	    td->tdbytes = tloc;		/* Set file location as given */
 	    filscan(t, td, cp);		/* Scan line and link recs into list */
-
+	} else if (res > 0) {
+	    TDRERR(t,(t, "Record loc too large for this platform"));
+	    continue;
 	} else if (strcasecmp(key, "BOT")==0) {
 	    if (td->tdrd || td->tdbytes) {
 		TDRERR(t,(t, "BOT already seen"));
@@ -3273,22 +3347,37 @@ tdr_scan(struct vmtape *t,
 	t->mt_fmtp = &vmtfmttab[t->mt_format];
 	return FALSE;
     }
+
+    /* Tape pos is currently at end; reset it to BOT! */
+    td->tdcur = td->tdrd;
+    td->tdrncur = 0;
+
     return TRUE;
 }
 
 
+/* Parse decimal number.
+ * Returns 0 on success, else
+ * -1 for no number, or a positive number if overflowed.
+ */
 static int
-numscan(char *cp, char **acp, long *aval)
+numscan(char *cp, char **acp, vmtpos_t *aval)
 {
     register char *s = cp;
-    long val = 0;
+    register int res = 0;
+    vmtpos_t val = 0;
+
     while (isdigit(*s)) {
+	register vmtpos_t oval;
+	oval = val;
 	val = (val * 10) + (*s - '0');
 	++s;
+	if (val < oval)			/* If value wraps, */
+	    res = 34 /*ERANGE*/;	/* indicate overflow */
     }
     *aval = val;
     *acp = s;
-    return (s == cp) ? 0 : 1;
+    return (s == cp) ? -1 : res;
 }
 
 
@@ -3337,30 +3426,35 @@ fileread(FILE *f,
 }
 
 /* Scan a list of records constituting a tape file.
+** Errors are reported by a total in mt_ntdrerrs.
 */
-
 static void
 filscan(struct vmtape *t,
 	struct vmttdrdef *td,
 	char *cp)
 {
     char *rs;
-    long len, cnt, err;
+    vmtpos_t len, cnt, err;
+    int res;
 
     while (rs = wdscan(&cp)) {
 	char *cs, *es;
 
-	if (!numscan(rs, &cs, &len)) {
-	    if (strcasecmp(rs, "EOF") == 0) {	/* Tapemark? */
-		if (td_recapp(td, (long)0, 0, 0) == NULL)	/* Yep, add one here */
-		    TDRERR(t,(t, "malloc failed while adding tapemark"));
+	if (res = numscan(rs, &cs, &len)) {
+	    if (res > 0)
+		TDRERR(t,(t, "Reclen too large"));
+	    else if (strncasecmp(rs, "EOF", 3) == 0) {	/* Tapemark? */
+		len = 0;			/* Yep, indicate with 0-len */
+		cs += 3;
 	    } else
 		TDRERR(t,(t, "Bad reclen syntax"));
-	    continue;
 	}
 	if (*cs == '*') {
-	    if (!numscan(++cs, &cs, &cnt)) {
-		TDRERR(t,(t, "Bad reccnt syntax"));
+	    if (res = numscan(++cs, &cs, &cnt)) {
+		if (res > 0)
+		    TDRERR(t,(t, "Reclen too large"));
+		else
+		    TDRERR(t,(t, "Bad reccnt syntax"));
 		continue;
 	    }
 	} else cnt = 1;
@@ -3369,14 +3463,23 @@ filscan(struct vmtape *t,
 		TDRERR(t,(t, "Bad record syntax"));
 		continue;
 	    }
-	    if (!numscan(++cs, &es, &err) || *es) {
-		TDRERR(t,(t, "Bad recerr syntax"));
+	    if ((res = numscan(++cs, &es, &err)) || *es) {
+		if (res > 0)
+		    TDRERR(t,(t, "Reclen too large"));
+		else
+		    TDRERR(t,(t, "Bad recerr syntax"));
 		continue;
 	    }
 	} else err = 0;
 
-	/* Add record to list */
-	if (td_recapp(td, len, (int)cnt, (int)err) == NULL)
+	/* Verify sizes aren't exceeded */
+	if (len > ULONG_MAX)
+	    TDRERR(t,(t, "Record length exceeded: %" VMTAPE_POS_FMT "d", len));
+	if (cnt > UINT_MAX)
+	    TDRERR(t,(t, "Record count exceeded: %" VMTAPE_POS_FMT "d", cnt));
+
+	/* Add recdef to list */
+	if (td_recapp(td, (long)len, (int)cnt, (int)err) == NULL)
 	    TDRERR(t,(t, "malloc failed while adding record"));
     }
 }
@@ -3571,10 +3674,9 @@ itsdate(FILE *f)
     return w;
 }
 
-/* Convert from Network 32-bit standard time (RFC 738) to ITS
-** disk-format date/time
+/* Convert from Network 32-bit standard time (RFC 738, GMT) to ITS
+** disk-format date/time (EST).
 */
-
 static w10_t
 itsnet2qdat(uint32 ntm)
 {
@@ -3583,16 +3685,19 @@ itsnet2qdat(uint32 ntm)
 
     LRHSET(w, 0, 0);
 
-    /* Special hack - assume time is coming from a real ITS dump, and
-    ** compensate for timezone so dates don't change.  ITS always assumed
-    ** EST/EDT (-5 hrs from GMT).  In order for local time breakdown to
-    ** provide us with the original EST values, we need to add in the offset
-    ** between the local timezone and EST.
-    ** Yes, this is very site-dependent and should be an OS dependent routine.
-    ** Current assumption for testing/debugging is local zone of PST.
+    /* Special hack - assume time is coming from a "real" historical
+    ** ITS dump, and compensate for timezone so times shown on
+    ** restored files are the same as the times shown on the old
+    ** system the dump came from.  ITS always assumed EST/EDT, so in
+    ** order for the GMT time breakdown to provide us with the
+    ** original EST values, we need to add in the offset between GMT
+    ** and EST (-5 hrs from GMT).
+    ** Daylight saving computations are not worth worrying about.
     */
-#define NTM_ITSTZOFF ((8-5)*60*60)
-    ntm += NTM_ITSTZOFF;
+#ifndef VMTAPE_NTM_ITSTZOFF
+# define VMTAPE_NTM_ITSTZOFF (-5*60*60)	/* Seconds diff from GMT/UTC */
+#endif
+    ntm += VMTAPE_NTM_ITSTZOFF;
 
     if (os_net2tm(ntm, &tm)) {	/* Get time breakdown for Net time value */
 	/* Now put together an ITS time word */
@@ -3689,7 +3794,7 @@ td_fout(struct vmttdrdef *td,
 
     fprintf(f, "\
 ; Tape directory for %s\n\
-; Bytes: %ld, Records: %d, Files(EOF marks): %d\n\
+; Bytes: %" VMTAPE_POS_FMT "d, Records: %ld, Files(EOF marks): %ld\n\
 TF-Format: raw %s\n",
 		fnam ? fnam : "<none>",
 		td->tdbytes, td->tdrecs, td->tdfils,
@@ -3697,11 +3802,12 @@ TF-Format: raw %s\n",
     if (rd = td->tdrd) {
 	do {
 	    if (bol) {
-		fprintf(f, "%lu:", rd->rdloc);
+		fprintf(f, "%" VMTAPE_POS_FMT "u:", rd->rdloc);
 		bol = FALSE;
 	    }
-	    if (rd->rdcnt == 0) {
-		fprintf(f, " EOF\n");
+	    if (rd->rdlen == 0) {
+		if (rd->rdcnt == 1) fprintf(f, " EOF\n");
+		else fprintf(f, " EOF*%u\n", rd->rdcnt);
 		bol = TRUE;
 	    } else if (rd->rdcnt == 1) fprintf(f, " %lu", rd->rdlen);
 	    else fprintf(f, " %lu*%u", rd->rdlen, rd->rdcnt);
@@ -3714,8 +3820,8 @@ TF-Format: raw %s\n",
 /* Append a record to end of tape directory.
 **	Count 0 means a tapemark (EOF).
 **	Returns NULL if needs to allocate new record def and out of space.
+**	Updates current tape position!
 */
-
 static struct vmtrecdef *
 td_recapp(register struct vmttdrdef *td,
 	  unsigned long len,
@@ -3725,12 +3831,9 @@ td_recapp(register struct vmttdrdef *td,
 
     /* Try for fast merge with previous record */
     if (td->tdrd) {
-	rd = td->tdrd->rdprev;	/* Get prev record */
-	if (!err && !rd->rderr && cnt && rd->rdcnt && len == rd->rdlen) {
-	    rd->rdcnt += cnt;
-	    td->tdrecs += cnt;
-	    td->tdbytes += (len * cnt);
-	    return rd;
+	rd = td->tdrd->rdprev;		/* Get prev record */
+	if (!err && !rd->rderr && len == rd->rdlen) {
+	    goto gotrd;
 	}
     }
 
@@ -3741,22 +3844,25 @@ td_recapp(register struct vmttdrdef *td,
     }
     rd->rdloc = td->tdbytes;
     rd->rdlen = len;
-    rd->rdcnt = cnt;
+    rd->rdcnt = 0;		/* Will add cnt in following code */
     rd->rderr = err;
     td_rdadd(td, rd);		/* Add to circ list */
-    if (cnt) {			/* Normal data record */
+ gotrd:
+    td->tdcur = rd;		/* This is new tape pos */
+    td->tdrncur = (rd->rdcnt += cnt);
+    if (len) {			/* Normal data record */
 	td->tdrecs += cnt;
-	td->tdbytes += (len * cnt);
+	td->tdbytes += (((vmtpos_t)len) * cnt);
 	if (td->tdmaxrsiz < len)	/* Update max rec size seen */
 	    td->tdmaxrsiz = len;
     } else {			/* Tapemark (EOF) */
-	td->tdfils++;
+	td->tdfils += cnt;
     }
     return rd;
 }
 
-/* Link into overall list */
-
+/* Link into list at end
+ */
 static void
 td_rdadd(struct vmttdrdef *td,
 	 struct vmtrecdef *rd)
@@ -3793,33 +3899,38 @@ td_rddel(register struct vmttdrdef *td,
 
 /* Truncate the list after the current canonicalized logical position.
 **	This is used when about to write to the tape.
+**	Sets tdbytes to correct value!
 */
 static void
 td_trunc(register struct vmttdrdef *td)
 {
-    register struct vmtrecdef *rd = td->tdcur;
+    register struct vmtrecdef *rd;
 
-    if (rd == NULL)		/* If already at EOT */
-	return;
-
-    if (td->tdrncur > 0) {	/* Pos is inside a vmtrecdef? */
-	rd->rdcnt = td->tdrncur;	/* Chop off remaining count */
+    if (!(rd = td->tdcur)
+     && !(rd = td->tdcur = td->tdrd)) {
+	td->tdbytes = 0;	/* At start of data file */
+	return;			/* Empty tape, no truncation needed */
+    }
+    if (td->tdrncur > 0) {		/* Pos is inside a recdef? */
+	if (rd->rdcnt)			/* If not an error record, */
+	    rd->rdcnt = td->tdrncur;	/* Chop off remaining count */
 	if ((rd = rd->rdnext) == td->tdrd)	/* Get next, check it */
 	    rd = NULL;			/* None left! */
     }
-    /* Flush all vmtrecdefs from rd to end, inclusive */
+    /* Flush all recdefs from rd to end, inclusive */
     if (rd) {
 	register struct vmtrecdef *pd;
 	do {
-	    /* Flush vmtrecdef from end, remember its address */
+	    /* Flush recdef from EOT, remember its address */
 	    pd = td->tdrd->rdprev;
 	    td_rddel(td, pd);
 	} while (rd != pd);	/* Keep going until we flushed rd */
     }
 
-    /* Now set up EOT state */
-    td->tdcur = NULL;
-    td->tdrncur = 1;
+    /* Now set up EOT state and I/O pointer (tdbytes) */
+    td->tdcur = rd = td->tdrd->rdprev;
+    td->tdrncur = rd->rdcnt;
+    td->tdbytes = rd->rdloc + (((vmtpos_t)(rd->rdlen)) * rd->rdcnt);
 }
 
 /* OS-Dependent code
@@ -3904,28 +4015,33 @@ os_fmtime(FILE *f, register struct tm *tm)
 }
 
 /* OS_NET2TM - Convert 32-bit Network Time (RFC738) into a TM struct.
-**	Only needed for magtape DUMP creation hacking.
+**	The network time input is seconds since 1/1/1900, GMT.
+**	The TM struct output is likewise in GMT.
+**	Only needed for hacking ITS DUMP creation and reference dates
 */
 static int
 os_net2tm(unsigned long ntm,
 	  register struct tm *tm)
 {
     time_t utime;
-    register struct tm *stm;
-#if CENV_SYS_UNIX
-	/* Temporary crock cuz I'm too tired. */
-#define NTM_1_1_76 2398291200UL	/* Known ntm value for 1/1/76 (leap year) */
- 	/* ntm value of Unix epoch (1/1/70) */
-#define NTM_UEPOCH (NTM_1_1_76 - (((365*6)+1) * (24*60*60)))
 
-    if (ntm < NTM_UEPOCH)
-	return FALSE;
+    /* In order to break down time the easy way with gmtime(), must convert
+     * net time value (# secs since 1/1/1900 GMT) to OS time value.
+     * For Unix this is easy; its time value is # secs since 1/1/1970.
+     *
+     * Fortunately (?) time_t is signed, so it is possible to represent
+     * times prior to 1970 with a negative value.
+     */
+#if CENV_SYS_UNIX
+#define NTM_UEPOCH 2208988800UL	/* Net time value of Unix epoch (1/1/70) */
+		/* Derived from RFC738 statement that 1/1/76 is 2398291200UL */
     utime = ntm - NTM_UEPOCH;
-#endif /* UNIX */
-    if (stm = localtime(&utime)) {
-	*tm = *stm;
-	return TRUE;
-    }
-    return FALSE;
+#else
+# error "Unimplemented OS routine os_net2tm()"
+#endif
+
+    if (!gmtime_r(&utime, tm))
+	return FALSE;
+    return TRUE;
 }
 #endif /* VMTAPE_ITSDUMP */

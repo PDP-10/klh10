@@ -1,3 +1,8 @@
+* As of June 15, 2006, the KLH10 microcode in the Panda distribution
+* implements address break.  Thus, item [C5] under CPU Hardware Differences
+* no longer applies, and the TOPS-20 SET ADDRESS-BREAK command now works as
+* expected.
+
 /* KLDIFF.TXT - Differences between KLH10 and KL10
 */
 /* $Id: kldiff.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
@@ -187,5 +192,5 @@ Without going into unnecessary detail, here are the main items.
 [C11] SBDIAG partially implemented
 	Only the SBDIAG functions necessary to keep the TOPS-10 and TOPS-20
 	monitors happy are implemented.  The emulated machine pretends to
-	have a MF20 that responds to the entire range of 22-bit physical
+	have a MG20 that responds to the entire range of 22-bit physical
 	memory (4096K).

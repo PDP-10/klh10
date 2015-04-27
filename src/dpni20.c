@@ -1,6 +1,6 @@
 /* DPNI20.C - Device sub-Process for KLH10 NIA20 Ethernet Interface
 */
-/* $Id: dpni20.c,v 2.5 2001/11/19 10:36:00 klh Exp $
+/* $Id: dpni20.c,v 2.7 2003/02/23 18:07:50 klh Exp $
 */
 /*  Copyright © 1994, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: dpni20.c,v $
+ * Revision 2.7  2003/02/23 18:07:50  klh
+ * Add NetBSD read loop fix for bpf.
+ *
+ * Revision 2.6  2002/04/24 07:45:10  klh
+ * Minor errmsg tweak
+ *
  * Revision 2.5  2001/11/19 10:36:00  klh
  * Solaris port: trivial cast fixes.
  *
@@ -143,6 +149,8 @@ The following general situations are possible:
 #include <string.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <poll.h>	/* For NetBSD mainly */
+
 
 #include "klh10.h"	/* For config params */
 
@@ -158,7 +166,7 @@ The following general situations are possible:
 #include "dpni20.h"		/* NI20 specific defs */
 
 #ifdef RCSID
- RCSID(dpni20_c,"$Id: dpni20.c,v 2.5 2001/11/19 10:36:00 klh Exp $")
+ RCSID(dpni20_c,"$Id: dpni20.c,v 2.7 2003/02/23 18:07:50 klh Exp $")
 #endif
 
 /* Globals */
@@ -218,7 +226,7 @@ static void efatal(int num, char *fmt, ...)
 
 static void esfatal(int num, char *fmt, ...)
 {
-    fprintf(stderr, "\n[%s: ", progname);
+    fprintf(stderr, "\n[%s: Fatal error: ", progname);
     {
 	va_list ap;
 	va_start(ap, fmt);
@@ -1446,18 +1454,35 @@ void ethtoten(register struct dpni20_s *dpni)
 	    if (DBGFLG)
 		dbprintln("ERead=%d, Err=%d", cnt, errno);
 
-	    if (cnt < 0 && (errno == EINTR))	/* Ignore spurious signals */
-		continue;
-
-	    /* Error of some kind */
-	    if (cnt < 0) {
-		syserr(errno, "Eread = %d, errno %d", cnt, errno);
-		if (--stoploop <= 0)
-		    efatal(1, "Too many retries, aborting");
-	    } else
+	    if (cnt >= 0) {
 		dbprintln("Eread = %d, %s", cnt,
 			  (cnt > 0) ? "no ether data" : "no packet");
+		continue;
+	    }
 
+	    /* System call error of some kind */
+	    if (errno == EINTR)		/* Ignore spurious signals */
+		continue;
+
+#if CENV_SYS_NETBSD
+	    /* NetBSD bpf is broken.
+	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
+	       understand why this crock is necessary.
+	       Always block for at least 1 sec, will wake up sooner if
+	       input arrives.
+	     */
+	    if (errno == EWOULDBLOCK) {
+		int ptimeout = (dpni->dpni_rdtmo ? dpni->dpni_rdtmo : 1);
+		struct pollfd myfd;
+		myfd.fd = pffd;
+		myfd.events = POLLIN;
+		(void) poll(&myfd, 1, ptimeout*1000);
+		continue;
+	    }
+#endif
+	    syserr(errno, "Eread = %d, errno %d", cnt, errno);
+	    if (--stoploop <= 0)
+		efatal(1, "Too many retries, aborting");
 	    continue;		/* For now... */
 	}
 

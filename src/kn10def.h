@@ -1,6 +1,6 @@
 /* KLH10 CPU state and register definitions
 */
-/* $Id: kn10def.h,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: kn10def.h,v 2.5 2002/05/21 10:02:31 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: kn10def.h,v $
+ * Revision 2.5  2002/05/21 10:02:31  klh
+ * Fix SYNCH implementation of KL timebase
+ *
+ * Revision 2.4  2002/03/21 09:50:08  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -26,7 +32,7 @@
 #define KN10DEF_INCLUDED 1
 
 #ifdef RCSID
- RCSID(kn10def_h,"$Id: kn10def.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(kn10def_h,"$Id: kn10def.h,v 2.5 2002/05/21 10:02:31 klh Exp $")
 #endif
 
 #include "osdsup.h"	/* Ensure any OS-dependent stuff is available */
@@ -368,6 +374,7 @@ typedef int     pcinc_t;	/* Type of all instruction routines */
 # define AIF_SEX	0100000	/*  2  "Exotic uCode" (ie non-standard) */
 # define AIF_KLB	 040000	/*  3  KL10B CPU (?) */
 # define AIF_PMV	 020000	/*  4  PMOVE/PMOVEM */
+# define AIF_MCAOLD	 010000	/*  5  TOPS-20 R5 microcode MCA25 keep bit */
 # define AIF_VER	   0777	/* LH: ucode version # field */
 
 # define AIF_HWOPT	0770000	/* RH: Hardware options field */
@@ -389,7 +396,7 @@ typedef int     pcinc_t;	/* Type of all instruction routines */
 #  endif
 # endif
 # ifndef KLH10_APRID_SERIALNO
-#  define KLH10_APRID_SERIALNO 759	/* Well, what else to use? */
+#  define KLH10_APRID_SERIALNO 3600	/* Well, what else to use? */
 # endif
 
 #endif /* KL */
@@ -591,8 +598,13 @@ struct timeregs {
 	unsigned int tim_intcnt;	/* Interval countdown */
 
 	int tim_tbon;		/* Time base on/off flag */
-	uint32 tim_tbase;	/* Time base hardware cntr */
+# if KLH10_RTIME_SYNCH
+	/* Time base - virt usec since last RDTIME */
+	uint32 tim_ibased;	/* usec due to done interval interrupt */
+	uint32 tim_ibaser;	/* usec due to rem ticks since last interval */
+# elif KLH10_RTIME_OSGET
 	osrtm_t tim_osbase;	/* OS Time Base of last WRTIME reset */
+# endif
 
 	uint32 tim_perf;	/* Performance analysis hardware cntr */
 #endif
@@ -786,17 +798,31 @@ struct timeregs {
 enum haltcode {	/* Must not be zero */
 	HALT_PROG=1,	/* Program halt (JRST 4,) */
 	HALT_FECTY,	/* FE Console interrupt */
+	HALT_FECMD,	/* FE Console command ready to execute */
 	HALT_BKPT,	/* Hit breakpoint */
 	HALT_STEP,	/* Single-Stepping */
 	HALT_EXSAFE,	/* Badness in exec mode */
 	HALT_PANIC	/* Panic - internal error, bad state */
 };
 
+/* FE command mode */
+enum femode {		/* runnable running ctyon Description */
+    FEMODE_CMDCONF,	/* 0        0       0     not inited, cmd i/o */
+    FEMODE_CMDHALT,	/* 1        0       0     halted,  cmd i/o */
+    FEMODE_CMDRUN,	/* 1        1       0     running, cmd i/o */
+    FEMODE_CTYRUN	/* 1        1       1     running, CTY I/O */
+};
+
 struct feregs {
-	int fe_ctyinp;		/* # chars CTY input waiting, if any */
+	enum femode fe_mode;	/* FE input handling mode */
+	int fe_cmdready;	/* TRUE if FE cmd input buff ready to exeute */
+	int fe_runenable;	/* TRUE to run KN10 during cmd input */
 	int fe_intchr;		/* If non-zero, FE interrupt/cmd escape char */
-	int fe_intseen;		/* TRUE if FE CTY interrupt seen */
+	int fe_intcnt;		/* # times intchr seen before handled */
+	int fe_ctyon;		/* TRUE if passing input to PDP-10 CTY */
+	int fe_ctyinp;		/* # chars CTY input waiting, if any */
 	int fe_debug;		/* TRUE to print debug info */
+	int fe_ctydebug;	/* TRUE to print CTY debugging info */
 
 #if KLH10_CPU_KS
 	int fe_iowait;		/* # usec clock ticks to delay I/O response */
@@ -858,7 +884,18 @@ struct machstate {
 #endif
 #if KLH10_CPU_KS
 	w10_t mr_hsb;		/* Halt Status Block base address */
-#elif KLH10_CPU_KI || KLH10_CPU_KL
+#elif KLH10_CPU_KL
+	vaddr_t mr_abk_addr;	/* Address Break virtual address */
+	pagno_t mr_abk_pagno;	/* Page containing break address, -1 if none */
+	pment_t *mr_abk_pmap;	/* Page map containing break address page */
+	pment_t mr_abk_pmflags;	/* Saved page access flags & VMF_ACC */
+	pment_t mr_abk_pmmask;	/* Mask to clear VMF_READ and/or VMF_WRITE */
+	int mr_abk_cond;	/* Break condition flags, as follows: */
+# define ABK_IFETCH 8		/*   Break on instruction fetch */
+# define ABK_READ   4		/*   Break on read */
+# define ABK_WRITE  2		/*   Break on write */
+# define ABK_USER   1		/*   Break address is user (else exec) */
+#elif KLH10_CPU_KI
 	w10_t mr_adrbrk;	/* Address Break register */
 #endif
 	w10_t mr_aprid;		/* Processor ID */
@@ -886,7 +923,6 @@ struct machstate {
 	osintf_t intf_evsig;	/* For event-reg signals */
 #endif
 	osintf_t intf_ctyio;	/* For CTY I/O */
-	osintf_t intf_impio;	/* For SIMP (LH/DH) I/O */
 	osintf_t intf_clk;	/* Clock interval interrupt */
 
 	vmptr_t physmem;	/* Ptr to physical memory area */
@@ -898,6 +934,7 @@ struct machstate {
 	struct timeregs tim;	/* Timer and clock stuff */
 	struct clkregs clk;	/* Internal Clock stuff */
 	w10_t mr_dsw;		/* Console Data Switches */
+	int mr_serialno;	/* CPU serial number */
 
 	/* Debugging stuff */
 	int mr_debug;		/* TRUE to print general CPU debug info */
@@ -908,6 +945,8 @@ struct machstate {
 	pcva_t mr_haltpc;	/* PC of a halt instruction */
 
 	/* Miscellaneous cruft */
+	int mr_runnable;	/* TRUE if CPU runnable (ie init complete) */
+	int mr_running;		/* TRUE if CPU running (not halted) */
 	int mm_shared;		/* TRUE if using shared phys memory */
 	int mm_locked;		/* TRUE if want memory locked */
 	osmm_t mm_physegid;	/* Phys memory shared segment ID (can be 0) */

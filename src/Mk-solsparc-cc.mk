@@ -1,5 +1,5 @@
 # KLH10 Makefile for Solaris on SUN Sparc (using SUN's cc)
-# $Id: Mk-solsparc-cc.mk,v 2.1 2001/11/19 10:12:27 klh Exp $
+# $Id: Mk-solsparc-cc.mk,v 2.3 2002/04/24 08:03:02 klh Exp $
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -22,19 +22,23 @@
 # WARNING!  DO NOT USE THIS for SUN C 4.2 and possibly others.
 
 # Note: these simple compile flags are known to work for Solaris 5 and 8
-# (SunOS 5.5.1 and 5.8).  Using "-fast" fails on 5.8, and "-lrt" doesn't
-# exist on 5.5.1.
+# (SunOS 5.5.1 and 5.8); using "-fast" fails on 5.8.
+# Libraries are harder; -lrt doesn't exist on 5.5.1 and will have to
+# be removed or modified if not building for 5.8.
+#	-lsocket and -lnsl are needed only for osdnet.c.
+#	-lrt is needed for nanosleep().
 
 # Build definitions
 #	These LIBS are needed only for things using osdnet.c.
 CC = /opt/SUNWspro/bin/cc
 CFLAGS = -c -g -O
-LIBS = -lsocket -lnsl
+LIBS = -lsocket -lnsl -lrt
 CONFFLAGS_AUX=-DWORD10_USEHUN=1
 
 # Source definitions
 SRC = ../../src
-CENVFLAGS = -DCENV_CPU_SPARC=1 -DCENV_SYS_SOLARIS=1
+CENVFLAGS = -DCENV_CPU_SPARC=1 -DCENV_SYS_SOLARIS=1 \
+		-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 
 # Targets
 

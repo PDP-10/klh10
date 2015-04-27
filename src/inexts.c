@@ -1,6 +1,6 @@
 /* INEXTS.C - Extended (String) Instruction routines
 */
-/* $Id: inexts.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: inexts.c,v 2.4 2002/05/21 10:06:55 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,10 @@
 */
 /*
  * $Log: inexts.c,v $
+ * Revision 2.4  2002/05/21 10:06:55  klh
+ * Fixed XBLT to behave like real KL with respect to high 6 bits
+ * of src/dst addresses.  New algorithm also fixes a pagefail bug.
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -30,7 +34,7 @@
 #include "kn10ops.h"	/* PDP-10 ops */
 
 #ifdef RCSID
- RCSID(inexts_c,"$Id: inexts.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(inexts_c,"$Id: inexts.c,v 2.4 2002/05/21 10:06:55 klh Exp $")
 #endif
 
 /* Exported functions (other than instrs) */
@@ -315,7 +319,7 @@ enum xires {
 
 
 /* Auxiliary power-of-10 table for CVT instructions */
-#define DPOW_MAX 23
+#define DPOW_MAX 22
 static dw10_t dpow10[DPOW_MAX];	/* Later maybe define at compile time */
 
 void
@@ -395,94 +399,125 @@ ac_32set(int ac, uint32 val)
 **
 ** Note: for PXCT, source uses XBEA mapping, dest uses XBRW.
 **	These correspond to PXCT AC bits 11 and 12 respectively.
+**
+** Note: The PRM implies the high 6 bits must be zero, and the original
+**	code here would cause a MUUO trap if they were set.  However, a
+**	real KL appears to ignore these bits (and the ucode agrees); TOPS-20
+**	CLISP turns out to depend on this!
+**	Thus, this code now preserves the high 6 bits, although there is
+**	no attempt to prevent overflow into them; this seems to be how
+**	the KL ucode worked.
 */
 
 xinsdef(ix_xblt)
 {
-    register acptr_t acp;
-    register w10_t wc;
     register vaddr_t src, dst;
     register vmptr_t svp, dvp;
+    w10_t wcnt, wsrc, wdst, wdone;
     enum xires res = RES_WON;
 
-    acp = ac_map(ac_off(ac,1));		/* Get source pointer and check it */
-    if (op10m_tlnn(*acp, ILLEG_LHVABITS))
-	return i_muuo(I_EXTEND, ac, e0);
-    va_gfrword(src, *acp);			/* Make global addr from wd */
+    wsrc = ac_get(ac_off(ac,1));	/* Get source addr */
+    va_gfrword(src, wsrc);		/* Make global addr from wd */
+    wdst = ac_get(ac_off(ac,2));	/* Now get destination */
+    va_gfrword(dst, wdst);		/* Likewise get global addr */
 
-    acp = ac_map(ac_off(ac,2));			/* Now get destination */
-    if (op10m_tlnn(*acp, ILLEG_LHVABITS))
-	return i_muuo(I_EXTEND, ac, e0);
-    va_gfrword(dst, *acp);			/* Likewise get global addr */
+    wcnt = ac_get(ac);			/* Get possibly 36-bit cnt */
+    if (op10m_skipge(wcnt)) {
+	register uint32 cnt;
+	uint32 origcnt;
 
-    wc = ac_get(ac);			/* Get possibly 36-bit cnt */
-    if (op10m_skipge(wc)) {
-	if (op10m_skipe(wc))		/* If count zero, */
-	    return PCINC_1;		/* return without any refs */
+	if (op10m_tlnn(wcnt, 0740000)) {
+	    /* If any of high 4 bits are set, cannot represent in a 32-bit
+	       count -- just use max possible count.  This works because
+	       only 30 bits of address are possible, so a 32-bit count
+	       would wrap all of virtual memory 4 times!  Will normally
+	       get a page fail attempting this.
+	    */
+	    cnt = MASK32;
+	} else {
+	    cnt = W10_U32(wcnt);	/* Get 32 bits of count */
+	    if (!cnt)			/* If count zero, */
+		return PCINC_1;		/* return without any refs */
+	}
+	origcnt = cnt;
 
-	/* Do normal transfer */
+	/* Do normal forward transfer */
 	for (;;) {
-	    if (!(svp = vm_xbeamap(src, VMF_READ|VMF_NOTRAP))) {
-		res = RES_PF;
-		break;
-	    }
-	    if (!(dvp = vm_xbrwmap(dst, VMF_WRITE|VMF_NOTRAP))) {
+	    if ( !(svp = vm_xbeamap(src, VMF_READ|VMF_NOTRAP))
+	      || !(dvp = vm_xbrwmap(dst, VMF_WRITE|VMF_NOTRAP))) {
 		res = RES_PF;
 		break;
 	    }
 	    vm_pset(dvp, vm_pget(svp));	/* Transfer the word */
 
-	    va_ginc(src), va_ginc(dst);	/* Bump addrs up */
-	    op10m_dec(wc);		/* Bump count down */
-
-	    /* Done with one iteration, now check before doing next */
-	    if (op10m_skipe(wc))	/* If count gone, */
+	    va_ginc(src);		/* Bump addrs up */
+	    va_ginc(dst);
+	    if (--cnt == 0)		/* Bump count down, see if done */
 		break;			/* stop loop! */
 
+	    /* Done with one iteration, now check before doing next */
 	    CLOCKPOLL();		/* More left, keep clock going */
 	    if (INSBRKTEST()) {		/* Watch for PI interrupt */
 		res = RES_PI;
 		break;
 	    }
 	}
+	cnt = origcnt - cnt;		/* Find # of words transferred */
+	W10_U32SET(wdone, cnt);
 
     } else {
+	/* Negative count means reverse xfer */
+	register int32 cnt;		/* Signed! */
+	int32 origcnt;
+
+	if ((~W10_LH(wcnt)) & 0760000) {
+	    /* If any of high 5 bits are clear, cannot represent in a 32-bit
+	       count -- just use max possible count.  Same rationale as for
+	       forward transfer.
+	    */
+	    cnt = -MASK31;
+	} else {
+	    cnt = W10_S32(wcnt);	/* Get 32 bits of signed count */
+	}
+	origcnt = cnt;
+
 	/* Do reverse transfer */
 	for (;;) {
-	    va_gdec(src);		/* Bump address down */
-	    if (!(svp = vm_xbeamap(src, VMF_READ|VMF_NOTRAP))) {
-		va_ginc(src);		/* Foo, restore it */
-		res = RES_PF;
-		break;
-	    }
-	    va_gdec(dst);		/* Bump address down */
-	    if (!(dvp = vm_xbrwmap(dst, VMF_WRITE|VMF_NOTRAP))) {
-		va_gdec(dst);		/* Foo, must restore both */
-		va_ginc(src);
+	    va_gdec(src);		/* Bump addrs down */
+	    va_gdec(dst);
+
+	    if ( !(svp = vm_xbeamap(src, VMF_READ|VMF_NOTRAP))
+	      || !(dvp = vm_xbrwmap(dst, VMF_WRITE|VMF_NOTRAP))) {
 		res = RES_PF;
 		break;
 	    }
 	    vm_pset(dvp, vm_pget(svp));	/* Transfer the word */
 
-	    op10m_inc(wc);		/* Bump count up */
-
-	    /* Done with one iteration, now check before doing next */
-	    if (op10m_skipe(wc))	/* If count gone, */
+	    if (++cnt >= 0)		/* Bump count up; if gone, */
 		break;			/* stop loop! */
 
+	    /* Done with one iteration, now check before doing next */
 	    CLOCKPOLL();		/* More left, keep clock going */
 	    if (INSBRKTEST()) {		/* Watch for PI interrupt */
 		res = RES_PI;
 		break;
 	    }
 	}
+	cnt = origcnt - cnt;		/* Find -<#> of words transferred */
+	W10_S32SET(wdone, cnt);
     }
 
-    ac_set(ac, wc);			/* Store whatever count is now */
-    acp = ac_map(ac_off(ac, 1));
-    va_toword(src, *acp);		/* Store addr in word */
-    acp = ac_map(ac_off(ac, 2));
-    va_toword(dst, *acp);
+    /* Now update ACs.  wdone contains the # words transfered (positive if
+     * forward, negative if reverse).
+     */
+    op10m_sub(wcnt, wdone);		/* Update word values */
+    op10m_add(wsrc, wdone);
+    op10m_add(wdst, wdone);
+
+    ac_set(ac, wcnt);			/* Store back in ACs */
+    ac_set(ac_off(ac, 1), wsrc);
+    ac_set(ac_off(ac, 2), wdst);
+
     switch (res) {
     case RES_PF:	pag_fail();	/* Never returns */
     case RES_PI:	apr_int();	/* Never returns */

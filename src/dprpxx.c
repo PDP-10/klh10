@@ -1,6 +1,6 @@
 /* DPRPXX.C - Device sub-Process for KLH10 RPxx Disk
 */
-/* $Id: dprpxx.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dprpxx.c,v 2.5 2003/02/23 18:15:36 klh Exp $
 */
 /*  Copyright © 1994, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: dprpxx.c,v $
+ * Revision 2.5  2003/02/23 18:15:36  klh
+ * Tweak cast to avoid warning on NetBSD/Alpha.
+ *
+ * Revision 2.4  2002/05/21 09:52:19  klh
+ * Change protos for vdk_read, vdk_write
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -46,7 +52,7 @@ size, and configuration.
 #include "vdisk.h"		/* Virtual disk hackery */
 
 #ifdef RCSID
- RCSID(dprpxx_c,"$Id: dprpxx.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dprpxx_c,"$Id: dprpxx.c,v 2.5 2003/02/23 18:15:36 klh Exp $")
 #endif
 
 #if CENV_SYS_UNIX
@@ -185,7 +191,7 @@ main(int argc, char **argv)
 	char *ptr = (char *)shmat(d->d_rp->dprp_shmid, (void *)0, SHM_RND);
 	struct shmid_ds shmds;
 
-	if ((int)ptr == -1) {
+	if (ptr == (char *)-1) {
 	    fprintf(stderr, "[dprpxx: shmat failed for 10 mem - %s]\n",
 				dp_strerror(errno));
 	    d->d_rp->dprp_shmid = 0;
@@ -578,7 +584,7 @@ int devread(struct devdk *d)
 
     dprp->dprp_scnt = vdk_read(&d->d_vdk, 
 	    (w10_t *)d->d_buff,		/* Word buffer loc */
-	    (int32) dprp->dprp_daddr,	/* Disk addr (sectors) */
+	    (uint32) dprp->dprp_daddr,	/* Disk addr (sectors) */
 	    nsec);			/* # sectors */
     if ((dprp->dprp_err = d->d_vdk.dk_err)
       || (dprp->dprp_scnt != nsec)) {
@@ -610,7 +616,7 @@ int devwrite(struct devdk *d)
 
     dprp->dprp_scnt = vdk_write(&d->d_vdk, 
 	    (w10_t *)d->d_buff,		/* Word buffer loc */
-	    (int32) dprp->dprp_daddr,	/* Disk addr (sectors) */
+	    (uint32) dprp->dprp_daddr,	/* Disk addr (sectors) */
 	    nsec);			/* # sectors */
     if ((dprp->dprp_err = d->d_vdk.dk_err)
       || (dprp->dprp_scnt != nsec)) {
@@ -662,7 +668,7 @@ int dmaread(register struct devdk *d)
     res = vdk_read(&d->d_vdk, 
 	    d->d_10mem +
 		dprp->dprp_phyadr,	/* Word buffer loc */
-	    (int32) dprp->dprp_daddr,	/* Disk addr (sectors) */
+	    (uint32) dprp->dprp_daddr,	/* Disk addr (sectors) */
 	    nsec);			/* # sectors */
 
     dprp->dprp_scnt = res;
@@ -714,7 +720,7 @@ int dmawrite(register struct devdk *d)
     res = vdk_write(&d->d_vdk, 
 	    d->d_10mem +
 		dprp->dprp_phyadr,	/* Word buffer loc */
-	    (int32) dprp->dprp_daddr,	/* Disk addr (sectors) */
+	    (uint32) dprp->dprp_daddr,	/* Disk addr (sectors) */
 	    nsec);			/* # sectors */
 
     dprp->dprp_scnt = res;

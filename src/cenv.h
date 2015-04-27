@@ -1,6 +1,6 @@
 /* CENV.H - General C Environment Definitions
 */
-/* $Id: cenv.h,v 2.4 2001/11/10 21:28:59 klh Exp $
+/* $Id: cenv.h,v 2.6 2002/03/28 16:48:50 klh Exp $
 */
 /*  Copyright © 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: cenv.h,v $
+ * Revision 2.6  2002/03/28 16:48:50  klh
+ * First pass at using LFS (Large File Support)
+ *
+ * Revision 2.5  2002/03/21 09:44:43  klh
+ * Added DECOSF to CENV_SYSF_TERMIOS
+ *
  * Revision 2.4  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -41,7 +47,7 @@
 #define CENV_INCLUDED 1
 
 #ifdef RCSID
- RCSID(cenv_h,"$Id: cenv.h,v 2.4 2001/11/10 21:28:59 klh Exp $")
+ RCSID(cenv_h,"$Id: cenv.h,v 2.6 2002/03/28 16:48:50 klh Exp $")
 #endif
 
 /* Machine architecture - alpha order */
@@ -207,7 +213,8 @@
 # define CENV_SYSF_BSDTIMEVAL (CENV_SYS_UNIX && !CENV_SYS_V7)
 #endif
 #ifndef  CENV_SYSF_TERMIOS	/* Has termios(3) tty stuff */
-# define CENV_SYSF_TERMIOS (CENV_SYS_SOLARIS|CENV_SYS_XBSD|CENV_SYS_LINUX)
+# define CENV_SYSF_TERMIOS (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
+			   |CENV_SYS_LINUX)
 #endif
 #ifndef  CENV_SYSF_BSDTTY	/* Has old BSD tty stuff */
 # define CENV_SYSF_BSDTTY (!CENV_SYSF_TERMIOS && CENV_SYS_BSD)
@@ -224,5 +231,62 @@
 # define CENV_SYSF_NANOSLEEP (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
 			     |CENV_SYS_LINUX)
 #endif
+
+/* Large File Support (LFS)
+ * See <http://ftp.sas.com/standards/large.file/x_open.20Mar96.html>
+ *
+ * DECOSF:  default 64-bit  (no macros); fseek 64-bit; no fseeko.
+ * FREEBSD: default 64-bit  (no macros); fseek 32-bit; has fseeko.
+ * LINUX:   default 32-bit (need macro); fseek 32-bit; has fseeko (need macro).
+ * SOLARIS: default 32-bit (need macro); fseek 32-bit; has fseeko (need macro).
+ * NETBSD:  default 64-bit  (no macros); fseek 32-bit; no fseeko. (ugh!)
+ * MAC/OTH: ? Assume 32-bit OS only, 64 not possible.
+ */
+#ifndef  CENV_SYSF_LFS	/* Predefining this must predefine the rest */
+
+     /* FreeBSD defaults to 64-bit file off_t but calls the type "quad_t"
+      * instead of "long long".  Always has fseeko.
+      */
+# if CENV_SYS_FREEBSD
+#  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
+#  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
+#  define CENV_SYSF_LFS_FMT "q"		/* printf format is quad_t */
+
+     /* Alpha OSF/DU/Tru64 use 64-bit longs
+      */
+# elif CENV_SYS_DECOSF
+#  define CENV_SYSF_LFS 64		/* off_t  exists and has 64 bits */
+#  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
+#  define fseeko fseek			/* off_t == long and no fseeko */
+#  define CENV_SYSF_LFS_FMT "l"	/* printf format is long */
+
+     /* Solaris/Linux do not default to 64-bit; must define these macros
+      * and make sure cenv.h comes before any other include files.
+      */
+# elif CENV_SYS_SOLARIS|CENV_SYS_LINUX
+#  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
+#  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
+#  ifndef _FILE_OFFSET_BITS
+#   define _FILE_OFFSET_BITS=64	/* Use 64-bit file ops */
+#  endif
+#  ifndef _LARGEFILE_SOURCE
+#   define _LARGEFILE_SOURCE		/* Include fseeko, ftello, etc */
+#  endif
+#  define CENV_SYSF_LFS_FMT "ll"	/* printf format is long long */
+
+     /* Unknown system, but check for existence of standard macros */
+# elif _FILE_OFFSET_BITS >= 64
+#  define CENV_SYSF_LFS _FILE_OFFSET_BITS	/* Assume off_t exists */
+#  define CENV_SYSF_FSEEKO 1		/* Also assume fseeko */
+#  define CENV_SYSF_LFS_FMT "ll"	/* printf fmt probably (!) long long */
+
+     /* Out of luck, using plain old longs (likely 32-bit) */
+# else
+#  define CENV_SYSF_LFS 0		/* No off_t, use long */
+#  define CENV_SYSF_FSEEKO 0		/* No fseeko (irrelevant) */
+#  define CENV_SYSF_LFS_FMT "l"		/* printf format is long */
+# endif
+#endif /* ifndef CENV_SYSF_LFS */
+
 
 #endif /* ifndef CENV_INCLUDED */

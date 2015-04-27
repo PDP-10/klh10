@@ -1,6 +1,6 @@
 /* CMDSUM.TXT - KLH10 Command Summary
 */
-/* $Id: cmdsum.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+/* $Id: cmdsum.txt,v 2.4 2002/03/21 09:43:01 klh Exp $
 */
 /*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -16,6 +16,7 @@ by functional category.  See "cmdref.txt" for more details on each.
 
 BASIC:
 
+	^\		Interrupt KN10, return to command parser
 	help [<cmd>]	Shows help for all matching commands (defaults to all)
 	load <file>	Load binary into KN10, sets start-addr
 	go [<addr>]	Start KN10 at address (defaults to start-addr)
@@ -33,10 +34,10 @@ DEBUGGING:
 	deposit <addr> <val>	Deposit value at address
 
 	breakpt <addr>		Set PC breakpoint to <addr>
-	1-step			Single-step KN10
-	proceed <#>		Single-step # instrs
+	1-step [<#>]		Single-step KN10 # instrs
+	proceed			Proceed KN10 but stay in command parser
 	trace-toggle		Toggle execution trace printout
-	continue		Continue KN10
+	continue		Continue KN10, give it CTY
 
 	dump <file>		Dump binary from KN10
 	halt			Halt KN10 immediately

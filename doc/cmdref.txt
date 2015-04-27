@@ -1,6 +1,6 @@
 /* CMDREF.TXT - KLH10 Command Reference documentation
 */
-/* $Id: cmdref.txt,v 2.3 2001/11/10 21:24:21 klh Exp $
+/* $Id: cmdref.txt,v 2.4 2002/03/21 09:43:01 klh Exp $
 */
 /*  Copyright © 1994-1999, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -33,22 +33,28 @@ KLH10 COMMAND REFERENCE: (in ASCII lexical order)
 
 ^\, CONTROL-\, ASCII "FS"
 	This is not exactly a KLH10 command; it is the command escape
-	character, which can be typed anytime the KN10 is running.
-	It should halt the KN10 immediately with the message
+	character, which can be typed anytime the KN10 is running
+	in order to return to the KLH10 command parser.
+
+	If "fe_runenable" is off (default) then ^\ will halt the
+	KN10 immediately with the message:
 
 		[HALTED: FE interrupt]
+		KLH10>		; command prompt when "halted"
 
-	Followed by the KLH10 command parser prompt:
+	But if "fe_runenable" is on, then ^\ will NOT halt the
+	KN10.  Instead, it will give you a slightly different prompt:
 
-		KLH10>
+	       KLH10>>		; command prompt when "running"
 
 	Typing ^\ while in the command parser should have no effect,
 	although this depends on the native OS.
 
 
-1-STEP
-	Single-steps the KN10 by executing one instruction.  For debugging.
-	This is the same as "proceed 1".
+1-STEP [<n>]
+	Single-steps the KN10 by executing <n> instructions.  For debugging.
+	<n> defaults to 1 if not specified.
+	Most useful with TRACE-TOGGLE.
 
 
 BREAKPT <addr>
@@ -67,6 +73,8 @@ BREAKPT <addr>
 
 CONTINUE
 	Continues the KN10 at the current PC.
+	This works whether the KN10 is halted or running, and returns
+	the CTY back to the KN10 (ie leaves the command parser).
 	This is the normal method of continuing after interrupting the
 	KN10 with ^\.
 
@@ -328,11 +336,7 @@ GO [<addr>]
 
 
 HALT
-	Halt KN10 immediately.
-	Currently this is a no-op because if you're in the KLH10 command
-	parser that means the KN10 is already halted!
-	When the KLH10 allows concurrent execution this will become a
-	meaningful command.
+	Halt KN10 immediately if running.
 
 
 HELP [<cmd>]
@@ -378,9 +382,9 @@ NEXT-EXAMINE
 	Increments the current location ("dot") by 1 and then does "examine".
 
 
-PROCEED <#>
-	Single-steps the KN10 by the specified number of instructions.
-	Most useful with TRACE-TOGGLE.
+PROCEED
+	Similar to CONTINUE, but does not return the CTY to the KN10;
+	the command parser remains active.
 
 
 QUIT
@@ -408,6 +412,13 @@ SET [<var>[=<val>]]
 	Showing all known variables produces a long list; most of that
 	information is of use only when debugging.  The variables
 	that a user might plausibly want to set follow below.
+
+SET FE_RUNENABLE=<boolean>	- Set desired handling of ^\
+	Defaults to OFF, which means that ^\ halts the KN10 before
+	returning to the command parser ("simple" input mode).
+	If set to ON, ^\ will still return to the command parser but
+	will keep the KN10 running ("concurrent" input mode).
+
 
 SET SW=<word-value>	- Set KN10 data switches
 	This is sometimes needed for diagnostics or bootstrap loaders,

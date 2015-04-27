@@ -229,7 +229,7 @@ insdef(i_dmove)		/* DMOVE AC,E */
     if (ac_issafedouble(ac)		/* ACs contiguous? */
       && vm_issafedouble(e)		/* Mem locs safe too? */
       && (va_insect(e) != ac_off(ac,-1)))	/* no AC overlap with Mem? */
-	*ac_mapd(ac) = vm_pgetd(vm_xrwmap(e,VMF_READ));	/* Yep! */
+	*ac_mapd(ac) = vm_pgetd(vm_xrwmap(e,VMF_READ|VMF_DWORD)); /* Yep! */
     else {
 	register dw10_t d;	/* Conservative case, use intermed stg */
 	vm_dread(e, d);		/* Fetch the double */
@@ -248,7 +248,7 @@ insdef(i_dmovem)	/* DMOVEM AC,E */
     if (ac_issafedouble(ac)		/* ACs contiguous? */
       && vm_issafedouble(e)		/* Mem locs safe too? */
       && (va_insect(e) != ac_off(ac,1)))	/* no AC overlap with Mem? */
-	vm_psetd(vm_xrwmap(e,VMF_WRITE), *ac_mapd(ac));	/* Yep! */
+	vm_psetd(vm_xrwmap(e,VMF_WRITE|VMF_DWORD), *ac_mapd(ac)); /* Yep! */
     else {
 	register dw10_t d;	/* Conservative case, use intermed stg */
 #if KLH10_CPU_KL
@@ -302,7 +302,7 @@ insdef(i_dmovnm)		/* DMOVNM AC,E */
     ac_dget(ac, d);			/* Fetch AC, AC+1 into D */
     op10mf_dmovn(d);			/* Negate in place, with flags! */
     if (vm_issafedouble(e))		/* Fast move OK? */
-	vm_psetd(vm_xrwmap(e,VMF_WRITE), d);	/* Yep! */
+	vm_psetd(vm_xrwmap(e,VMF_WRITE|VMF_DWORD), d);	/* Yep! */
     else {
 #if KLH10_CPU_KL
 	vm_write(e, HIGET(d));		/* Do first word */

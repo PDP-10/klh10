@@ -1,6 +1,6 @@
 /* DPSUP.H - Device sub-Process Support definitions (OSD) for KLH10
 */
-/* $Id: dpsup.h,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dpsup.h,v 2.4 2002/04/24 07:46:15 klh Exp $
 */
 /*  Copyright © 1994, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: dpsup.h,v $
+ * Revision 2.4  2002/04/24 07:46:15  klh
+ * Change dpx_cnt from int to size_t, modify prototypes to match
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -104,7 +107,7 @@ For now, keep everything in one mutually R/W region for simplicity.
 #define DPSUP_INCLUDED 1
 
 #ifdef RCSID
- RCSID(dpsup_h,"$Id: dpsup.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dpsup_h,"$Id: dpsup.h,v 2.4 2002/04/24 07:46:15 klh Exp $")
 #endif
 
 #ifndef OSDSUP_INCLUDED
@@ -159,7 +162,7 @@ struct dpx_s {
 	osintf_t dpx_rdyf;	/* S/R: Ready flag */
     int dpx_res;		/* R: Result value */
     int dpx_cmd;		/* S: Command */
-    int dpx_cnt;		/* S: Count of data bytes */
+    size_t dpx_cnt;		/* S: Count of data bytes */
 
     /* Args of various types -- later could be union */
     int dpx_int;
@@ -244,7 +247,7 @@ int  dp_xswait (dpx_t *);		/* Wait until can send */
 unsigned char *
     dp_xsbuff(dpx_t *, size_t *);	/* Get buffer for send data */
 void dp_xswake(dpx_t *);		/* Send; say message ready */
-void dp_xsend(dpx_t *, int, int);	/* Send cmd & data */
+void dp_xsend(dpx_t *, int, size_t);	/* Send cmd & data */
 
 int  dp_xrtest (dpx_t *);		/* TRUE if can receive (have input) */
 void dp_xrblock(dpx_t *);		/* Block for later testing */
@@ -254,7 +257,7 @@ unsigned char *
 void dp_xrdone(dpx_t *);		/* Receive; say message done */
 void dp_xrdoack(dpx_t *, int);		/* Receive; say done, w/res */
 int  dp_xrcmd(dpx_t *);			/* Get command for msg */
-int  dp_xrcnt(dpx_t *);			/* Get cnt for msg */
+size_t dp_xrcnt(dpx_t *);		/* Get cnt for msg */
 
 /* Misc internals */
 void dp_sigwait(void);			/* Wait until any sig happens */

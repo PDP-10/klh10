@@ -37,9 +37,15 @@ extern struct device * dvhost_create(FILE *f, char *s);
 #define DVHOST_NSUP 1		/* Should be only 1! */
 
 /* CONO bits
-**	Preliminary hackery...
 */
-#define DVHOST_CO_IDLE 01		/* "Op-code" to do idle hackery */
+#define DVHOST_CO_CPU 0400000	/* set CPU state register */
+#define DVHOST_CO_DISK 0200000	/* set disk state register */
+#define DVHOST_CO_TAPE 0100000	/* set tape state register */
+#define DVHOST_CO_NET 040000	/* set network state register */
+#define DVHOST_CO_STATE 020000	/* push state registers to lights and clear */
+#define DVHOST_CO_SETAUX 010000	/* set aux lights from bits 24:26 */
+#define DVHOST_CO_AUX 07000	/* aux lights */
+#define DVHOST_CO_IDLE 01	/* idle microcode */
 
 #define DVHOST_REG_N 1			/* If on a Unibus, only one register */
 

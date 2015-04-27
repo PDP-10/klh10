@@ -1,6 +1,6 @@
 /* OSDSUP.H - OS-Dependent Support defs for KLH10
 */
-/* $Id: osdsup.h,v 2.5 2001/11/19 10:43:28 klh Exp $
+/* $Id: osdsup.h,v 2.9 2002/04/24 07:56:08 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,18 @@
 */
 /*
  * $Log: osdsup.h,v $
+ * Revision 2.9  2002/04/24 07:56:08  klh
+ * Add os_msleep, using nanosleep
+ *
+ * Revision 2.8  2002/03/28 16:52:02  klh
+ * First pass at using LFS (Large File Support)
+ *
+ * Revision 2.7  2002/03/26 06:18:24  klh
+ * Add correct timezone to DTE's time info
+ *
+ * Revision 2.6  2002/03/21 09:50:08  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.5  2001/11/19 10:43:28  klh
  * Add os_rtm_adjust_base for ITS on Mac
  *
@@ -29,7 +41,7 @@
 #define OSDSUP_INCLUDED 1
 
 #ifdef RCSID
- RCSID(osdsup_h,"$Id: osdsup.h,v 2.5 2001/11/19 10:43:28 klh Exp $")
+ RCSID(osdsup_h,"$Id: osdsup.h,v 2.9 2002/04/24 07:56:08 klh Exp $")
 #endif
 
 #include "word10.h"	/* Needed for protos */
@@ -51,7 +63,12 @@ extern char *os_strerror(int);
 #  include <errno.h>
 #  include <sys/file.h>	/* For L_SET */
     typedef int osfd_t;			/* OS open file descriptor */
+# if CENV_SYSF_LFS
+    typedef off_t osdaddr_t;		/* OS disk address */
+# else
     typedef unsigned long osdaddr_t;	/* OS disk address */
+# endif
+#   define OSDADDR_FMT CENV_SYSF_LFS_FMT
 #   define OS_MAXPATHLEN 512	/* MAXPATHLEN? */
 #elif CENV_SYS_MAC
     typedef short osfd_t;	/* OS open file descriptor (ioFRefNum) */
@@ -128,11 +145,29 @@ extern int osux_sigact(int, ossighandler_t *, ossigact_t *);
 extern int osux_sigrestore(ossigact_t *);
 
 /* TTY facilities */
-extern void os_ttybkgd(void);		/* Say TTY in background mode */
-extern void os_ttyinit(ossighandler_t *rtn);
+
+typedef struct {
+    int osti_attrs;			/* Attr flags for future use */ 
+# define OSTI_BKGDF	0x1
+# define OSTI_INTCHR	0x2
+# define OSTI_INTHDL	0x4
+# define OSTI_TRMHDL	0x8
+    int osti_bkgdf;			/* TRUE if in background mode */
+    int osti_intchr;			/* Interrupt char */
+    ossighandler_t *osti_inthdl;	/* Called when intchr detected */
+    ossighandler_t *osti_trmhdl;	/* Called on SIGTERM or equiv */
+} osttyinit_t;
+
+
+extern void os_ttybkgd(ossighandler_t *rtn);	/* Say TTY in backgnd mode */
+extern void os_ttyinit(osttyinit_t *);
+
 extern void os_ttysig(ossighandler_t *rtn);
-extern void os_ttyreset(void),
-	os_ttycmdmode(void), os_ttyrunmode(void);
+extern void
+	os_ttyreset(void),
+	os_ttycmdmode(void),
+	os_ttycmdrunmode(void),
+	os_ttyrunmode(void);
 extern int os_ttyintest(void),
 	os_ttyin(void),
 	os_ttyout(int),
@@ -161,6 +196,8 @@ extern osintf_t os_swap(osintf_t *, int);
 
 #include <time.h>	/* For os_tmget(), for KL DTE */
 
+/* Real-time - osrtm_t
+ */
 #if CENV_SYSF_BSDTIMEVAL		/* timeval is a BSD artifact */
 #  include <sys/time.h>
    typedef struct timeval osrtm_t;
@@ -197,6 +234,23 @@ typedef struct {
 #endif    
 } ostimer_t;
 
+/* Sleep time - osstm_t
+ */
+#if CENV_SYSF_NANOSLEEP
+typedef struct timespec osstm_t;
+# define OS_STM_SEC(stm)  ((stm).tv_sec)
+# define OS_STM_USEC(stm) ((stm).tv_nsec/1000)
+# define OS_STM_SET(stm, sec) (((stm).tv_sec = sec), ((stm).tv_nsec = 0))
+# define OS_STM_MSET(stm, ms) (((stm).tv_sec = (ms/1000)),\
+			((stm).tv_nsec = (ms%1000)*1000000))
+#else	/* Otherwise assume 1-msec granularity */
+typedef long osstm_t;
+# define OS_STM_SEC(stm)  ((stm)/1000)
+# define OS_STM_USEC(stm) (((stm)%1000)*1000)
+# define OS_STM_SET(stm, sec) ((stm) = (sec)*1000)
+# define OS_STM_MSET(stm, ms) ((stm) = (ms))
+#endif /* !CENV_SYSF_NANOSLEEP */
+
 
 extern int os_vrtmget(osrtm_t *);
 extern int os_rtmget(osrtm_t *);
@@ -212,8 +266,9 @@ extern void os_timer(int, ossighandler_t *, uint32, ostimer_t *);
 extern void os_timer_restore(ostimer_t *);
 extern void os_v2rt_idle(ossighandler_t *);
 extern void os_sleep(int);
+extern int  os_msleep(osstm_t *);
 
-extern int os_tmget(struct tm *);	/* Only for KL DTE */
+extern int os_tmget(struct tm *, int *);	/* Only for KL DTE */
 
 #if CENV_SYS_MAC
 extern unsigned long os_rtm_to_secs(osrtm_t rtm);

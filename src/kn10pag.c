@@ -1,6 +1,6 @@
 /* KN10PAG.C - Main Processor: Pager
 */
-/* $Id: kn10pag.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: kn10pag.c,v 2.4 2002/04/26 05:22:21 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,20 +17,25 @@
 */
 /*
  * $Log: kn10pag.c,v $
+ * Revision 2.4  2002/04/26 05:22:21  klh
+ * Add missing include of <string.h>
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "klh10.h"
 #include "osdsup.h"
 #include "kn10def.h"
 #include "kn10ops.h"
+#include "dvlites.h"
 
 #ifdef RCSID
- RCSID(kn10pag_c,"$Id: kn10pag.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(kn10pag_c,"$Id: kn10pag.c,v 2.4 2002/04/26 05:22:21 klh Exp $")
 #endif
 
 /* Exported functions - see kn10pag.h */
@@ -101,7 +106,8 @@ pag_init(void)
     LRHSET(cpu.mr_ebr, 0,
 	(KLH10_PAG_KL ? EBR_T20 : 0));	/* Set flag if using T20 (KL) paging */
 #else
-    LRHSET(cpu.mr_ebr, 0, 0);	/* KL diags expect 0?!? */
+    LRHSET(cpu.mr_ebr, 0,
+	EBR_CCALK | EBR_CCALD);	/* KL diags expect 0?!? */
 #endif
 
 #if KLH10_CPU_KL
@@ -134,6 +140,7 @@ pag_init(void)
 #if KLH10_CPU_KL
     cpu.pag.pr_pcs = cpu.pag.pr_pcsf = 0;
     cpu.pag.pr_era = 0;
+    cpu.mr_abk_pagno = -1;	/* Init address break page to never match */
 #endif
 
     /* Do AC block initialization. */
@@ -255,6 +262,9 @@ static void		/* Ditto but one map only */
 pag_mapclr(register pment_t *p)
 {
     memset((char *)p, 0, PAG_MAXVIRTPGS*sizeof(*p));
+#if KLH10_CPU_KL
+    cpu.mr_abk_pmflags = 0;
+#endif
 }
 
 /* Not actually used for anything */
@@ -262,6 +272,9 @@ static void		/* Ditto but only half a map */
 pag_segclr(register pment_t *p)
 {
     memset((char *)p, 0, (PAG_MAXVIRTPGS/2)*sizeof(*p));
+#if KLH10_CPU_KL
+    cpu.mr_abk_pmflags = 0;
+#endif
 }
 
 /* Common IO instructions that manipulate the paging system */
@@ -464,6 +477,10 @@ ioinsdef(io_clrpt)
     PCCACHE_RESET();			/* Invalidate cached PC info */
     cpu.pr_umap[va_page(e)] = 0;	/* Zapo! */
     cpu.pr_emap[va_page(e)] = 0;
+#if KLH10_CPU_KL
+    if (va_page(e) == cpu.mr_abk_pagno)
+	cpu.mr_abk_pmflags = 0;
+#endif
     return PCINC_1;
 }
 
@@ -1304,21 +1321,57 @@ ioinsdef(io_wrfil)
 
 /* (70014 = DATAO APR,) - KL: Set Address Break register
 **	Sets address break from c(E).
-** Note: This is not actually implemented, for obvious efficiency
-**	reasons.  It certainly *could* be if that proved desirable.
 */
 ioinsdef(io_do_apr)
 {
-    cpu.mr_adrbrk = vm_read(e);
+    uint32 w;
+
+    /* Remove any prior address break */	
+
+    if (cpu.mr_abk_pagno != -1) {
+
+	/* Set pager access flags back to their true value */
+	cpu.mr_abk_pmap[cpu.mr_abk_pagno] |= cpu.mr_abk_pmflags;
+
+	/* Set break page to value that never matches */
+	cpu.mr_abk_pagno = -1;
+    }
+
+    /* Record info for new address break, split out for fast access */
+
+    w = fetch32(e);
+    if (w & ((ABK_IFETCH | ABK_READ | ABK_WRITE) << PAG_VABITS)) {
+
+	/* Break address, page containing it, break conditions */
+	cpu.mr_abk_addr = w & MASK23;
+	cpu.mr_abk_pagno = va_page(cpu.mr_abk_addr);
+	cpu.mr_abk_cond = w >> PAG_VABITS;
+	
+	/* Make mask to clear page access flags that satisfy break condition */
+	cpu.mr_abk_pmmask = -1;
+	if (cpu.mr_abk_cond & (ABK_IFETCH | ABK_READ))
+	    cpu.mr_abk_pmmask &= ~VMF_READ;
+	if (cpu.mr_abk_cond & ABK_WRITE)
+	    cpu.mr_abk_pmmask &= ~VMF_WRITE;	    
+
+	/* Save page access flags and clear them so all refs cause a refill */
+	cpu.mr_abk_pmap =
+	    (cpu.mr_abk_cond & ABK_USER) ? cpu.pr_umap : cpu.pr_emap;
+	cpu.mr_abk_pmflags = cpu.mr_abk_pmap[cpu.mr_abk_pagno] & VMF_ACC;
+	cpu.mr_abk_pmap[cpu.mr_abk_pagno] &= cpu.mr_abk_pmmask;
+    }
+
     return PCINC_1;
 }
 
 /* (70004 = DATAI APR,) - KL: Read Address Break register
-**	Reads address break into c(E).
+**	Reads address break conditions into c(E).
 */
 ioinsdef(io_di_apr)
 {
-    vm_write(e, cpu.mr_adrbrk);
+    w10_t w;
+    W10_XSET (w, cpu.mr_abk_cond << (PAG_VABITS - H10BITS), 0);
+    vm_write(e, w);
     return PCINC_1;
 }
 
@@ -1365,7 +1418,8 @@ ioinsdef(io_rdera)
 #define SBD_FFUN      037	/* RH: Function # */
 # define SBD_FN_0	0
 # define SBD_FN_1	01
-/* Functions 2, 6, and 7 are only used to attempt error correction. */
+# define SBD_FN_2	02
+/* Functions 6 and 7 are only used to attempt error correction. */
 /* 7 is used by KL diags (SUBKL) to initialize memory. */
 # define SBD_FN_7	07
 # define SBD_FN_12	012
@@ -1400,6 +1454,10 @@ ioinsdef(io_sbdiag)
 
 	case SBD_FN_1:
 	    LRHSET(w, SBD_R1TMF20, 0);	/* Say MF20 and online */
+	    break;
+
+	case SBD_FN_2:
+	    op10m_setz(w);		/* Say 64K chips */
 	    break;
 
 	case SBD_FN_7:
@@ -1437,6 +1495,17 @@ ioinsdef(io_sbdiag)
 
 #endif /* KL */
 
+/* (70054 = DATAO PI,) Sets console lights from c(E).
+ */
+ioinsdef(io_do_pi)
+{
+    register w10_t w;
+    w = vm_read(e);		/* get lights data */
+
+    lights_pgmlites(LHGET(w), RHGET(w));
+    return PCINC_1;
+}
+
 #if KLH10_PAG_KL
 
 /* DEC TOPS-20 (KL) paging */
@@ -1464,11 +1533,39 @@ pag_refill(register pment_t *p,	/* Page map pointer */
 {
     register vmptr_t vmp;
     register h10_t pflh;
+    register pagno_t vpag;
 
-    /* Note page number passed to pag_t20map is the FULL XA page, which on
-    ** a KL is 12+9=21 bits, not the supported 5+9=14 virtual.
-    */
-    if (vmp = pag_t20map(p, va_xapage(e), (f & VMF_ACC))) /* Try mapping */
+    vpag = va_xapage(e);
+
+#if KLH10_CPU_KL
+    /* If an address break is set, see if this vaddr is in that page */
+    if (vpag == cpu.mr_abk_pagno && p == cpu.mr_abk_pmap) {
+	/* Page fault if we hit the address and satisfy the conditions */
+	if ((e == cpu.mr_abk_addr
+	     || ((f & VMF_DWORD) && e + 1 == cpu.mr_abk_addr))
+	    && ! cpu.mr_inafi
+	    /* Read-modify-write cycles request VMF_WRITE only, so
+	    ** assume ABK_READ hits whether or not VMF_READ is on
+	    */
+	    && ((f & VMF_WRITE) && (cpu.mr_abk_cond & ABK_WRITE)
+		|| ((f & VMF_IFETCH) ? (cpu.mr_abk_cond & ABK_IFETCH)
+				     : (cpu.mr_abk_cond & ABK_READ)))) {
+	    cpu.pag.pr_flh = PMF_ADRERR;	/* report address break */
+	    goto pfault;			/* go set VIRT etc */
+	}
+
+	/* No break, recalculate access using true pager flags */
+	if (f & cpu.mr_abk_pmflags) {
+	    /* abk_pagno is in section 0-37, no need to range check vpag */
+	    return vm_physmap(pag_pgtopa(p[vpag]&PAG_PAMSK) | va_pagoff(e));
+	}
+    }
+#endif
+ 
+     /* Note page number passed to pag_t20map is the FULL XA page, which on
+     ** a KL is 12+9=21 bits, not the supported 5+9=14 virtual.
+     */
+    if (vmp = pag_t20map(p, vpag, (f & VMF_ACC))) /* Try mapping */
 	return vmp + va_pagoff(e);		/* Won, return mapped ptr! */
 
     /* Ugh, analyze error far enough to build page fail word LH bits,
@@ -1480,6 +1577,7 @@ pag_refill(register pment_t *p,	/* Page map pointer */
     ** after the page fail trap has happened and control returns to the
     ** main instruction loop.  
     */
+ pfault:
     cpu.pag.pr_fmap = p;
     cpu.pag.pr_facf = f;
     switch (pflh = cpu.pag.pr_flh) {
@@ -1815,6 +1913,16 @@ pag_t20map(register pment_t *p,	/* Page map pointer */
     */
     p[vpag] = pag | VMF_READ
 		 | ((accbits & CST_MBIT) ? VMF_WRITE : 0);
+
+#if KLH10_CPU_KL
+    /* If page vpag contains the address break address, clear its
+    ** access flags so that refs will cause a refill.
+    */
+    if (vpag == cpu.mr_abk_pagno && p == cpu.mr_abk_pmap) {
+	cpu.mr_abk_pmflags = p[vpag] & VMF_ACC;
+	p[vpag] &= cpu.mr_abk_pmmask;
+    }
+#endif
 
     return vm_physmap(pag_pgtopa(pag));
 }

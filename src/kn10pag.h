@@ -460,13 +460,20 @@ struct vmregs {
 #define VMF_NOTRAP ((pment_t)1<<(PAG_PMEBITS-3)) /* Flag for pag_refill() */
 					/* NOT used in map entry! */
 
-/* Synonym for VMF_READ to distinguish instruction fetch references in case
-** that ever becomes important.  For example, it might provide a way
-** of indicating that the address (ie PC) is forcibly interpreted as
-** local.
+/* Extra flag used with VMF_READ to distinguish instruction fetch
+** references for address break and whatever else becomes important.
+** For example, it might provide a way of indicating that the address
+** (ie PC) is forcibly interpreted as local.
 */
-#define VMF_FETCH (VMF_READ)
+#define VMF_IFETCH ((pment_t)1<<(PAG_PMEBITS-4)) /* Flag for pag_refill() */
+ 					/* NOT used in map entry! */
+#define VMF_FETCH (VMF_READ | VMF_IFETCH)
 
+/* Flag used with VMF_READ or VMF_WRITE to flag doubleword refs, so
+** address break can trap if the low word hits.
+*/
+#define VMF_DWORD ((pment_t)1<<(PAG_PMEBITS-5)) /* Flag for pag_refill() */
+ 					/* NOT used in map entry! */
 
 /* VM_XMAP - Map virtual address in given context to physical address.
 **	Page faults if requested access cannot be granted, unless
@@ -599,7 +606,8 @@ struct vmregs {
 */
 #define vm_dread(a,d) \
     (vm_issafedouble(a)					/* If safe double, */\
-	? ((d) = vm_pgetd(vm_xrwmap(a,VMF_READ)), 0)	/* use fast way */\
+	? ((d) = vm_pgetd(vm_xrwmap(a,VMF_READ|VMF_DWORD)), 0)  \
+							/* use fast way */\
 	: ((d).w[0] = vm_read(a), 			/* Ugh, slow way */\
 		va_inc(a), (d).w[1] = vm_read(a), 0))
 
@@ -616,7 +624,7 @@ struct vmregs {
 */
 #define vm_dwrite(a,d) \
 	if (vm_issafedouble(a)) {		/* If safe double, */\
-	   vm_psetd(vm_xrwmap(a,VMF_WRITE), (d)); /* use fast way */\
+	   vm_psetd(vm_xrwmap(a,VMF_WRITE|VMF_DWORD), (d)); /* use fast way */\
 	} else if (1) {				\
 	    register vmptr_t p0__, p1__;	/* Ugh, slow way */\
 	    p0__ = vm_xrwmap(a, VMF_WRITE);	\

@@ -1,6 +1,6 @@
 /* DVDTE.C - Emulates DTE20 10/11 interface for KL10
 */
-/* $Id: dvdte.c,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: dvdte.c,v 2.7 2002/04/24 07:56:08 klh Exp $
 */
 /*  Copyright © 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,18 @@
 */
 /*
  * $Log: dvdte.c,v $
+ * Revision 2.7  2002/04/24 07:56:08  klh
+ * Add os_msleep, using nanosleep
+ *
+ * Revision 2.6  2002/03/28 16:49:35  klh
+ * Another DTE_NQNODES bump to 300
+ *
+ * Revision 2.5  2002/03/26 06:18:24  klh
+ * Add correct timezone to DTE's time info
+ *
+ * Revision 2.4  2002/03/21 09:50:08  klh
+ * Mods for CMDRUN (concurrent mode)
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -38,7 +50,7 @@
 #include "prmstr.h"	/* For parameter parsing */
 
 #ifdef RCSID
- RCSID(dvdte_c,"$Id: dvdte.c,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(dvdte_c,"$Id: dvdte.c,v 2.7 2002/04/24 07:56:08 klh Exp $")
 #endif
 
 /* Internal DTE packet for RSX20F protocol */
@@ -75,7 +87,9 @@ struct dteq_s {
 
 #define SFN_INDBIT SWAB(1<<15)	/* High bit of function is @ bit */
 
-#define DTE_NQNODES 30		/* Maybe should be dynamic param */
+#ifndef  DTE_NQNODES
+# define DTE_NQNODES 300	/* Maybe should be dynamic param */
+#endif
 struct dteq_s *dteqfreep = NULL;
 struct dteq_s dteqnodes[DTE_NQNODES];
 
@@ -791,7 +805,7 @@ static void dte_dosecp(register struct dte *dt)
 	case DTECMD_MNO:	/* Output char in monitor mode */
 	    if (dt->dt_dv.dv_debug)
 		fprintf(dt->dt_dv.dv_dbf, "[DTECMD:O %o]",(int)RHGET(w)&0377);
-	    os_ttyout((int)RHGET(w)&0377);
+	    fe_ctyout((int)RHGET(w)&0377);
 
 	    op10m_seto(w);	/* Set TMD flag -1 to confirm "done" */
 
@@ -857,6 +871,7 @@ static void dte_dosecp(register struct dte *dt)
 	    struct tm t;
 	    register uint32 i;
 	    register vmptr_t vp;
+	    int zone;
 
 	    /* Get high 16-bit field (B4-19) from DTECMD word */
 	    i = ((LHGET(w) << 2) | (RHGET(w) >> 16)) & MASK16;
@@ -868,7 +883,7 @@ static void dte_dosecp(register struct dte *dt)
 	    }
 	    vp = vm_physmap(cpu.mr_ebraddr + i);
 
-	    if (!os_tmget(&t))		/* Get current date/time */
+	    if (!os_tmget(&t, &zone))	/* Get current date/time */
 		break;			/* Failed, return nothing */
 
 	    LRHSET(w, 0,
@@ -883,7 +898,7 @@ static void dte_dosecp(register struct dte *dt)
 		 | (i >> 2)) & H10MASK,
 		((i << 16)
 		 | (((t.tm_wday+6) % 7)<<8)
-		 | (t.tm_isdst ? 00377 : 0)) & H10MASK);
+		 | (t.tm_isdst ? 0200 : 0) | (zone & 0177)) & H10MASK);
 	    ++vp;
 	    vm_pset(vp, w);
 
@@ -902,7 +917,7 @@ static void dte_dosecp(register struct dte *dt)
 	case DTECMD_DCP_CTYO:	/* KLDCP output char to CTY */
 	    if (dt->dt_dv.dv_debug)
 		fprintf(dt->dt_dv.dv_dbf, "[DTEO: %o]", (int)RHGET(w)&0377);
-	    os_ttyout((int)RHGET(w)&0377);
+	    fe_ctyout((int)RHGET(w)&0377);
 	    break;
 
 	case DTECMD_DCP_RDSW:		/* Read data switches */
@@ -912,11 +927,11 @@ static void dte_dosecp(register struct dte *dt)
 	case DTECMD_DCP_DDTIN:		/* DDT input mode */
 	  {
 	    register int ch;
-	    if ((ch = os_ttyin()) < 0)
+	    if ((ch = fe_ctyin()) < 0)
 		op10m_setz(w);		/* No input, return 0 */
 	    else {
 		ch &= 0177;		/* Mask for safety */
-		os_ttyout(ch);		/* Echo, sigh */
+		fe_ctyout(ch);		/* Echo, sigh */
 		LRHSET(w, 0, ch & 0377);
 	    }
 	    vm_pset(vm_physmap(cpu.mr_ebraddr + DTEE_F11), w);
@@ -930,26 +945,27 @@ static void dte_dosecp(register struct dte *dt)
 	    ** and only diagnostics should be using this anyway.
 	    */
 	    register int ch, tmo = 180;
+	    osstm_t stm;
 
 	    if (DVDEBUG(dt))
 		fprintf(DVDBF(dt), "[DTE KLDCP_TIW: %d sec...", tmo);
 
+	    OS_STM_SET(stm, tmo);
 	    for (;;) {
-		if ((ch = os_ttyin()) >= 0) {
+		if ((ch = fe_ctyin()) >= 0) {
 		    ch &= 0177;			/* Mask for safety */
-		    os_ttyout(ch);		/* Echo, sigh */
+		    fe_ctyout(ch);		/* Echo, sigh */
 		    LRHSET(w, 0, ch & 0377);
 		    if (DVDEBUG(dt))
 			fprintf(DVDBF(dt), " %o]", ch);
 		    break;
 		}
-		if (--tmo <= 0) {
+		if (os_msleep(&stm) <= 0) {
 		    op10m_setz(w);		/* No input, return 0 */
 		    if (DVDEBUG(dt))
 			fprintf(DVDBF(dt), " timeout]");
 		    break;
 		}
-		os_sleep(1);
 	    }
 	    vm_pset(vm_physmap(cpu.mr_ebraddr + DTEE_F11), w);
 	  }
@@ -2158,15 +2174,16 @@ static void dte_10start(register struct dte *dt)
 **	send the most recent time data!
 */
 #define DTM_LEN 8
+
 static void dte_dtmsend(register struct dte *dt)
 {
     static unsigned char dtmbuf[DTM_LEN];
     struct tm t;
     register unsigned int i;
-    int valid;
+    int valid, zone;
 
     /* Fill out data for packet */
-    if (os_tmget(&t)) {
+    if (os_tmget(&t, &zone)) {
 	i = t.tm_year + 1900;		/* Make year full A.D. quantity */
 	dtmbuf[0] = (i >> 8) & 0377;	/* Set high byte of year */
 	dtmbuf[1] = (i & 0377);		/* Set low byte */
@@ -2175,8 +2192,8 @@ static void dte_dtmsend(register struct dte *dt)
 	dtmbuf[3] = t.tm_mday - 1;	/* Set day-of-month (0-31) */
 	dtmbuf[4] = (t.tm_wday+6) % 7;	/* Set day-of-week */
 					/* DEC: 0=Mon, Unix: 0=Sun */
-	dtmbuf[5] = (t.tm_isdst ? 0200 : 0)
-			| 8;		/* Use PST for now (hack hack) */
+	dtmbuf[5] = (t.tm_isdst ? 0200 : 0)	/* Set DST flag */
+	    | (zone & 0177);		/* and timezone (integral hour) */
 
 	/* Time is secs/2 to fit in a 16-bit word */
 	i = (((((long)t.tm_hour * 60) + t.tm_min) * 60) + t.tm_sec) >> 1;
@@ -2201,15 +2218,13 @@ static void dte_dtmsend(register struct dte *dt)
 /* External for DVCTY code to get into here.  Sorta hackish for now.
 **	Later spiff up with string input for greater efficiency.
 */
-extern int cty_debug;	/* Crock */
-
 int dte_ctysin(int cnt)
 {
     register struct dte *dt = &dvdte[0];	/* Assumption for now */
     register int ch;
 
     /* If no DTE defined yet or no input, just return */
-    if (!ndtes || (ch = os_ttyin()) < 0)	/* Get single char */
+    if (!ndtes || (ch = fe_ctyin()) < 0)	/* Get single char */
 	return 0;				/* None left */
 
     dt = &dvdte[0];				/* Assumption for now */
@@ -2223,7 +2238,7 @@ int dte_ctysin(int cnt)
 	if (op10m_skipn(vm_pget(vpf))) {
 	    /* If flag non-zero, 10 hasn't picked up the char yet */
 	    fprintf(stderr, "[DTEI: %o (old %o!)]", ch, (int)vm_pgetrh(vpc));
-	} else if (cty_debug)
+	} else if (cpu.fe.fe_ctydebug)
 	    fprintf(stderr, "[DTEI: %o]", ch);
 
 	/* Drop char in special DTE EPT communication area */
@@ -2246,7 +2261,7 @@ int dte_ctysin(int cnt)
 		SWAB((DTE_DLS_CTY<<8) | ch),	/* Line 0, data */
 		0, 0, NULL)) {		/* Nothing else in msg */
 	    fprintf(stderr, "[DTEI: %o dropped]", ch);
-	} else if (cty_debug)
+	} else if (cpu.fe.fe_ctydebug)
 	    fprintf(stderr, "[DTEI: %o]", ch);
     }
 
@@ -2299,7 +2314,7 @@ static void dte_ctyiack(register struct dte *dt)
 static void dte_ctyout(register struct dte *dt, register int ch)
 {
 #if 1
-    if (cty_debug)
+    if (cpu.fe.fe_ctydebug)
 	fprintf(stderr, "[DTEO: %o]", ch);
 #else
     if (dt->dt_dv.dv_debug)
@@ -2319,7 +2334,7 @@ static void dte_ctysout(register struct dte *dt,
 			register int len)
 {
 #if 1
-    if (cty_debug)
+    if (cpu.fe.fe_ctydebug)
 	fprintf(stderr, "[DTESO: %d \"%.*s\"]\r\n", len, len, cp);
 #else
     if (dt->dt_dv.dv_debug)
@@ -2343,7 +2358,7 @@ static void dte_ctyforce(register struct dte *dt)
 #endif
     chunk = sizeof(dt->dt_ctyobuf) - dt->dt_ctyocnt;
     if (chunk > 0) {
-	os_ttysout(dt->dt_ctyobuf, chunk);
+	fe_ctysout(dt->dt_ctyobuf, chunk);
     }
     dt->dt_ctyocnt = sizeof(dt->dt_ctyobuf);
     dt->dt_ctyocp = dt->dt_ctyobuf;

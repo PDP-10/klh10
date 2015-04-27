@@ -1,6 +1,6 @@
 /* UDLCONV.C - Utility to convert DIR.LIST files into ITSDUMP tapedirs
 */
-/* $Id: udlconv.c,v 2.2 2001/11/10 21:28:59 klh Exp $
+/* $Id: udlconv.c,v 2.3 2002/04/26 05:19:06 klh Exp $
 */
 /*  Copyright © 1992, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: udlconv.c,v $
+ * Revision 2.3  2002/04/26 05:19:06  klh
+ * Was missing include of <stdlib.h>
+ *
  * Revision 2.2  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -162,6 +165,7 @@ Lisp format, the -right- thing to do is to do this all from Maclisp!
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <stdlib.h>	/* For malloc */
 
 /*#include "lread.h" */
 #ifndef LREAD_INCLUDED

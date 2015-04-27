@@ -1,6 +1,6 @@
 /* KLH10S.H - General Configuration String Definitions
 */
-/* $Id: klh10s.h,v 2.4 2001/11/10 21:28:59 klh Exp $
+/* $Id: klh10s.h,v 2.5 2002/05/21 16:54:32 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,9 @@
 */
 /*
  * $Log: klh10s.h,v $
+ * Revision 2.5  2002/05/21 16:54:32  klh
+ * Add KLH10_I_CIRC to allow any sys to have CIRC
+ *
  * Revision 2.4  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -30,7 +33,7 @@
 #define KLH10S_INCLUDED 1
 
 #ifdef RCSID
- RCSID(klh10s_h,"$Id: klh10s.h,v 2.4 2001/11/10 21:28:59 klh Exp $")
+ RCSID(klh10s_h,"$Id: klh10s.h,v 2.5 2002/05/21 16:54:32 klh Exp $")
 #endif
 
 /* Environment configuration switches.
@@ -39,11 +42,11 @@
 **	CENV_CPU_x = host CPU architecture
 **	CENV_SYS_x = host OS
 */
-#if CENV_SYS_V7		/* Basic vanilla Unix */
+#if CENV_SYS_V7			/* Basic vanilla Unix */
 # define KLH10S_CENV_SYS_ "V7"
 #elif CENV_SYS_SUN		/* SunOS 4.x */
 # define KLH10S_CENV_SYS_ "SUN"
-#elif CENV_SYS_SOLARIS	/* SunOS 5.x */
+#elif CENV_SYS_SOLARIS		/* SunOS 5.x */
 # define KLH10S_CENV_SYS_ "SOLARIS"
 #elif CENV_SYS_NEXT		/* NeXT */
 # define KLH10S_CENV_SYS_ "NEXT"
@@ -51,17 +54,17 @@
 # define KLH10S_CENV_SYS_ "MAC"
 #elif CENV_SYS_BSDI		/* 386 BSDI */
 # define KLH10S_CENV_SYS_ "BSDI"
-#elif CENV_SYS_NETBSD	/* NetBSD */
+#elif CENV_SYS_NETBSD		/* NetBSD */
 # define KLH10S_CENV_SYS_ "NETBSD"
-#elif CENV_SYS_FREEBSD	/* FreeBSD */
+#elif CENV_SYS_FREEBSD		/* FreeBSD */
 # define KLH10S_CENV_SYS_ "FREEBSD"
-#elif CENV_SYS_OPENBSD	/* FreeBSD */
+#elif CENV_SYS_OPENBSD		/* FreeBSD */
 # define KLH10S_CENV_SYS_ "OPENBSD"
 #elif CENV_SYS_LINUX		/* Linux */
 # define KLH10S_CENV_SYS_ "LINUX"
-#elif CENV_SYS_DECOSF	/* DEC OSF/1 */
+#elif CENV_SYS_DECOSF		/* DEC OSF/1 */
 # define KLH10S_CENV_SYS_ "DECOSF"
-#elif CENV_SYS_MOONMAC	/* Special stuff saved for Dave Moon */
+#elif CENV_SYS_MOONMAC		/* Special stuff saved for Dave Moon */
 # define KLH10S_CENV_SYS_ "MOONMAC"
 #elif CENV_SYS_BSD		/* Generic BSD */
 # define KLH10S_CENV_SYS_ "BSD"
@@ -186,6 +189,11 @@
 
 
 /* Hardware features */
+#if KLH10_I_CIRC
+# define KLH10S_I_CIRC " CIRC"
+#else
+# define KLH10S_I_CIRC ""
+#endif
 #if KLH10_MCA25
 # define KLH10S_MCA25 " MCA25"
 #else

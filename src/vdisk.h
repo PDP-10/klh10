@@ -1,6 +1,6 @@
 /* VDISK.H - Virtual Disk support definitions
 */
-/* $Id: vdisk.h,v 2.3 2001/11/10 21:28:59 klh Exp $
+/* $Id: vdisk.h,v 2.5 2002/05/21 09:47:40 klh Exp $
 */
 /*  Copyright © 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: vdisk.h,v $
+ * Revision 2.5  2002/05/21 09:47:40  klh
+ * Change protos for vdk_read, vdk_write
+ *
+ * Revision 2.4  2002/03/28 16:53:20  klh
+ * Added "SIMH" as synonym for "DLW8" format
+ *
  * Revision 2.3  2001/11/10 21:28:59  klh
  * Final 2.0 distribution checkin
  *
@@ -26,7 +32,7 @@
 #define VDISK_INCLUDED 1
 
 #ifdef RCSID
- RCSID(vdisk_h,"$Id: vdisk.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
+ RCSID(vdisk_h,"$Id: vdisk.h,v 2.5 2002/05/21 09:47:40 klh Exp $")
 #endif
 
 /* Canonical C true/false values */
@@ -50,6 +56,10 @@
 # define VDK_NWDS(d) VDK_SECTOR_SIZE	/* Size as function of disk unit */
 #endif
 
+/* Available virtual disk formats (how to represent PDP-10 words on disk). 
+ * Note that the "SIMH" format was added as a convenient synonym for DLW8,
+ * which is the format used by Supnik's SIMH emulator.
+ */
 #define VDK_FORMATS \
  vdk_fmt(VDK_FMT_RAW, "RAW", "Raw - no conversion",			\
 				2*sizeof(w10_t), cvtfr_raw, cvtto_raw),	\
@@ -63,10 +73,13 @@
 					2*8, cvtfr_dbw8, cvtto_dbw8),	\
  vdk_fmt(VDK_FMT_DLW8, "DLW8", "Disk_LittleEnd_Word (8)",		\
 					2*8, cvtfr_dlw8, cvtto_dlw8),	\
+ vdk_fmt(VDK_FMT_SIMH, "SIMH", "Disk_LittleEnd_Word (8)",		\
+					2*8, cvtfr_dlw8, cvtto_dlw8),	\
  vdk_fmt(VDK_FMT_DBH4, "DBH4", "Disk_BigEnd_Halfword (8)",		\
 					2*2*4, cvtfr_dbh4, cvtto_dbh4),	\
  vdk_fmt(VDK_FMT_DLH4, "DLH4", "Disk_LittleEnd_Halfword (8)",		\
 					2*2*4, cvtfr_dlh4, cvtto_dlh4)
+
 
 enum {
 # define vdk_fmt(i,n,c,s,f,t) i
@@ -144,8 +157,8 @@ extern int vdk_init(struct vdk_unit *,
 		    void (*)(struct vdk_unit *, char *), char *);
 extern int vdk_mount(struct vdk_unit *, char *, int);
 extern int vdk_unmount(struct vdk_unit *);
-extern int vdk_read(struct vdk_unit *, w10_t *, int32, int);
-extern int vdk_write(struct vdk_unit *, w10_t *, int32, int);
+extern int vdk_read(struct vdk_unit *, w10_t *, uint32, int);
+extern int vdk_write(struct vdk_unit *, w10_t *, uint32, int);
 
 /* Compute block number given disk, cylinder, track, sector? */
 #define vdk_blknum(d,c,t,s)	/* unfinished */

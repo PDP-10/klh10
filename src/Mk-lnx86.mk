@@ -1,5 +1,5 @@
 # KLH10 Makefile for Linux on i386
-# $Id: Mk-lnx86.mk,v 2.3 2001/11/10 21:28:59 klh Exp $
+# $Id: Mk-lnx86.mk,v 2.5 2002/04/24 18:03:04 klh Exp $
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -21,13 +21,14 @@
 
 # Build definitions
 SRC = ../../src
-CFLAGS = -c -g3 -O -I. -I$(SRC)
+CFLAGS = -c -g3 -O3 -I. -I$(SRC)
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wstrict-prototypes -Wmissing-prototypes \
 		-Wmissing-declarations -Wredundant-decls
 
 # Source definitions
-CENVFLAGS = -DCENV_CPU_I386=1 -DCENV_SYS_LINUX=1
+CENVFLAGS = -DCENV_CPU_I386=1 -DCENV_SYS_LINUX=1 -DKLH10_DEV_LITES=1 \
+		-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 
 # Any target with no customized rule here is simply passed on to the
 # standard Makefile.  If no target is specified, "usage" is passed on

@@ -1,6 +1,6 @@
 /* OSDNET.C - OS Dependent Network facilities
 */
-/* $Id: osdnet.c,v 2.6 2001/11/19 10:32:34 klh Exp $
+/* $Id: osdnet.c,v 2.8 2003/02/23 18:22:08 klh Exp $
 */
 /*  Copyright © 1999, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,12 @@
 */
 /*
  * $Log: osdnet.c,v $
+ * Revision 2.8  2003/02/23 18:22:08  klh
+ * Fix various problems for NetBSD/Alpha 1.6.
+ *
+ * Revision 2.7  2002/03/18 04:25:03  klh
+ * Add support for promiscuous mode, fix minor ARP error output
+ *
  * Revision 2.6  2001/11/19 10:32:34  klh
  * Solaris port fixups.
  *
@@ -45,7 +51,7 @@
 #endif
 
 #ifdef RCSID
- RCSID(osdnet_c,"$Id: osdnet.c,v 2.6 2001/11/19 10:32:34 klh Exp $")
+ RCSID(osdnet_c,"$Id: osdnet.c,v 2.8 2003/02/23 18:22:08 klh Exp $")
 #endif
 
 /* Local predeclarations */
@@ -630,13 +636,22 @@ osn_arp_stuff(unsigned char *ipa, unsigned char *eap, int pubf)
        Rather than attempt to duplicate the arp(8) utility code here,
        let's try simply invoking it!
        		arp -S <ipaddr> <ethaddr> pub
+       Note that NetBSD doesn't support -S yet, only -s.  -S is like -s
+       but deletes any existing entry first, avoiding the need for -d
+       which is needed on NetBSD to avoid complaints from arp(8).
     */
     FILE *f;
     int err;
-    char arpbuff[128];
+    char arpbuff[200];
     char resbuff[200];
 
-    sprintf(arpbuff, "/usr/sbin/arp -S %s %s %s",
+    sprintf(arpbuff,
+# if CENV_SYS_NETBSD
+	    "/usr/sbin/arp -d %s; /usr/sbin/arp -s %s %s %s",
+	    ip_adrsprint(ipbuf, ipa),
+# else
+	    "/usr/sbin/arp -S %s %s %s",
+# endif
 	    ip_adrsprint(ipbuf, ipa),
 	    eth_adrsprint(eabuf, eap),
 	    (pubf ? "pub" : ""));
@@ -655,7 +670,7 @@ osn_arp_stuff(unsigned char *ipa, unsigned char *eap, int pubf)
     err = pclose(f);		/* Hope this doesn't wait4() too long */
     if (err) {
 	dbprintln("arp exit error: status %d", err);
-	dbprintln("arp command was:", arpbuff);
+	dbprintln("arp command was: %s", arpbuff);
     }
     if (DP_DBGFLG)
 	dbprintln("arp result \"%s\"", resbuff);
@@ -930,7 +945,8 @@ osn_pfeaget(int pfs,		/* Packetfilter socket or FD */
     }
     ea_set(eap, endp.end_addr);
 
-#elif KLH10_NET_BPF
+#elif KLH10_NET_BPF && !CENV_SYS_NETBSD && !CENV_SYS_FREEBSD
+    /* NetBSD no longer seems to support this */
     struct ifreq ifr;
 
     strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
@@ -981,7 +997,6 @@ osn_arp_look(struct in_addr *ipa,	/* Look up this IP address */
 	     unsigned char *eap)	/* Return EA here */
 {
 #if NETIF_HAS_ARPIOCTL
-    unsigned char ipchr[IP_ADRSIZ];
     char ipstr[OSN_IPSTRSIZ];
     struct arpreq arq;
     int sock;
@@ -1002,7 +1017,8 @@ osn_arp_look(struct in_addr *ipa,	/* Look up this IP address */
 	   rather than implying some error.
 	 */
 	if (DP_DBGFLG)
-	    dbprintln("No ARP info for %s", ip_adrsprint(ipstr, ipchr));
+	    dbprintln("No ARP info for %s",
+		      ip_adrsprint(ipstr, (unsigned char *)ipa));
 	return FALSE;
     }
     close(sock);
@@ -1011,7 +1027,7 @@ osn_arp_look(struct in_addr *ipa,	/* Look up this IP address */
     if (!(arq.arp_flags & ATF_COM)) {
 	if (DP_DBGFLG)
 	    dbprintln("ARP entry incomplete for %s",
-		      ip_adrsprint(ipstr, ipchr));
+		      ip_adrsprint(ipstr, (unsigned char *)ipa));
 	return FALSE;
     }
     ea_set((char *)eap, arq.arp_ha.sa_data);	/* Copy ether addr */
@@ -1115,7 +1131,8 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	    char *ifnam,	/* Interface name */
 	    unsigned char *newpa)	/* New ether address */
 {
-#if CENV_SYS_DECOSF || KLH10_NET_LNX || CENV_SYS_FREEBSD
+#if CENV_SYS_DECOSF || KLH10_NET_LNX \
+		    || (CENV_SYS_FREEBSD && defined(SIOCSIFLLADDR))
 
     /* Common preamble code */
     int ownsock = FALSE;
@@ -1162,7 +1179,9 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	return FALSE;
     }
 
-# elif CENV_SYS_FREEBSD
+# elif CENV_SYS_FREEBSD && defined(SIOCSIFLLADDR)
+    /* This works for 4.2 and up; as of 3.3 no known way to set ether addr. */
+
     ifr.ifr_addr.sa_len = 6;
     ifr.ifr_addr.sa_family = AF_LINK;		/* Must be this */
     ea_set(ifr.ifr_addr.sa_data, newpa);
@@ -1171,7 +1190,6 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	if (ownsock) close(s);
 	return FALSE;
     }
-
 # else
 #  error "Unimplemented OS routine osn_ifeaset()"
 # endif
@@ -1182,7 +1200,11 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 
 #else
 # ifdef __GNUC__
-#  warning "Unimplemented OS routine osn_ifeaset()"
+#  if CENV_SYS_NETBSD	/* As of 1.6 NetBSD STILL has no way to do this */ 
+#   warning "NetBSD still sucks - Unimplemented OS routine osn_ifeaset()"
+#  else
+#   warning "Unimplemented OS routine osn_ifeaset()"
+#  endif
 # endif
     error("\"%s\" could not set ether addr - osn_ifeaset() unimplemented",
 	  ifnam);
@@ -1192,7 +1214,10 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 
 
 
-/* OSN_IFMCSET - Set ethernet multicast address (add or delete)
+/* OSN_IFMCSET - Set ethernet multicast address (add or delete),
+ *	or change promiscuous mode.
+ *	Hack for now: if "pa" argument is NULL, we are dealing with
+ *	promiscuous mode; "delf" is TRUE to turn off, else it's turned on.
  */
 int
 osn_ifmcset(int s,
@@ -1224,13 +1249,36 @@ osn_ifmcset(int s,
 # else
 #  error "Unimplemented OS routine osn_ifmcset()"
 # endif
-    ea_set(ifr.ifr_addr.sa_data, pa);
 
-    if (ioctl(s, (delf ? SIOCDELMULTI : SIOCADDMULTI), &ifr) < 0) {
-	syserr(errno, "\"%s\" %s failed", ifnam,
-	       (delf ? "SIOCDELMULTI" : "SIOCADDMULTI"));
-	if (ownsock) close(s);
-	return FALSE;
+    if (pa) {
+	/* Doing multicast stuff */
+	ea_set(ifr.ifr_addr.sa_data, pa);
+
+	if (ioctl(s, (delf ? SIOCDELMULTI : SIOCADDMULTI), &ifr) < 0) {
+	    syserr(errno, "\"%s\" %s failed", ifnam,
+		   (delf ? "SIOCDELMULTI" : "SIOCADDMULTI"));
+	bad:
+	    if (ownsock) close(s);
+	    return FALSE;
+	}
+    } else {
+	/* Doing promiscuous stuff */
+	int flags;
+
+	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
+	    syserr(errno, "SIOCGIFFLAGS failed for interface \"%s\"", ifnam);
+	    goto bad;
+
+	}
+	if (delf)
+	    ifr.ifr_flags &= ~IFF_PROMISC;	/* Turn off */
+	else
+	    ifr.ifr_flags |= IFF_PROMISC;	/* Turn on */
+
+	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
+	    syserr(errno, "SIOCSIFFLAGS failed for interface \"%s\"", ifnam);
+	    goto bad;
+	}
     }
     if (ownsock)
 	close(s);
@@ -1409,9 +1457,10 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
     struct ifreq ifr;
     u_int u;
     int i;
+    char *ifnam = osnpf->osnpf_ifnam;
 
     /* No "default interface" concept here */
-    if (!osnpf->osnpf_ifnam || !osnpf->osnpf_ifnam[0])
+    if (!ifnam || !ifnam[0])
 	esfatal(1, "Packetfilter interface must be specified");
 
     /* Open an unused BPF device for R/W */
@@ -1427,6 +1476,13 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 
     /* Set immediate mode so that packets are processed as they arrive,
        rather than waiting until timeout or buffer full.
+
+       WARNING: NetBSD does not implement this correctly!  The code
+       in src/sys/net/bpf.c:bpfread() treats the immediate flag in a way
+       that causes it to return EWOULDBLOCK if no input is available.  But
+       this flag must still be set in order for bpfpoll() to detect input
+       as soon as it arrives!
+       See dpni20 and dpimp read loops for workaround.
      */
     i = 1;
     if (ioctl(fd, BIOCIMMEDIATE, (char *) &i) < 0)
@@ -1474,17 +1530,17 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 
     /* Attach/bind to desired interface device
      */
-    strncpy(ifr.ifr_name, osnpf->osnpf_ifnam, sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
     if (ioctl(fd, BIOCSETIF, (char *) &ifr) < 0)
-	esfatal(1, "BIOCSETIF failed");
+	esfatal(1, "BIOCSETIF failed for interface \"%s\"", ifnam);
 
     /* This code only works with Ethernet, so check for that.
        Note cannot check until after interface is attached.
      */
     if (ioctl(fd, BIOCGDLT, (char *) &u) < 0)
-	esfatal(1, "BIOCGDLT failed");
+	esfatal(1, "BIOCGDLT failed for interface \"%s\"", ifnam);
     if (u != DLT_EN10MB)
-	efatal(1, "%s is not an ethernet", osnpf->osnpf_ifnam);
+	efatal(1, "%s is not an ethernet", ifnam);
 
 
     /* Now get our interface's ethernet address.
@@ -1492,8 +1548,7 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
     **	since until then we don't have a handle on the specific interface
     **	that will be used.
     */
-    (void) osn_pfeaget(fd, osnpf->osnpf_ifnam,
-		       (unsigned char *)&(osnpf->osnpf_ea));
+    (void) osn_pfeaget(fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
 
     /* Ready to roll! */
     return fd;
@@ -2205,12 +2260,15 @@ strgetmsg(struct dlpictx *dc,
 	  int *flagsp)
 {
     int	rc;
+    int flags = 0;
 
     dc->dc_ctl.maxlen = MAXDLBUF;
     dc->dc_ctl.len = 0;
     dc->dc_ctl.buf = (char *)dc->dc_buf;
     if (flagsp)
 	*flagsp = 0;
+    else
+        flagsp = &flags;
 
 #if DL_MAXWAIT
     signal(SIGALRM, sigalrm);
@@ -2267,7 +2325,7 @@ dlokack(struct dlpictx *dc)
 {
     union DL_primitives *dlp;
 
-    if (strgetmsg(dc, "dladdrack", NULL, NULL) < 0)
+    if (strgetmsg(dc, "dlokack", NULL, NULL) < 0)
 	return -1;
 
     dlp = (union DL_primitives *) dc->dc_ctl.buf;

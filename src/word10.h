@@ -1,6 +1,6 @@
 /* WORD10.H - Definitions and minor operations on PDP-10 36-bit words
 */
-/* $Id: word10.h,v 2.4 2001/11/19 10:37:38 klh Exp $
+/* $Id: word10.h,v 2.6 2002/05/21 09:59:55 klh Exp $
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -17,6 +17,14 @@
 */
 /*
  * $Log: word10.h,v $
+ * Revision 2.6  2002/05/21 09:59:55  klh
+ * Allow derivation of WORD10_INT even if model is USEHWD.
+ * Fixed some bugs in 32-bit and 36-bit signed conversions.
+ *
+ * Revision 2.5  2002/03/28 16:55:58  klh
+ * Additional check for existence of 64-bit type
+ * Make USEHWD the default for x86 platforms
+ *
  * Revision 2.4  2001/11/19 10:37:38  klh
  * Fixed USEGCCSPARC to work again for Suns.
  *
@@ -143,7 +151,7 @@ the possibility of multiprocess or even multiprocessor operation.
 #define WORD10_INCLUDED 1
 
 #ifdef RCSID
- RCSID(word10_h,"$Id: word10.h,v 2.4 2001/11/19 10:37:38 klh Exp $")
+ RCSID(word10_h,"$Id: word10.h,v 2.6 2002/05/21 09:59:55 klh Exp $")
 #endif
 
 /* Attempt to see what integer type sizes are available.
@@ -237,10 +245,24 @@ the possibility of multiprocess or even multiprocessor operation.
 
 /* Above 32 life gets more adventurous.
 **	This code must avoid using any values larger than 32 bits, unless
-**	 LLONG_MAX is defined.  In which case we presume that the
-**	"long long" datatype is finally available and has at least
-**	the 64 bits it is required to have.
+**	WORD10_LLONG_MAX is defined (we have to use our own definition
+**	to overcome the idiosyncracies of various platforms, sigh!)
+**	If defined, we presume that the "long long" datatype is finally
+**	available and has at least the 64 bits it is required to have.
+**	
+**	LLONG_MAX and ULLONG_MAX are the "official" definitions of ISO C99.
+**	But also test for __LONG_LONG_MAX__ as that is often defined
+**	by GCC even when the local limits.h is a mess of conflicting
+**	conditionals.
 */
+#ifndef WORD10_LLONG_MAX
+#  if defined(LLONG_MAX)
+#    define WORD10_LLONG_MAX LLONG_MAX
+#  elif defined(__LONG_LONG_MAX__)
+#    define WORD10_LLONG_MAX __LONG_LONG_MAX__
+#  endif
+#endif
+
 #ifndef WORD10_INT36
 #  if ((INT_MAX >> 4) >= MASK31)	/* See if pos int has 36 bits */
 #    define WORD10_INT36 int
@@ -254,7 +276,7 @@ the possibility of multiprocess or even multiprocessor operation.
 #    if ((LONG_MAX >> 4) == MASK31)	/* See if exactly 36 bits */
 #      define WORD10_INT36_EXACT 1
 #    endif
-#  elif defined(LLONG_MAX)		/* Assume long long has >=64 bits */
+#  elif defined(WORD10_LLONG_MAX)	/* Assume long long has >=64 bits */
 #    define WORD10_INT36 long long
 #    define WORD10_ITX36 WORD10_TX_LLONG
 #    define WORD10_INT36_EXACT 0
@@ -271,7 +293,7 @@ the possibility of multiprocess or even multiprocessor operation.
 #  elif ((LONG_MAX >> 5) >= MASK31)	/* See if pos long has 36 bits */
 #    define WORD10_INT37 long
 #    define WORD10_ITX37 WORD10_TX_LONG
-#  elif defined(LLONG_MAX)		/* Assume long long has >=64 bits */
+#  elif defined(WORD10_LLONG_MAX)	/* Assume long long has >=64 bits */
 #    define WORD10_INT37 long long
 #    define WORD10_ITX37 WORD10_TX_LLONG
 #  endif
@@ -289,7 +311,7 @@ the possibility of multiprocess or even multiprocessor operation.
 #  elif ((LONG_MAX >> 31) >= MASK31) && ((LONG_MAX >> 33) >= MASK31)
 #    define WORD10_INT64 long
 #    define WORD10_ITX64 WORD10_TX_LONG
-#  elif defined(LLONG_MAX)		/* Assume long long has 64+ bits */
+#  elif defined(WORD10_LLONG_MAX)	/* Assume long long has 64+ bits */
 #    define WORD10_INT64 long long
 #    define WORD10_ITX64 WORD10_TX_LLONG
 #  endif
@@ -304,8 +326,8 @@ the possibility of multiprocess or even multiprocessor operation.
 #  if ((LONG_MAX >> 31) >= MASK31) && ((LONG_MAX >> 41) >= MASK31)
 #    define WORD10_INT72 long
 #    define WORD10_ITX72 WORD10_TX_LONG
-#  elif defined(LLONG_MAX) && ((LLONG_MAX >> 31) >= MASK31) \
- 			   && ((LLONG_MAX >> 41) >= MASK31)
+#  elif defined(WORD10_LLONG_MAX) && ((WORD10_LLONG_MAX >> 31) >= MASK31) \
+ 			   && ((WORD10_LLONG_MAX >> 41) >= MASK31)
 #    define WORD10_INT72 long long
 #    define WORD10_ITX72 WORD10_TX_LLONG
 #  endif
@@ -339,6 +361,9 @@ the possibility of multiprocess or even multiprocessor operation.
 #  if CENV_CPU_SPARC && defined(__GNUC__)
 #    undef  WORD10_USEGCCSPARC
 #    define WORD10_USEGCCSPARC 1
+#  elif CENV_CPU_I386		/* USEHWD has proven best on x86s so far */
+#    undef  WORD10_USEHWD
+#    define WORD10_USEHWD 1
 #  else
 #    ifndef WORD10_INT37	/* If big integers not supported, */
 #      undef  WORD10_USEHWD	/* only choice is halfword model */
@@ -427,10 +452,15 @@ typedef unsigned WORD10_INT32 uint32;
 
 /* Define word as "w10int_t" integer type, if possible.
 */
-#if WORD10_USEHWD		/* Halfword struct only */
+#if WORD10_USEHWD		/* Halfword struct */
 #  define WORD10_MODEL "USEHWD"
-#  undef  WORD10_INT
 #  define WORD10_STRUCT
+#  if defined(WORD10_INT36)	/* May also have integer */
+#    define WORD10_INT WORD10_INT36
+#    define WORD10_ITX WORD10_ITX36
+#  else
+#    undef  WORD10_INT
+#  endif
 #elif WORD10_USENAT		/* Solid 36-bit integer */
 #  define WORD10_MODEL "USENAT"
 #  define WORD10_INT WORD10_INT36
@@ -566,7 +596,7 @@ typedef struct {dw10_t d[2]; } qw10_t;	/* PDP-10 Quad-Word value */
 #define MASK32 037777777777
 #ifdef WORD10_INT36
 	/* Do mask this way to avoid needing suffix - sigh */
-# define MASK36 ((((w10uint_t)1)<<36)-1)
+# define MASK36 ((((WORD10_INT36)1)<<36)-1)
 #endif
 
 /* Word-format integer masks
@@ -584,10 +614,10 @@ typedef struct {dw10_t d[2]; } qw10_t;	/* PDP-10 Quad-Word value */
 #  define W10SIGN	(((w10uint_t)1)<<(W10HISHFT+H10BITS-1))
 #  define W10MAGS	((((w10uint_t)(H10MASK>>1))<<W10HISHFT)|H10MASK)
 #else /* WORD10_USEHWD */
-#  define W10HISHFT	--error--
-#  define W10MASK	--error--
-#  define W10SIGN	--error--
-#  define W10MAGS	--error--
+#  define W10HISHFT	--error_no_W10HISHFT--
+#  define W10MASK	--error_no_W10MASK--
+#  define W10SIGN	--error_no_W10SIGN--
+#  define W10MAGS	--error_no_W10MAGS--
 #endif
 
 /* Macro facilities for basic manipulation of PDP-10 data types.
@@ -827,8 +857,9 @@ void W10_S36SET(w10_t, w10int_t);
 #  define W10STRU_U32(w) ((uint32)((((uint32)W10_LH(w))<<H10BITS) | W10_RH(w)))
 #  define W10STRU_S32(w) ((int32) W10STRU_U32(w))
 #  define W10STRU_U32SET(w,i) W10_XSET((w), \
-					(((uint32)(i))>>H10BITS),((i)&H10MASK))
-#  define W10STRU_S32SET(w,i) W10STRU_U32SET((w),((int32)(i)))
+			(((uint32)(i))>>H10BITS),((uint32)(i))&H10MASK)
+#  define W10STRU_S32SET(w,i) W10_XSET((w), \
+			(((int32)(i))>>H10BITS)&H10MASK, ((int32)(i))&H10MASK)
 # else
 #  define W10STRU_U32(w) ((uint32)(((((uint32)W10_LH(w))<<H10BITS) \
 				| W10_RH(w)) & MASK32))
@@ -839,10 +870,10 @@ void W10_S36SET(w10_t, w10int_t);
 			((((uint32)(i)) >> H10BITS) & MASK14), \
 			(i) & H10MASK)
 #  define W10STRU_S32SET(w,i) W10_XSET((w), \
-		(  (((int32)(i))>>H10BITS) & H10SIGN32) \
+		(  (((int32)(i)) & W10SIGN32) \
 		? ((((int32)(i))>>H10BITS) & H10MASK)|(H10MASK&~(int32)MASK14)\
 		: ((((int32)(i))>>H10BITS) & H10MASK),\
-			((i) & H10MASK) )
+			(((int32)(i)) & H10MASK) )
 # endif /* !WORD10_INT32_EXACT */
 # ifdef WORD10_INT
 #  define W10STRU_U36(w) ((((w10uint_t)W10_LH(w))<<H10BITS) | W10_RH(w))
@@ -866,7 +897,7 @@ void W10_S36SET(w10_t, w10int_t);
 # define W10_U32SET(w,i) W10STRU_U32SET(w,i)
 # define W10_S32SET(w,i) W10STRU_S32SET(w,i)
 # define W10_U36(w)	 W10STRU_U36(w)
-# define W10_S36(w)	 W10STRU_U36(w)
+# define W10_S36(w)	 W10STRU_S36(w)
 # define W10_U36SET(w,i) W10STRU_U36SET(w,i)
 # define W10_S36SET(w,i) W10STRU_S36SET(w,i)
 

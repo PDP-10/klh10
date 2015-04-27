@@ -44,6 +44,7 @@ static int decosfcclossage;
 #include "kn10dev.h"
 #include "kn10ops.h"
 #include "dvhost.h"
+#include "dvlites.h"
 #include "kn10clk.h"	/* Need access to clock stuff */
 #include "prmstr.h"	/* For parameter parsing */
 
@@ -53,6 +54,10 @@ static int decosfcclossage;
 
 struct host {
     struct device hst_dv;	/* Generic 10 device structure */
+#if !KLH10_CPU_KS
+    unsigned long hst_lhcond;
+    unsigned long hst_cond;
+#endif
 };
 static int nhosts = 0;
 
@@ -70,11 +75,9 @@ static void hst_write(struct device *,	/* Unibus register write */
 		      uint18, dvureg_t);
 #else
 static void  hst_cono(struct device *, h10_t);	/* CONO 18-bit conds out */
-# if 0
-static w10_t hst_coni();	/* CONI 36-bit conds in  */
-static void  hst_datao();	/* DATAO word out */
-static w10_t hst_datai();	/* DATAI word in */
-# endif
+static w10_t hst_coni(struct device *);	/* CONI 36-bit conds in  */
+static void  hst_datao(struct device *, w10_t);	/* DATAO word out */
+static w10_t hst_datai(struct device *);	/* DATAI word in */
 #endif /* !KLH10_CPU_KS */
 
 
@@ -235,7 +238,12 @@ struct device * dvhost_create(FILE *f, char *s)
     hst->hst_dv.dv_write = hst_write;	/* Write unibus register */
 #else
     /* Operate as old-style IO-bus device */
-    hst->hst_dv.dv_cono = hst_cono;	/* Do CONO only */
+    hst->hst_dv.dv_cono = hst_cono;
+    hst->hst_dv.dv_coni = hst_coni;
+    hst->hst_dv.dv_datao = hst_datao;
+    hst->hst_dv.dv_datai = hst_datai;
+    hst->hst_lhcond = 0535450;	/* SIXBIT/KLH/ */
+    hst->hst_cond = DVHOST_CO_STATE | DVHOST_CO_SETAUX | DVHOST_CO_IDLE ;
 #endif
 
     /* Configure from parsed string and remember for init
@@ -261,11 +269,31 @@ static insdef_cono(hst_cono)
     if (DVDEBUG(hst))
 	fprintf(DVDBF(hst), "[hst_cono: %lo]\r\n", (long)erh);
 
-    if (cond == DVHOST_CO_IDLE)
+    if (cond & (DVHOST_CO_CPU | DVHOST_CO_DISK | DVHOST_CO_TAPE |
+		DVHOST_CO_NET | DVHOST_CO_STATE))
+        lights_status ((cond & DVHOST_CO_CPU) ? 1 : 0,
+		       (cond & DVHOST_CO_DISK) ? 1 : 0,
+		       (cond & DVHOST_CO_TAPE) ? 1 : 0,
+		       (cond & DVHOST_CO_NET) ? 1 : 0,
+		       (cond & DVHOST_CO_STATE) ? 1 : 0);
+    if (cond & DVHOST_CO_SETAUX)
+        lights_pgmaux ((cond >> 9) & 07);
+
+    if (cond & DVHOST_CO_IDLE)
 	clk_idle();		/* Invoke CLK_IDLE! */
+
+				/* update host CONI */
+    if (cond & DVHOST_CO_STATE)
+      hst->hst_cond &= ~(DVHOST_CO_CPU | DVHOST_CO_DISK |
+			 DVHOST_CO_TAPE | DVHOST_CO_NET);
+    else hst->hst_cond |= (cond & (DVHOST_CO_CPU | DVHOST_CO_DISK |
+				   DVHOST_CO_TAPE | DVHOST_CO_NET));
+    if (cond & DVHOST_CO_SETAUX) {
+      hst->hst_cond &= ~DVHOST_CO_AUX;
+      hst->hst_cond |= cond & DVHOST_CO_AUX;
+    }
 }
 
-#if 0	/* Nothing else needed for now */
 
 /* CONI 36-bit conds in
 **	Args D
@@ -279,6 +307,8 @@ static insdef_coni(hst_coni)
     if (DVDEBUG(hst))
 	fprintf(DVDBF(hst), "[hst_coni: %lo,,%lo]\r\n",
 		(long)hst->hst_lhcond, (long)hst->hst_cond);
+
+    LRHSET(w, hst->hst_lhcond, hst->hst_cond);
     return w;
 }
 
@@ -290,6 +320,7 @@ static insdef_datao(hst_datao)
 {
     register struct host *hst = (struct host *)d;
 
+    lights_pgmlites(LHGET(w), RHGET(w));
     if (DVDEBUG(hst))
 	fprintf(DVDBF(hst), "[hst_datao: %lo,,%lo]\r\n",
 		(long)LHGET(w), (long)RHGET(w));
@@ -305,14 +336,13 @@ static insdef_datai(hst_datai)
     register struct host *hst = (struct host *)d;
     register w10_t w;
 
-
+    w = cpu.mr_dsw;		/* Read data switches */
     if (DVDEBUG(hst))
 	fprintf(DVDBF(hst), "[hst_datai: %lo,,%lo]\r\n",
 		(long)LHGET(w), (long)RHGET(w));
     return w;
 }
 
-#endif /* 0 */	/* Nothing else needed for now */
 #endif /* !KLH10_CPU_KS */
 
 #if KLH10_CPU_KS
