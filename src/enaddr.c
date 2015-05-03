@@ -90,6 +90,8 @@ int promiscon  = FALSE;	/* Desired mode (True = on) */
 unsigned char pa_cur[6];
 unsigned char pa_def[6];
 
+int swstatus = 1;
+
 static char *sprinteth(char *, unsigned char *);
 static void penetaddr(char *ifc, unsigned char *cur, unsigned char *def);
 static int  pareth(char *, unsigned char *);
