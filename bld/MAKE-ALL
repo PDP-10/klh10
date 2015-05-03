@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# TOP=/some/where/klh10
+# Removed "/bld" from current directory, if it's there
+TOP="${PWD%/bld}"
+BUILD=nbaxp
+
+cd $TOP || exit 1
+
+echo "This script builds all PDP-10 variants."
+
+buildone() {
+(
+    model="$1"
+
+    export KLH10_HOME=$TOP/new/${BUILD}-${model}
+    mkdir -p ${KLH10_HOME}
+    cd bld/$BUILD
+    make clean
+    make base-${model} CONFFLAGS_AUX=-DKLH10_I_CIRC=1
+    make tapedd vdkfmt wxtest enaddr
+    make install
+)
+}
+
+echo "Building KL"
+buildone kl
+
+echo "Building KS"
+buildone ks
+
+echo "Building KS-ITS"
+buildone ks-its
+
