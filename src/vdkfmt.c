@@ -130,7 +130,7 @@ int sw_verbose;
 int sw_maxsec;
 int sw_maxfile;
 char *sw_logpath;
-FILE *logf;
+FILE *logfile;
 
 #define DBGFLG sw_verbose
 
@@ -244,7 +244,7 @@ os_strerror(int err)
 
 void errhan(struct vdk_unit *t, char *s)
 {
-    fprintf(logf, "; %s: %s\n", t->dk_devname, s);
+    fprintf(logfile, "; %s: %s\n", t->dk_devname, s);
 }
 
 
@@ -252,7 +252,7 @@ void efatal(char *errmsg)	/* print error message and exit */
              		/* error message string */
 {
     fflush(stdout);
-    fprintf(logf, "\n?%s\n",errmsg);
+    fprintf(logfile, "\n?%s\n",errmsg);
     exit(1);
 }
 
@@ -262,7 +262,7 @@ main(int argc, char **argv)
 {
     int ret;
 
-    logf = stderr;
+    logfile = stderr;
     signal(SIGINT, exit);	/* Allow int to terminate log files etc */
 
     dvi.d_fmt = dvo.d_fmt = -1;
@@ -272,11 +272,11 @@ main(int argc, char **argv)
 
 
     if (!sw_logpath)
-	logf = stderr;
+	logfile = stderr;
     else {
-	if ((logf = fopen(sw_logpath, "w")) == NULL) {
-	    logf = stderr;
-	    fprintf(logf, "; Cannot open log file \"%s\", using stderr.\n",
+	if ((logfile = fopen(sw_logpath, "w")) == NULL) {
+	    logfile = stderr;
+	    fprintf(logfile, "; Cannot open log file \"%s\", using stderr.\n",
 				sw_logpath);
 	}
     }
@@ -287,23 +287,23 @@ main(int argc, char **argv)
 		dvi.d_dcf.dcf_ntrk *
 		dvi.d_dcf.dcf_ncyl;
     if (sw_verbose) {
-	fprintf(logf, ";  Input disk spec \"%s\" (Type: %s) Format: %s\n",
+	fprintf(logfile, ";  Input disk spec \"%s\" (Type: %s) Format: %s\n",
 				dvi.d_path, mtypstr[dvi.d_isdisk],
 				fmttab[dvi.d_fmt]);
-	fprintf(logf, "; Output disk spec \"%s\" (Type: %s) Format: %s\n",
+	fprintf(logfile, "; Output disk spec \"%s\" (Type: %s) Format: %s\n",
 				dvo.d_path, mtypstr[dvo.d_isdisk],
 				fmttab[dvo.d_fmt]);
 
 	/* Show config info here */
-	fprintf(logf, "; Drive type: %s\n", dvi.d_dcf.dcf_name);
-	fprintf(logf, ";   %ld sectors, %d wds/sec\n", dvi.d_totsec,
+	fprintf(logfile, "; Drive type: %s\n", dvi.d_dcf.dcf_name);
+	fprintf(logfile, ";   %ld sectors, %d wds/sec\n", dvi.d_totsec,
 					dvi.d_dcf.dcf_nwds);
-	fprintf(logf, ";   (%d secs, %d trks, %d cyls\n",
+	fprintf(logfile, ";   (%d secs, %d trks, %d cyls\n",
 		dvi.d_dcf.dcf_nsec,
 		dvi.d_dcf.dcf_ntrk,
 		dvi.d_dcf.dcf_ncyl);
 	if (sw_logpath)
-	    fprintf(logf, "; Using logging path %s\n", sw_logpath);
+	    fprintf(logfile, "; Using logging path %s\n", sw_logpath);
     }
 
     /* Open I/O files as appropriate */
@@ -313,27 +313,27 @@ main(int argc, char **argv)
 	exit(1);
 
     /* Do it! */
-    fprintf(logf, "; Copying from \"%s\" to \"%s\"...\n", dvi.d_path,
+    fprintf(logfile, "; Copying from \"%s\" to \"%s\"...\n", dvi.d_path,
 		dvo.d_path ? dvo.d_path : NULLDEV);
     if (ret = docopy())
 	ret = devclose(&dvo);
     else (void) devclose(&dvo);
 
-    if (!ret) fprintf(logf, "; Stopped unexpectedly.\n");
+    if (!ret) fprintf(logfile, "; Stopped unexpectedly.\n");
 
 #if 0
   {
     register struct devdk *d;
     for (d = &dvi; d; d = (d == &dvi) ? &dvo : NULL) {
 	if (d->d_isdisk)
-	    fprintf(logf, "; %s:  %d+%d errs, %d secs, %ld bytes\n",
+	    fprintf(logfile, "; %s:  %d+%d errs, %d secs, %ld bytes\n",
 			d->d_pname, d->mta_herr, d->mta_serr,
 			d->d_secs, d->d_tloc);
     }
   }
 #endif
 
-    fclose(logf);
+    fclose(logfile);
     exit(ret ? 0 : 1);
 }
 
@@ -347,13 +347,13 @@ int docopy(void)
     int nwrt = 0;
 
     if (DBGFLG)
-	fprintf(logf, "; Pages:\n");
+	fprintf(logfile, "; Pages:\n");
 
     for (; nsect <= dvi.d_totsec;) {
 	
 	err = devread(&dvi, nsect, wbuff);	/* Get a sector  */
 	if (!err) {
-	    fprintf(logf, "; Aborting loop, last err: %s\n", os_strerror(-1));
+	    fprintf(logfile, "; Aborting loop, last err: %s\n", os_strerror(-1));
 	    return 0;
 	}
 
@@ -366,7 +366,7 @@ int docopy(void)
 	    nwrt++;
 	    err = devwrite(&dvo, nsect, wbuff);	/* Write a sector  */
 	    if (!err) {
-		fprintf(logf, "; Aborting loop, last err: %s\n",
+		fprintf(logfile, "; Aborting loop, last err: %s\n",
 					 os_strerror(-1));
 		return 0;
 	    }
@@ -377,14 +377,14 @@ int docopy(void)
 	/* Hack to show nice pattern, one char per 4-sector page */
 	if (DBGFLG) {
 	    if ((nsect & 03) == 0) {
-		putc(pagsym[nwrt&03], logf);
+		putc(pagsym[nwrt&03], logfile);
 		nwrt = 0;
 	    }
 	}
     }
 
     if (DBGFLG)
-	fprintf(logf, "\n");
+	fprintf(logfile, "\n");
     return TRUE;
 }
 
@@ -515,7 +515,7 @@ int devopen(register struct devdk *d, int wrtf)
     char *opath, *path;
 
     if (!(opath = d->d_path) || !*opath) {
-	fprintf(logf, "; Null mount path\n");
+	fprintf(logfile, "; Null mount path\n");
 	return FALSE;
     }
     path = malloc(strlen(opath)+1);
@@ -532,7 +532,7 @@ int devopen(register struct devdk *d, int wrtf)
     d->d_vdk.dk_nwds  = d->d_dcf.dcf_nwds;
 
     if (!vdk_mount(&(d->d_vdk), path, wrtf)) {
-	fprintf(logf, "; Cannot mount device \"%s\": %s\n",
+	fprintf(logfile, "; Cannot mount device \"%s\": %s\n",
 		    path, os_strerror(d->d_vdk.dk_err));
 	free(path);
 	return FALSE;
@@ -547,7 +547,7 @@ int devclose(struct devdk *d)
     int res = TRUE;
 
     if (DBGFLG && d->d_path)
-	fprintf(logf, "; Closing \"%s\"\n", d->d_path);
+	fprintf(logfile, "; Closing \"%s\"\n", d->d_path);
 
     if (d->d_isdisk) {
 	res = vdk_unmount(&(d->d_vdk));		/* Close real disk */
@@ -570,14 +570,14 @@ int devread(struct devdk *d, long int daddr, w10_t *buff)
 
 #if 0
     if (DBGFLG)
-	fprintf(logf, "; read daddr=%ld\n", daddr);
+	fprintf(logfile, "; read daddr=%ld\n", daddr);
 #endif
 
     nsec = vdk_read(&d->d_vdk, buff, (uint32)daddr, 1);
 
     if (d->d_vdk.dk_err
       || (nsec != 1)) {
-	fprintf(logf, "; read error on %s: %s\n",
+	fprintf(logfile, "; read error on %s: %s\n",
 		    d->d_vdk.dk_filename, os_strerror(d->d_vdk.dk_err));
 	return FALSE;
     }
@@ -592,14 +592,14 @@ int devwrite(struct devdk *d, long int daddr, w10_t *buff)
 
 #if 0
     if (DBGFLG)
-	fprintf(logf, "; write daddr=%ld\n", daddr);
+	fprintf(logfile, "; write daddr=%ld\n", daddr);
 #endif
 
     nsec = vdk_write(&d->d_vdk, buff, (uint32)daddr, 1);
 
     if (d->d_vdk.dk_err
       || (nsec != 1)) {
-	fprintf(logf, "; write error on %s: %s\n",
+	fprintf(logfile, "; write error on %s: %s\n",
 		    d->d_vdk.dk_filename, os_strerror(d->d_vdk.dk_err));
 	return FALSE;
     }

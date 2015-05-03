@@ -171,7 +171,7 @@ char *log_strerror(err)
 
 
 
-static void log(char *fmt, ...)
+static void logit(char *fmt, ...)
 {
     fprintf(stderr, "[%s: ", log_progname);
     {
@@ -255,7 +255,7 @@ static void logfatal_ser(int num, char *fmt, ...)
 
 
 #define dp_strerror log_strerror
-#define dbprint   log
+#define dbprint   logit
 #define dbprintln logln
 #define error     logerror
 #define syserr    logerror_ser
