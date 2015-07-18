@@ -1,13 +1,34 @@
 #!/bin/sh
+#
+# Simple build script to build all 3 cpu models in one go.
+#
+# Usage: MAKE-ALL buildtarget
+#
+# where buildtarget is for example nbaxp (NetBSD for Alpha AXP, or
+# any other little-endian 64-bit CPU).
+
+DEFBUILD=nbaxp
 
 # TOP=/some/where/klh10
 # Removed "/bld" from current directory, if it's there
-TOP="${PWD%/bld}"
-BUILD=nbaxp
+case "${PWD}" in
+    */bld)
+	TOP="${PWD%/bld}"
+	;;
+    */bld/*)
+	DEFBUILD="${PWD##*/}"
+	TOP="${PWD%/bld/*}"
+	;;
+    *)
+	TOP="$PWD"
+	;;
+esac
+
+BUILD=${1-$DEFBUILD}
 
 cd $TOP || exit 1
 
-echo "This script builds all PDP-10 variants."
+echo "This script builds all PDP-10 variants for host $BUILD."
 
 buildone() {
 (
