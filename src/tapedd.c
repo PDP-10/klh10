@@ -1546,7 +1546,7 @@ void os_mtstatus(struct dev *dp, FILE *f)
 	return;
     }
     fprintf(f, "; Status for magtape %s:\n", dp->d_path);
-    fprintf(f, ";   Type: %#x (vals in sys/mtio.h)\n", mtstatb.mt_type);
+    fprintf(f, ";   Type: %#x (vals in sys/mtio.h)\n", (int)mtstatb.mt_type);
 # if CENV_SYS_SUN
     fprintf(f, ";   Flags: %#o ->", mtstatb.mt_flags);
     if (mtstatb.mt_flags & MTF_SCSI) fprintf(f, " SCSI");
@@ -1556,8 +1556,8 @@ void os_mtstatus(struct dev *dp, FILE *f)
     fprintf(f, ";   Optim blkfact: %d\n", mtstatb.mt_bf);
 # endif
 
-    fprintf(f, ";   Drive status: %#o (dev dep)\n", mtstatb.mt_dsreg);
-    fprintf(f, ";   Error status: %#o (dev dep)\n", mtstatb.mt_erreg);
+    fprintf(f, ";   Drive status: %#o (dev dep)\n", (int)mtstatb.mt_dsreg);
+    fprintf(f, ";   Error status: %#o (dev dep)\n", (int)mtstatb.mt_erreg);
     fprintf(f, ";   Err - Cnt left: %ld\n", (long)mtstatb.mt_resid);
 # if CENV_SYS_SUN
     fprintf(f, ";   Err - File num: %ld\n", (long)mtstatb.mt_fileno);
