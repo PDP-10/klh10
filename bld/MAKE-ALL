@@ -10,7 +10,13 @@
 DEFBUILD=nbaxp
 
 # TOP=/some/where/klh10
-# Removed "/bld" from current directory, if it's there
+
+# Remove "/bld" or "/bld/nbaxp" from current directory, if it's there.
+# In the latter case, assume that as the build type by default.
+# If none of these current directories apply, this script must be run
+# from the $TOP directory, and the build will be for the host as
+# indicated on the command line, or nbaxp by default.
+
 case "${PWD}" in
     */bld)
 	TOP="${PWD%/bld}"
