@@ -403,13 +403,15 @@ osn_ifctab_show(FILE *f, struct ifconf *ifc)
 
     fprintf(f, "sizeof struct ifreq = %d\r\n", (int) sizeof(struct ifreq));
     fprintf(f, "IFNAMSIZ = %d\r\n", (int) IFNAMSIZ);
+#if CENV_SYS_NETBSD
     fprintf(f, "offset of struct sockaddr_storage = %d\r\n", (int) offsetof(struct ifreq, ifr_space));
+#endif
     fprintf(f, "sizeof struct sockaddr = %d\r\n", (int) sizeof(struct sockaddr));
     fprintf(f, "sizeof struct sockaddr_storage = %d\r\n", (int) sizeof(struct sockaddr_storage));
     fprintf(f, "sizeof union ifr_ifru = %d\r\n", (int) sizeof(ifr->ifr_ifru));
 
     fprintf(f, "Interface table: %ld bytes (%d entries if std addr len %d)\r\n",
-	    (long)ifc->ifc_len, ifc->ifc_len/sizeof(struct ifreq),
+	    (long)ifc->ifc_len, (int)(ifc->ifc_len/sizeof(struct ifreq)),
 	    (int)sizeof(struct sockaddr));
 
     ifr = ifc->ifc_req;
