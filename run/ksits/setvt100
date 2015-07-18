@@ -1,0 +1,12 @@
+#!/bin/sh
+# This is a shell script for running in an XTerm
+# to set the opposite of the settings from the setvt52 script.
+
+# Reverse the settings from setvt52 (SET <-> RESET)
+printf '\e< '		# Exit VT52 mode (Enter VT100 mode).
+
+printf '\e[?67h' 	#  Ps = 6 7  -> Backarrow key sends delete (DECBKM)
+
+printf '\e[?1036h' 	# Ps = 1 0 3 6  -> Send ESC when Meta modifies a key (enables the metaSendsEscape resource).
+
+stty intr ^C
