@@ -1,5 +1,5 @@
-# KLH10 Makefile for Linux on i386
-# $Id: Mk-lnx86.mk,v 2.5 2002/04/24 18:03:04 klh Exp $
+# KLH10 Makefile for Linux on amd64 / x86_64 / Alpha
+# (or any other little-endian 64-bit cpu)
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved

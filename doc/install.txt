@@ -53,8 +53,10 @@ for other ports such as MacOS or Windows have not yet been written.
 
 	$ cd <distrib>/bld/<platform>
 	$ make base-kl		;;; or base-ks or base-ks-its
+    or to make all variants, installing to <distrib>/new/<platform>-<model>:
+	$ ../MAKE-ALL
 
-    Or see the "Building" section farther on.
+    Or see the "BUILDING FROM SOURCES" section farther on.
     Read "doc/dfkfb.txt" if you want to do a quick KL performance test now.
 
 
@@ -232,6 +234,11 @@ BUILDING FROM SOURCES
     to make it easier to generate and maintain multiple flavors of KN10s.
 
 Notes:
+
+The "*axp" directories are not only useful for Alpha AXP hosts, but also
+for any other little-endian 64-bit CPU. That includes amd64 aka x86_64.
+While the x86 configuration may work on amd64, it is likely to be
+a bit less efficient.
 
 Solaris has two possible Makefiles; the default uses GCC, but you
 can change the link to Mk-solsparc-cc.mk which uses Sun's C compiler.

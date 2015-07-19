@@ -1,4 +1,5 @@
-# KLH10 Makefile for OSF/1 (DU, Tru64) on Alpha
+# KLH10 Makefile for OSF/1 (DU, Tru64) on amd64 / x86_64 / Alpha
+# (or any other little-endian 64-bit cpu)
 # $Id: Mk-osfaxp.mk,v 2.3 2001/11/10 21:28:59 klh Exp $
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
