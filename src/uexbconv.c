@@ -97,7 +97,7 @@ main(int argc, char **argv)
 	switch (arg[1]) {
 	case 'v': swverb = 1; break;
 	default:
-	    fprintf(stderr, usage);
+	    fprintf(stderr, usage, argv[0]);
 	    exit(1);
 	}
     }

@@ -1,5 +1,5 @@
-# KLH10 Makefile for NetBSD on Alpha
-# $Id: Mk-nbaxp.mk,v 2.5 2002/04/26 05:59:32 klh Exp $
+# KLH10 Makefile for NetBSD on amd64 / x86_64 / Alpha
+# (or any other little-endian 64-bit cpu)
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved

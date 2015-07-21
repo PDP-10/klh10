@@ -359,6 +359,30 @@ base-kl:
 		-DKLH10_CLIENT=\\\"MyKL\\\" \
 		$(CONFFLAGS_AUX) "
 
+###
+# On Sat, 26 Dec 2009, Jean-Marc Bourguet posted:
+#
+# > [DTE: Bad to-10 BP 442200,,733000][dte_10xfrbeg: 10cnt left: 4086][dte_10xfrbeg: out of data, no I bit]
+#
+# This is a known problem on some Linux systems with high performance
+# hardware.  As far as I know, Ken has not found a fix for it.
+#
+# The workaround is to rebuild klh10 with a special configuration that
+# avoids the esoteric real-time-interrupt mechanisms.
+#
+# In klh20-2.0h/src/Makefile, lines 357 and 358, you will find:
+#                  -DKLH10_ITIME_INTRP=1        \
+#                  -DKLH10_CTYIO_INT=1        \
+#
+# Change both of these lines so they now read:
+#                  -DKLH10_ITIME_SYNC=1        \
+#                  -DKLH10_CTYIO_INT=0        \
+#
+# You should only do this on a system which has this problem.  It will run
+# on other systems, but will eat up CPU unnecessarily.
+#
+# -- Mark --
+
 ####################################################################
 ##	Lintish versions to see how many compiler warnings we can generate
 ##

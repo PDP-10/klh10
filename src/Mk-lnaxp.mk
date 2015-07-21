@@ -1,5 +1,5 @@
-# KLH10 Makefile for Linux on i386
-# $Id: Mk-lnx86.mk,v 2.5 2002/04/24 18:03:04 klh Exp $
+# KLH10 Makefile for Linux on amd64 / x86_64 / Alpha
+# (or any other little-endian 64-bit cpu)
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
 #  All Rights Reserved
@@ -27,7 +27,7 @@ CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wmissing-declarations -Wredundant-decls
 
 # Source definitions
-CENVFLAGS = -DCENV_CPU_I386=1 -DCENV_SYS_LINUX=1 \
+CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_LINUX=1 -DKLH10_DEV_LITES=1 \
 		-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 
 # Any target with no customized rule here is simply passed on to the

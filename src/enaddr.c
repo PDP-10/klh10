@@ -52,6 +52,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 
@@ -89,6 +90,8 @@ int promiscon  = FALSE;	/* Desired mode (True = on) */
 
 unsigned char pa_cur[6];
 unsigned char pa_def[6];
+
+int swstatus = 1;
 
 static char *sprinteth(char *, unsigned char *);
 static void penetaddr(char *ifc, unsigned char *cur, unsigned char *def);
@@ -168,7 +171,7 @@ char *log_strerror(err)
 
 
 
-static void log(char *fmt, ...)
+static void logit(char *fmt, ...)
 {
     fprintf(stderr, "[%s: ", log_progname);
     {
@@ -252,7 +255,7 @@ static void logfatal_ser(int num, char *fmt, ...)
 
 
 #define dp_strerror log_strerror
-#define dbprint   log
+#define dbprint   logit
 #define dbprintln logln
 #define error     logerror
 #define syserr    logerror_ser

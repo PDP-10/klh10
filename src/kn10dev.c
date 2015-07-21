@@ -1348,7 +1348,7 @@ dev_boot(FILE *of,
 	    return FALSE;
 	if (op10m_camn(vm_pget(vp), w6hom)) {
 	    if (of) fprintf(of, "Bad HOM check, val = %lo,,%lo\n",
-			    1, (long)LHGET(w), (long)RHGET(w));
+			    (long)LHGET(w), (long)RHGET(w));
 	    return FALSE;
 	}
 	if (of) fprintf(of, "OK\nReading HOM sector 010 ...");
@@ -1357,7 +1357,7 @@ dev_boot(FILE *of,
 	    return FALSE;
 	if (op10m_camn(vm_pget(vp), w6hom)) {
 	    if (of) fprintf(of, "Bad HOM check, val = %lo,,%lo\n",
-			    010, (long)LHGET(w), (long)RHGET(w));
+			    (long)LHGET(w), (long)RHGET(w));
 	    return FALSE;
 	}
 	w = vm_pget(vm_physmap(FE_BOOTLOC+0103));	/* Get ptrs pag addr */

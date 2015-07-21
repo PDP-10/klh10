@@ -48,6 +48,7 @@ static int decosfcclossage;
 #if KLH10_CPU_KS	/* Moby conditional for entire file */
 
 #include <stdio.h>	/* For stderr if buggy */
+#include <string.h>
 
 #include "kn10def.h"
 #include "kn10ops.h"

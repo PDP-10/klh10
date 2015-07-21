@@ -40,6 +40,7 @@ static int decosfcclossage;
 #if KLH10_DEV_DP		/* Moby conditional for entire file */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>		/* For strerror() if present */
 
 #include "dpsup.h"

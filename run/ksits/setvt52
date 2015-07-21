@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# This is a shell script for running in an XTerm
+# to set it to better modes to run ITS in:
+#
+# - VT52 mode;
+# - the backarrow key sends DEL (not backspace);
+# - the meta key sends ESC before a key instead of setting its 8th bit;
+# - correct terminal size.
+
+printf '\e< '		# Exit VT52 mode (Enter VT100 mode).
+			# CSI ? Pm l DEC Private Mode Reset (DECRST)
+printf '\e[?67l' 	#  Ps = 6 7  -> Backarrow key sends delete (DECBKM)
+
+			# CSI ? Pm h  DEC Private Mode Set (DECSET)
+printf '\e[?1036l' 	# Ps = 1 0 3 6  -> Send ESC when Meta modifies a key
+                        # (enables the metaSendsEscape resource).
+
+			# CSI Ps ; Ps ; Ps t Window manipulation
+			# May be disabled using the allowWindowOps resource.
+printf '\e[8;24;80t'	# Ps = 8  ; height ; width -> Resize the text area to [height;width] in characters.
+printf '\e[?2l' 	#  Ps = 2  -> Designate VT52 mode (DECANM).
+
+# After this, run ITS, then setvt100.

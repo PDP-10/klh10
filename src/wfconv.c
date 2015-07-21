@@ -84,7 +84,7 @@ main(int argc, char **argv)
     w10_t w;
 
     if (argc != 2 || strlen(typestr = argv[1]) != 3) {
-	fprintf(stderr, usage);
+	fprintf(stderr, "%s", usage);
 	exit(1);
     }
     if (typestr[0] != '-'

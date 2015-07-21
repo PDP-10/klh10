@@ -243,7 +243,7 @@ long sw_recskip = 0;
 long sw_fileskip = 0;
 rsiz_t sw_bothsiz = 0;
 char *sw_logpath = NULL;
-FILE *logf = NULL;
+FILE *logfile = NULL;
 
 struct dev {
 	char *d_pname;	/* Print name, "In" or "Out" */
@@ -363,7 +363,7 @@ os_strerror(int err)
 
 void errhan(void *arg, struct vmtape *t, char *s)
 {
-    fprintf(logf, "; %s: %s\n", t->mt_devname, s);
+    fprintf(logfile, "; %s: %s\n", t->mt_devname, s);
 }
 
 
@@ -371,7 +371,7 @@ void efatal(char *errmsg)	/* print error message and exit */
              		/* error message string */
 {
     fflush(stdout);
-    fprintf(logf, "\n?%s\n",errmsg);
+    fprintf(logfile, "\n?%s\n",errmsg);
     exit(1);
 }
 
@@ -384,7 +384,7 @@ main(int argc, char **argv)
     register struct dev *d;
     int ret;
 
-    logf = stderr;
+    logfile = stderr;
     signal(SIGINT, exit);	/* Allow int to terminate log files etc */
 
     vmt_init(&dvi.d_vmt, "TapeIn");
@@ -399,11 +399,11 @@ main(int argc, char **argv)
 
 
     if (!sw_logpath)
-	logf = stderr;
+	logfile = stderr;
     else {
-	if ((logf = fopen(sw_logpath, "w")) == NULL) {
-	    logf = stderr;
-	    fprintf(logf, "; Cannot open log file \"%s\", using stderr.\n",
+	if ((logfile = fopen(sw_logpath, "w")) == NULL) {
+	    logfile = stderr;
+	    fprintf(logfile, "; Cannot open log file \"%s\", using stderr.\n",
 				sw_logpath);
 	}
     }
@@ -420,26 +420,26 @@ main(int argc, char **argv)
     if (!dvo.d_recsiz) dvo.d_recsiz = sw_bothsiz;
     if (sw_verbose) {
 #define LOGTAPE(d,name) \
-	fprintf(logf, "; %s tape spec \"%s\" (Type: %s", \
+	fprintf(logfile, "; %s tape spec \"%s\" (Type: %s", \
 			name, (d).d_path, mtypstr[(d).d_istape]); \
 	if ((d).d_istape == MTYP_VIRT) \
-	    fprintf(logf, " format: %s", vmt_fmtname((d).d_vfmt)); \
-	fprintf(logf, ")\n")
+	    fprintf(logfile, " format: %s", vmt_fmtname((d).d_vfmt)); \
+	fprintf(logfile, ")\n")
 
 	LOGTAPE(dvi, " Input");
 	LOGTAPE(dvo, "Output");
 #undef LOGTAPE
 
 	if (dvi.d_recsiz)
-	    fprintf(logf, ";  Input record size %ld\n", (long)dvi.d_recsiz);
+	    fprintf(logfile, ";  Input record size %ld\n", (long)dvi.d_recsiz);
 	if (dvo.d_recsiz)
-	    fprintf(logf, "; Output record size %ld\n", (long)dvo.d_recsiz);
+	    fprintf(logfile, "; Output record size %ld\n", (long)dvo.d_recsiz);
 	if (sw_maxfile)
-	    fprintf(logf, "; Max tapemarks (files) to process: %ld\n", sw_maxfile);
+	    fprintf(logfile, "; Max tapemarks (files) to process: %ld\n", sw_maxfile);
 	if (sw_maxrec)
-	    fprintf(logf, "; Max records to process: %ld\n", sw_maxrec);
+	    fprintf(logfile, "; Max records to process: %ld\n", sw_maxrec);
 	if (sw_logpath)
-	    fprintf(logf, "; Using logging path %s\n", sw_logpath);
+	    fprintf(logfile, "; Using logging path %s\n", sw_logpath);
     }
 
     /* Open I/O files as appropriate */
@@ -472,25 +472,25 @@ main(int argc, char **argv)
 
 
     /* Do it! */
-    fprintf(logf, "; Copying from \"%s\" to \"%s\"...\n", dvi.d_path,
+    fprintf(logfile, "; Copying from \"%s\" to \"%s\"...\n", dvi.d_path,
 		dvo.d_path ? dvo.d_path : NULLDEV);
     if (!docopy()) {
-	fprintf(logf, "; Stopped unexpectedly.\n");
+	fprintf(logfile, "; Stopped unexpectedly.\n");
 	ret = FALSE;
     }
     if (!devclose(&dvo)) {
-	fprintf(logf, "; Error closing output.\n");
+	fprintf(logfile, "; Error closing output.\n");
 	ret = FALSE;
     }
     for (d = &dvi; d; d = (d == &dvi) ? &dvo : NULL) {
 	if (d->d_istape)
-	    fprintf(logf, "; %3s: %ld+%ld errs, %ld files, %ld recs, %"
+	    fprintf(logfile, "; %3s: %ld+%ld errs, %ld files, %ld recs, %"
 		    VMTAPE_POS_FMT "d bytes\n",
 			d->d_pname, d->mta_herr, d->mta_serr,
 			d->d_files, d->d_recs, d->d_tloc);
     }
 
-    fclose(logf);
+    fclose(logfile);
     exit(ret ? 0 : 1);
 }
 
@@ -537,7 +537,7 @@ int docopy(void)
 	if (vmt_framecnt(&dvi.d_vmt)) {
 	    if (!devwrite(&dvo, dvi.d_buff,
 			  (rsiz_t)vmt_framecnt(&dvi.d_vmt))) {
-		fprintf(logf, "; Stopped due to output write error: %s\n",
+		fprintf(logfile, "; Stopped due to output write error: %s\n",
 			os_strerror(-1));
 		ret = FALSE;
 		break;
@@ -576,7 +576,7 @@ int docopy(void)
     }
 
     if (err < 0) {
-	fprintf(logf, "; Stopped due to input read error: %s\n",
+	fprintf(logfile, "; Stopped due to input read error: %s\n",
 		os_strerror(-1));
 	ret = FALSE;
     }
@@ -603,11 +603,11 @@ do_tdtest(void)
     char *errstr = NULL;
 
     if (!dvi.d_cpath) {
-	fprintf(logf, "; No input tape directory specified\n");
+	fprintf(logfile, "; No input tape directory specified\n");
 	return 1;
     }
     if (!dvo.d_cpath) {
-	fprintf(logf, "; No output tape directory specified\n");
+	fprintf(logfile, "; No output tape directory specified\n");
 	return 1;
     }
 
@@ -629,7 +629,7 @@ do_tdtest(void)
     }
 
     if (errstr) {
-	fprintf(logf,"; Problem with tape desc file \"%s\": %s\n",
+	fprintf(logfile,"; Problem with tape desc file \"%s\": %s\n",
 					dvi.d_cpath, errstr);
 	return 1;
     }
@@ -638,7 +638,7 @@ do_tdtest(void)
     if (strcmp(dvo.d_cpath, "") == 0) {
 	tdof = stdout;
     } else if ((tdof = fopen(dvo.d_cpath, "w")) == NULL) {
-	fprintf(logf,"Cannot open tape desc file \"%s\": %s\n",
+	fprintf(logfile,"Cannot open tape desc file \"%s\": %s\n",
 					dvo.d_cpath, os_strerror(-1));
 	return FALSE;
     }
@@ -880,7 +880,7 @@ int devopen(register struct dev *d, int wrtf)
 	    strncpy(v.vmta_datpath, d->d_rpath, sizeof(v.vmta_datpath));
 	}
 	if (!vmt_attrmount(&d->d_vmt, &v)) {	/* Try mounting it */
-	    fprintf(logf, "; Couldn't mount %sput virtual tape: %s\n",
+	    fprintf(logfile, "; Couldn't mount %sput virtual tape: %s\n",
 				d->d_pname, d->d_path);
 	    return FALSE;
 	}
@@ -898,7 +898,7 @@ int devopen(register struct dev *d, int wrtf)
 	    char *s;
 	    rpath = malloc(strlen(d->d_path)+4+1);
 	    if (!rpath) {
-		fprintf(logf, "; Cannot malloc data filename\n");
+		fprintf(logfile, "; Cannot malloc data filename\n");
 		return FALSE;
 	    }
 	    strcpy(rpath, d->d_path);
@@ -915,7 +915,7 @@ int devopen(register struct dev *d, int wrtf)
 	** the tapedesc or rawdata path was explicitly given.
 	*/
 	if (!vmt_xmount(&(d->d_vmt), d->d_cpath, d->d_rpath, wrtf)) {
-	    fprintf(logf, "; Couldn't mount %sput virtual tape: %s\n",
+	    fprintf(logfile, "; Couldn't mount %sput virtual tape: %s\n",
 				d->d_pname, d->d_path);
 	    return FALSE;
 	}
@@ -937,7 +937,7 @@ int devopen(register struct dev *d, int wrtf)
 	    if (strcmp(d->d_rpath, "") == 0) {
 		d->d_fd = wrtf ? FD_STDOUT : FD_STDIN;
 	    } else if (!os_mtopen(d, wrtf)) {
-		fprintf(logf, "; Cannot open %sput: %s\n",
+		fprintf(logfile, "; Cannot open %sput: %s\n",
 				    d->d_pname, os_strerror(-1));
 		return FALSE;
 	    }
@@ -962,27 +962,27 @@ int devopen(register struct dev *d, int wrtf)
 	if (d->d_cpath) {
 
 	    if (!(d->d_vmt.mt_filename = dupcstr(d->d_cpath))) {
-		fprintf(logf, "; malloc failed for cpath dupcstr\n");
+		fprintf(logfile, "; malloc failed for cpath dupcstr\n");
 		return FALSE;
 	    }
 	    if (strcmp(d->d_cpath, "") == 0) {
 		d->d_vmt.mt_ctlf = (wrtf ? stdout : stdin);
 	    } else if ((d->d_vmt.mt_ctlf =
 		    fopen(d->d_cpath, (wrtf ? "w" : "r"))) == NULL) {
-		fprintf(logf,"Cannot open tape desc file \"%s\": %s\n",
+		fprintf(logfile,"Cannot open tape desc file \"%s\": %s\n",
 					    d->d_cpath, os_strerror(-1));
 		return FALSE;
 	    }
 
 	    /* Tape-desc file open, now parse it if reading */
 	    if (!wrtf && !tdr_scan(&(d->d_vmt), d->d_vmt.mt_ctlf, d->d_cpath)) {
-		fprintf(logf, "; Cannot parse tape desc\n");
+		fprintf(logfile, "; Cannot parse tape desc\n");
 		return FALSE;
 	    }
 	    /* Do final setup if writing */
 	    if (wrtf && d->d_rpath) {
 		if (!(d->d_vmt.mt_datpath = dupcstr(d->d_rpath))) {
-		    fprintf(logf, "; malloc failed for rpath dupcstr\n");
+		    fprintf(logfile, "; malloc failed for rpath dupcstr\n");
 		    return FALSE;
 		}
 	    }
@@ -997,7 +997,7 @@ int devopen(register struct dev *d, int wrtf)
 	    if (d->d_blen <= d->d_recsiz)	/* If it's bigger, */
 		d->d_blen = d->d_recsiz;	/* adjust quietly */
 	    else				/* else warn user */
-		fprintf(logf, "; Tapedir forcing larger %sput record size (%ld instead of %ld)\n",
+		fprintf(logfile, "; Tapedir forcing larger %sput record size (%ld instead of %ld)\n",
 			d->d_pname, (long)d->d_blen, (long)d->d_recsiz);
 
 	}
@@ -1029,7 +1029,7 @@ int devbuffer(struct dev *d, char *buffp, rsiz_t blen)
 	*/
 	blen = (blen + 511) & ~511;	/* Relies on fact 512 is power of 2 */
 	if ((buffp = malloc(blen)) == NULL) {
-	    fprintf(logf, "; Cannot malloc %sput buffer (size %ld)\n",
+	    fprintf(logfile, "; Cannot malloc %sput buffer (size %ld)\n",
 			d->d_pname, blen);
 	    return FALSE;
 	}
@@ -1091,7 +1091,7 @@ int devread(struct dev *d)
 	/* Still to do?  Handle dir-only case, plus dir+dev case? */
 	ret = os_mtread(d);		/* Attempt read from device */
 	if (ret < 0) {
-	    fprintf(logf, "; %sput device read error: %s\n",
+	    fprintf(logfile, "; %sput device read error: %s\n",
 		d->d_pname, os_strerror(-1));
 	    return ret;
 	}
@@ -1161,7 +1161,7 @@ int devwerr(struct dev *d, int err)
 
     if (d->d_cpath) {		/* Have tapedir? */
 	if (!td_recapp(&d->d_vmt.mt_tdr, (long)0, 0, err)) {
-	    fprintf(logf, "devwerr: td_recapp malloc failed");
+	    fprintf(logfile, "devwerr: td_recapp malloc failed");
 	    return FALSE;
 	}
 
@@ -1178,7 +1178,7 @@ int devweof(struct dev *d)
     else {
 	if (d->d_cpath) {		/* Have tapedir? */
 	    if (!td_recapp(&d->d_vmt.mt_tdr, (long)0, 1, 0)) {
-		fprintf(logf, "devweof: td_recapp malloc failed");
+		fprintf(logfile, "devweof: td_recapp malloc failed");
 		ret = FALSE;
 	    }
 	}
@@ -1276,7 +1276,7 @@ int os_mtread(struct dev *dp)
 	acs[1] = dp->d_fd;
 	acs[2] = (int)&iov;
 	if (jsys(DUMPI, acs) > 0) {
-	    fprintf(logf, "; Warning: DUMPI won for max rec size %ld!\n",
+	    fprintf(logfile, "; Warning: DUMPI won for max rec size %ld!\n",
 				(long)dp->d_blen);
 	    dp->mta_frms = dp->d_blen;
 	    return 1;
@@ -1287,14 +1287,14 @@ int os_mtread(struct dev *dp)
 	case monsym("IOX5"):	/* Device or data error (rec length) */
 	    acs[1] = dp->d_fd;
 	    if (jsys(GDSTS, acs) <= 0) {
-		fprintf(logf, "; Tape GDSTS%% error: %s\n", os_strerror(-1));
+		fprintf(logfile, "; Tape GDSTS%% error: %s\n", os_strerror(-1));
 		os_mtclrerr(dp->d_fd);
 		dp->mta_herr++;
 		return 0;
 	    }
 	    break;
 	default:
-	    fprintf(logf, "; Tape DUMPI%% error: %s\n", os_strerror(-1));
+	    fprintf(logfile, "; Tape DUMPI%% error: %s\n", os_strerror(-1));
 	    os_mtclrerr(dp->d_fd);
 	    dp->mta_herr++;
 	    return 0;
@@ -1302,7 +1302,7 @@ int os_mtread(struct dev *dp)
 
 	/* Analyze "error".  acs[2] has flags, [3] has count in LH */
 	flgs = acs[2];
-	t20status(dp, logf, flgs, acs[3]);
+	t20status(dp, logfile, flgs, acs[3]);
 	dp->mta_frms = ((unsigned)acs[3]) >> 18;	/* Find cnt of data */
 
 /* Opening in industry-compatible mode apparently works to force use of
@@ -1310,7 +1310,7 @@ int os_mtread(struct dev *dp)
 /*	dp->mta_frms *= sizeof(int); */
 	os_mtclrerr(dp->d_fd);
 	if (flgs & (MT_DVE|MT_DAE)) {
-	    fprintf(logf, "; Tape error: %s\n",
+	    fprintf(logfile, "; Tape error: %s\n",
 			(flgs & MT_DVE) ? "Device" : "Data");
 	    dp->mta_serr++;
 	    continue;				/* Try again */
@@ -1339,14 +1339,14 @@ int os_mtread(struct dev *dp)
 	    if (dp->mta_frms <= 0) {
 	case -1:	/* Error */
 		dp->mta_serr++;
-		fprintf(logf, "; Tape read error: %s\n", os_strerror(-1));
-		os_mtstatus(dp, logf);		/* Show full status */
+		fprintf(logfile, "; Tape read error: %s\n", os_strerror(-1));
+		os_mtstatus(dp, logfile);		/* Show full status */
 		if (retry <= 0) {
 		    if (os_mtfsr(dp)) {		/* Try spacing over 1 rec */
 			retry = dp->mta_retry;
 			dp->mta_herr++;
 		    } else {
-			fprintf(logf, "; Cannot proceed past read error, aborting...\n");
+			fprintf(logfile, "; Cannot proceed past read error, aborting...\n");
 			return -1;
 		    }
 		}
@@ -1365,7 +1365,7 @@ int os_mtread(struct dev *dp)
 		}
 	    } else
 		if (dp->mta_frms >= dp->d_blen)
-		    fprintf(logf, "; Warning: read max rec size %ld!\n",
+		    fprintf(logfile, "; Warning: read max rec size %ld!\n",
 					dp->mta_frms);
 
 
@@ -1397,7 +1397,7 @@ int os_mtwrite(struct dev *dp)
 	}
 	/* Error return */
 	dp->mta_serr++;
-	fprintf(logf, "; Tape DUMPO%% error: %s\n", os_strerror(-1));
+	fprintf(logfile, "; Tape DUMPO%% error: %s\n", os_strerror(-1));
 	os_mtclrerr(dp->d_fd);
 	dp->mta_herr++;
 	return 0;
@@ -1415,10 +1415,10 @@ int os_mtwrite(struct dev *dp)
     if (dp->d_istape == MTYP_QIC) {
 	full = (used + 0777) & ~0777;	/* Round up to 512-byte boundary */
 	if (used < dp->d_recsiz)
-	    fprintf(logf, "; Warning: partial record padded out (%ld => %ld)\n",
+	    fprintf(logfile, "; Warning: partial record padded out (%ld => %ld)\n",
 			(long)used, (long)full);
 	if (full > dp->d_blen) {
-	    fprintf(logf, "; Internal bug: padout exceeds buffer (%ld > %ld)\n",
+	    fprintf(logfile, "; Internal bug: padout exceeds buffer (%ld > %ld)\n",
 			(long)full, (long)dp->d_blen);
 	    full = dp->d_blen;
 	}
@@ -1437,12 +1437,12 @@ int os_mtwrite(struct dev *dp)
 	}
 	/* Error of some kind */
 	dp->mta_serr++;
-	fprintf(logf, "; (Rec %ld, try %d) ",
+	fprintf(logfile, "; (Rec %ld, try %d) ",
 			dp->d_recs, dp->mta_retry - retry);
 	if (ret < 0) {
-	    fprintf(logf, "Tape write error: %s\n", os_strerror(-1));
+	    fprintf(logfile, "Tape write error: %s\n", os_strerror(-1));
 	} else {
-	    fprintf(logf, "Tape write truncated: %d, shd be %ld\n",
+	    fprintf(logfile, "Tape write truncated: %d, shd be %ld\n",
 		    ret, (long)used);
 	    if (ret > 0) {
 		used -= ret;		/* Update to write out rest */
@@ -1452,7 +1452,7 @@ int os_mtwrite(struct dev *dp)
 		dp->mta_frms += ret;
 	    }
 	}
-	os_mtstatus(dp, logf);		/* Show full status */
+	os_mtstatus(dp, logfile);		/* Show full status */
     } while (--retry > 0);		/* Continue N times */
     dp->mta_herr++;
 #endif
@@ -1471,7 +1471,7 @@ int os_mtweof(struct dev *dp)		/* Write a tapemark */
     mtcmd.mt_op = MTWEOF;
     mtcmd.mt_count = 1;
     if (ioctl(dp->d_fd, MTIOCTOP, &mtcmd) < 0) {
-	fprintf(logf, "; MTWEOF ioctl failed: %s\n", os_strerror(-1));
+	fprintf(logfile, "; MTWEOF ioctl failed: %s\n", os_strerror(-1));
 	dp->mta_herr++;
 	return FALSE;
     }
@@ -1491,7 +1491,7 @@ int os_mtfsr(struct dev *dp)	/* Forward Space Record (to inter-record gap)*/
     mtcmd.mt_op = MTFSR;
     mtcmd.mt_count = 1;
     if (ioctl(dp->d_fd, MTIOCTOP, &mtcmd) < 0) {
-	fprintf(logf, "; MTFSR ioctl failed: %s\n", os_strerror(-1));
+	fprintf(logfile, "; MTFSR ioctl failed: %s\n", os_strerror(-1));
 	dp->mta_herr++;
 	return FALSE;
     }
@@ -1546,7 +1546,7 @@ void os_mtstatus(struct dev *dp, FILE *f)
 	return;
     }
     fprintf(f, "; Status for magtape %s:\n", dp->d_path);
-    fprintf(f, ";   Type: %#x (vals in sys/mtio.h)\n", mtstatb.mt_type);
+    fprintf(f, ";   Type: %#x (vals in sys/mtio.h)\n", (int)mtstatb.mt_type);
 # if CENV_SYS_SUN
     fprintf(f, ";   Flags: %#o ->", mtstatb.mt_flags);
     if (mtstatb.mt_flags & MTF_SCSI) fprintf(f, " SCSI");
@@ -1556,8 +1556,8 @@ void os_mtstatus(struct dev *dp, FILE *f)
     fprintf(f, ";   Optim blkfact: %d\n", mtstatb.mt_bf);
 # endif
 
-    fprintf(f, ";   Drive status: %#o (dev dep)\n", mtstatb.mt_dsreg);
-    fprintf(f, ";   Error status: %#o (dev dep)\n", mtstatb.mt_erreg);
+    fprintf(f, ";   Drive status: %#o (dev dep)\n", (int)mtstatb.mt_dsreg);
+    fprintf(f, ";   Error status: %#o (dev dep)\n", (int)mtstatb.mt_erreg);
     fprintf(f, ";   Err - Cnt left: %ld\n", (long)mtstatb.mt_resid);
 # if CENV_SYS_SUN
     fprintf(f, ";   Err - File num: %ld\n", (long)mtstatb.mt_fileno);

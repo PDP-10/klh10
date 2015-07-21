@@ -759,7 +759,7 @@ dw10_t op10ashc(register dw10_t d,
 **	must be done to the argument prior to the call!
 */
 static dw10_t
-x_ashc(register dw10_t d,
+x_ashc(/*register*/ dw10_t d,
        register int i)
 {
 #endif /* IFFLAGS */
@@ -3238,7 +3238,7 @@ static int qdivstep(qw10_t *aq,
 		    register dw10_t d,
 		    register int nmagbits)
 {
-    register qw10_t qw;
+    /*register*/ qw10_t qw;
     dw10_t quot;
     register int qbit;
 

@@ -169,6 +169,7 @@ The following general situations are possible:
  RCSID(dpni20_c,"$Id: dpni20.c,v 2.7 2003/02/23 18:07:50 klh Exp $")
 #endif
 
+
 /* Globals */
 
 int chpid;		/* PID of child, handles input (net-to-10). */
@@ -443,6 +444,8 @@ main(int argc, char **argv)
     progname = progname_w;	/* Reset progname to indicate identity */
     tentoeth(dpni);		/* Parent process handles output to net */
 
+    osn_pfdeinit();
+
     return 1;			/* Never returns, but placate compiler */
 }
 
@@ -519,6 +522,7 @@ void net_init(register struct dpni20_s *dpni)
     tun_ip = npf.osnpf_tun.ia_addr;		/* Get actual tunnel addr */
 #endif
   }
+
 
     /* Now set any return info values in shared struct.
     */
@@ -1018,7 +1022,7 @@ pfshow(struct OSN_PFSTRUCT *pf)
 
 /* LNX packetfilter initialization */
 
-#if KLH10_NET_LNX
+#if KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE
 
 /*
   The Linux PF_PACKET interface is described to some extent
@@ -1114,6 +1118,10 @@ int lnx_filter(register struct dpni20_s *dpni,
 */
 void eth_adrset(register struct dpni20_s *dpni)
 {
+#if OSN_USE_IPONLY
+    dbprintln("\"%s\" multicast table ignored - IP-only interface",
+		  dpni->dpni_ifnam);
+#else
     unsigned char rdea[ETHER_ADRSIZ];
     char old[OSN_EASTRSIZ];
     char new[OSN_EASTRSIZ];
@@ -1179,6 +1187,7 @@ void eth_adrset(register struct dpni20_s *dpni)
 	}
     }
 
+#endif
     /* Assume succeeded since call succeeded, and clobber our address! */
     memcpy(dpni->dpni_eth, dpni->dpni_rqeth, ETHER_ADRSIZ);
 }
@@ -1197,6 +1206,10 @@ void eth_adrset(register struct dpni20_s *dpni)
 
 void eth_mcatset(register struct dpni20_s *dpni)
 {
+#if OSN_USE_IPONLY
+    dbprintln("\"%s\" multicast table ignored - IP-only interface",
+		  dpni->dpni_ifnam);
+#else
     ossock_t s;
     int i, n, j;
     char ethstr[OSN_EASTRSIZ];
@@ -1271,6 +1284,7 @@ void eth_mcatset(register struct dpni20_s *dpni)
 
     nmcats = n;
     memcpy(ethmcat[0], dpni->dpni_mcat[0], (n * 6));
+#endif
 }
 
 /* ARP Hackery */
@@ -1383,7 +1397,9 @@ int arp_myreply(register unsigned char *buf, register int cnt)
     /* Now send it!  Ignore any errors. */
     if (swstatus) {
 	char ipstr[OSN_IPSTRSIZ];
-	dbprintln("ARP MyReply %s", ip_adrsprint(ipstr, ife->ife_ipchr));
+	char ethstr[OSN_EASTRSIZ];
+	dbprintln("ARP MyReply %s %s", ip_adrsprint(ipstr, ife->ife_ipchr),
+			eth_adrsprint(ethstr, ife->ife_ea));
     }
 
 #if KLH10_NET_DLPI
@@ -1394,6 +1410,9 @@ int arp_myreply(register unsigned char *buf, register int cnt)
 	(void) putmsg(pffd, NULL, &data, 0);
     }
 #else
+    /* XXX
+     * Why is this sent to the packet filter (= host) and not to the -10?????
+     */
     (void)write(pffd, pktbuf, sizeof(pktbuf));
 #endif
     return TRUE;
@@ -1521,14 +1540,17 @@ void ethtoten(register struct dpni20_s *dpni)
 	    else
 		dbprint("Read=%d", cnt);
 	}
-#if KLH10_NET_LNX
+#if KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE
 	/* Linux has no packet filtering, thus must apply manual check to
 	   each and every packet read, unless dedicated.  Ugh!
 	*/
-	if (!dpni->dpni_dedic) {
+	if (KLH10_NET_TAP_BRIDGE || !dpni->dpni_dedic) {
 	    /* Sharing interface.  Check for IP, DECNET, 802.3 */
-	    if (!lnx_filter(dpni, buff, cnt))
+	    if (!lnx_filter(dpni, buff, cnt)) {
+		if (DBGFLG)
+		    dbprint("Dropped");
 		continue;		/* Drop packet, continue reading */
+	    }
 	}
 #endif /* KLH10_NET_LNX */
 #if !KLH10_NET_BPF
@@ -1615,7 +1637,11 @@ void tentoeth(register struct dpni20_s *dpni)
     /* Must check for outbound ARP requests if asked to and have
     ** at least one entry in our table of host's IP interfaces.
     */
+#if KLH10_NET_TAP_BRIDGE
+    doarpchk = 0;
+#else
     doarpchk = (dpni->dpni_doarp & DPNI_ARPF_OCHK) && (osn_nifents() > 0);
+#endif
 
     dpx = dp_dpxto(&dp);		/* Get ptr to "To-DP" xfer stuff */
     buff = dp_xrbuff(dpx, &max);
@@ -1661,7 +1687,7 @@ void tentoeth(register struct dpni20_s *dpni)
 	    }
 #else
 	    cnt = write(pffd, buff, rcnt);
-#endif
+#endif	/* else KLH10_NET_DLPI */
 	    if (cnt != rcnt) {
 		if ((cnt < 0) && (errno == EINTR)) {
 		    continue;		/* Start over, may have new cmd */
@@ -1722,6 +1748,9 @@ void dumppkt(unsigned char *ucp, int cnt)
 	fprintf(stderr, "\r\n");
     }
 }
+
+
+
 
 /* Add OSDNET shared code here */
 

@@ -31,7 +31,7 @@ static int decosfcclossage;
 
 #if KLH10_DEV_LITES		/* Moby conditional for entire file */
 
-#include <asm/io.h>
+#include <sys/io.h>
 #include "dvlites.h"
 
 
