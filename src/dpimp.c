@@ -279,7 +279,11 @@ struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
 struct in_addr ihost_ip;	/* IMP/Native host IP addr, net order */
 struct in_addr ihost_nm;	/* IMP/Native host subnet netmask, net order */
 struct in_addr ihost_net;	/* IMP/Native host net #, net order */
+#if KLH10_NET_TUN
+struct in_addr tun_ip;		/* IP addr of tunnel */
+#else
 struct in_addr gwdef_ip;	/* IP addr of default prime gateway */
+#endif
 
 struct ether_addr ehost_ea;	/* Emulated host ethernet addr */
 struct ether_addr ihost_ea;	/* IMP/Native host ethernet addr */
@@ -497,7 +501,11 @@ main(int argc, char **argv)
        shared DP area.
     */
     memcpy((void *)&ehost_ip, dpimp->dpimp_ip, 4);	/* Host IP addr */
+#if KLH10_NET_TUN
+    memcpy((void *)&tun_ip, dpimp->dpimp_tun, 4);	/* Tunnel addr */
+#else
     memcpy((void *)&gwdef_ip, dpimp->dpimp_gw, 4);	/* Default GW addr */
+#endif
     memcpy((void *)&ehost_ea, dpimp->dpimp_eth, 6);	/* Host Ether addr */
 
     /* IMP must always have IP address specified! */
@@ -555,6 +563,7 @@ main(int argc, char **argv)
 	char ipbuf[OSN_IPSTRSIZ];
 	char eabuf[OSN_EASTRSIZ];
 
+#if !KLH10_NET_TUN
 	dbprintln("ifc \"%s\" => ether %s",
 		  dpimp->dpimp_ifnam,
 		  eth_adrsprint(eabuf, (unsigned char *)&ihost_ea));
@@ -564,10 +573,16 @@ main(int argc, char **argv)
 		  ip_adrsprint(ipbuf, (unsigned char *)&ihost_nm));
 	dbprintln("  net %s",
 		  ip_adrsprint(ipbuf, (unsigned char *)&ihost_net));
-	dbprintln("  HOST: %s",
-		  ip_adrsprint(ipbuf, (unsigned char *)&ehost_ip));
 	dbprintln("  gwdef %s",
 		  ip_adrsprint(ipbuf, (unsigned char *)&gwdef_ip));
+#else
+	dbprintln("ifc \"%s\"",
+		  dpimp->dpimp_ifnam);
+	dbprintln("  tun %s",
+		  ip_adrsprint(ipbuf, (unsigned char *)&tun_ip));
+#endif
+	dbprintln("  HOST %s",
+		  ip_adrsprint(ipbuf, (unsigned char *)&ehost_ip));
     }
 
     /* Init ARP stuff - ensure can talk to native host.
@@ -621,6 +636,8 @@ void
 net_init(register struct dpimp_s *dpimp)
 {
     struct ifreq ifr;
+
+#if !KLH10_NET_TUN
 
 #if 1 /* This code is identical to dpni20 - merge in osdnet? */
 
@@ -678,6 +695,8 @@ net_init(register struct dpimp_s *dpimp)
     if (gwdef_ip.s_addr == -1 || gwdef_ip.s_addr == 0)
 	efatal(1, "No default prime gateway specified");
 
+#endif
+
     /* Set up appropriate net fd and packet filter.
     ** Should also determine interface's ethernet addr, if possible,
     ** and set ihost_ea.
@@ -690,12 +709,18 @@ net_init(register struct dpimp_s *dpimp)
     npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
     npf.osnpf_backlog = dpimp->dpimp_backlog;
     npf.osnpf_ip.ia_addr = ehost_ip;
+#if KLH10_NET_TUN
+    npf.osnpf_tun.ia_addr = tun_ip;
+#endif
     /* Ether addr is both a potential arg and a returned value;
        the packetfilter open may use and/or change it.
     */
     ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);	/* Set requested ea if any */
     pffd = osn_pfinit(&npf, (void *)dpimp);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea if one */
+#if KLH10_NET_TUN
+    tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
+#endif
   }
 }
 
@@ -1730,7 +1755,11 @@ ihl_hhsend(register struct dpimp_s *dpimp,
     /* Hack to set host/imp value as properly as possible. */
     memcpy((char *)&haddr.ia_octet[0], pp + IPBOFF_SRC, 4);
     if ((haddr.ia_addr.s_addr & ihost_nm.s_addr) != ihost_net.s_addr) {
+#if !KLH10_NET_TUN
 	haddr.ia_addr = gwdef_ip;	/* Not local, use default GW */
+#else
+	haddr.ia_addr = tun_ip;		/* Not local, use tunnel end */
+#endif
     }
 
     ihobuf[SIH_HSIZ+SIL_HST]  = haddr.ia_octet[1];

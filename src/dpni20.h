@@ -52,6 +52,7 @@ struct dpni20_s {
     char dpni_ifnam[16];	/* CD Interface name if any */
     unsigned char dpni_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpni_ip[4];	/* C 10's IP address to filter on, if shared */
+    unsigned char dpni_tun[4];	/* CD host's IP address on tunnel */
     int dpni_backlog;		/* C Max sys backlog of rcvd packets */
     int dpni_dedic;		/* C TRUE if dedicated ifc, else shared */
     int dpni_decnet;		/* C TRUE to seize DECNET packets, if shared */

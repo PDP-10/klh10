@@ -177,7 +177,12 @@ int pffd;			/* Packet-Filter FD (bidirectional) */
 struct dp_s dp;			/* Device-Process struct for DP ops */
 
 struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
+#if 0
 struct in_addr ihost_ip;	/* Native host's IP addr, net order */
+#endif
+#if KLH10_NET_TUN
+struct in_addr tun_ip;		/* Tunnel IP addr, net order */
+#endif
 struct ether_addr ihost_ea;	/* Native host ether addr for selected ifc */
 
 /* Debug flag reference.  Use DBGFLG within functions that have "dpni";
@@ -383,14 +388,20 @@ main(int argc, char **argv)
     net_init(dpni);
 
     /* Make this a status (rather than debug) printout? */
-    if (DBGFLG) {
+    if (swstatus) {
 	char sbuf[OSN_IPSTRSIZ+OSN_EASTRSIZ];	/* Lazily ensure big enough */
 
 	dbprintln("ifc \"%s\" => ether %s",
 		  dpni->dpni_ifnam,
 		  eth_adrsprint(sbuf, (unsigned char *)&ihost_ea));
+#if 0
 	dbprintln("  addr  %s",
 		  ip_adrsprint(sbuf, (unsigned char *)&ihost_ip));
+#endif
+#if KLH10_NET_TUN
+	dbprintln("  tun  %s",
+		  ip_adrsprint(sbuf, (unsigned char *)&tun_ip));
+#endif
 	dbprintln("  VHOST %s",
 		  ip_adrsprint(sbuf, (unsigned char *)&ehost_ip));
     }
@@ -445,6 +456,10 @@ void net_init(register struct dpni20_s *dpni)
     /* Get the IP address we need to filter on, if shared */
     memcpy((char *)&ehost_ip, (char *)&dpni->dpni_ip, 4);
 
+#if KLH10_NET_TUN
+    /* Get the IP address for the tunnel, if specified */
+    memcpy((char *)&tun_ip, (char *)&dpni->dpni_tun, 4);
+#else
     /* Ensure network device name, if specified, isn't too long */
     if (dpni->dpni_ifnam[0] && (strlen(dpni->dpni_ifnam)
 		>= sizeof(ifr.ifr_name))) {
@@ -476,6 +491,7 @@ void net_init(register struct dpni20_s *dpni)
 		dbprintln("Using default interface \"%s\"", dpni->dpni_ifnam);
 	}
     }
+#endif
 
     /* Now set remaining stuff */
 
@@ -490,12 +506,18 @@ void net_init(register struct dpni20_s *dpni)
     npf.osnpf_rdtmo = dpni->dpni_rdtmo;
     npf.osnpf_backlog = dpni->dpni_backlog;
     npf.osnpf_ip.ia_addr = ehost_ip;
+#if KLH10_NET_TUN
+    npf.osnpf_tun.ia_addr = tun_ip;
+#endif
     /* Ether addr is both a potential arg and a returned value;
        the packetfilter open may use and/or change it.
     */
     ea_set(&npf.osnpf_ea, dpni->dpni_eth);	/* Set requested ea if any */
     pffd = osn_pfinit(&npf, (void *)dpni);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea */
+#if KLH10_NET_TUN
+    tun_ip = npf.osnpf_tun.ia_addr;		/* Get actual tunnel addr */
+#endif
   }
 
     /* Now set any return info values in shared struct.
@@ -1441,10 +1463,10 @@ void ethtoten(register struct dpni20_s *dpni)
 	    cnt = data.len;
 	/* Else cnt must be -1 as call failed */
     }
-#elif KLH10_NET_NIT || KLH10_NET_PFLT || KLH10_NET_LNX
-	cnt = read(pffd, buff, max);
 #elif KLH10_NET_BPF
 	cnt = read(pffd, tbuff, tmax);
+#else
+	cnt = read(pffd, buff, max);
 #endif
 	if (cnt <= cmin) {		/* Must get enough for ether header */
 
@@ -1509,7 +1531,7 @@ void ethtoten(register struct dpni20_s *dpni)
 		continue;		/* Drop packet, continue reading */
 	}
 #endif /* KLH10_NET_LNX */
-#if KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_PFLT || KLH10_NET_LNX
+#if !KLH10_NET_BPF
 #if 0
 	if (DBGFLG)
 	    if (((struct ether_header *)buff)->ether_type == htons(ETHERTYPE_ARP))
@@ -1521,9 +1543,8 @@ void ethtoten(register struct dpni20_s *dpni)
 	if (DBGFLG)
 	    dbprint("sent RPKT");
 
-#endif /* KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_PFLT || KLH10_NET_LNX */
+#else
 
-#if KLH10_NET_BPF
 	/* Screwy BPF algorithm requires more overhead because there's
 	   no way to ensure only one packet is read at a time; the call
 	   may return a buffer of several packets, each of which must

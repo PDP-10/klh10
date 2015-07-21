@@ -69,7 +69,7 @@
 #if !(KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
 	KLH10_NET_TUN || KLH10_NET_LNX)
     /* None explicitly specified, pick a reasonable default */
-# if (CENV_SYS_FREEBSD && OSN_USE_IPONLY)
+# if ((CENV_SYS_FREEBSD || CENV_SYS_LINUX) && OSN_USE_IPONLY)
 #  undef  KLH10_NET_TUN
 #  define KLH10_NET_TUN 1
 # elif (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
@@ -146,6 +146,9 @@
 #  include <linux/if_packet.h>
 #  include <linux/if_ether.h>   /* The L2 protocols */
 # endif
+
+#elif KLH10_NET_TUN && CENV_SYS_LINUX /* [BV: tun support for Linux] */
+# include <linux/if_tun.h>
 #endif
 
 
@@ -379,6 +382,7 @@ struct osnpf {	/* Arg struct for common initialization params */
 	int osnpf_rdtmo;	/* Read timeout, if any */
 	int osnpf_backlog;	/* Allow # backlogged packets, if any */
 	union ipaddr osnpf_ip;		/* IP address to use */
+	union ipaddr osnpf_tun;		/* INOUT: IP address of tunnel */
 	struct ether_addr osnpf_ea;	/* OUT: ether address of ifc */
 };
 int osn_pfinit(struct osnpf *, void *);

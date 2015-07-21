@@ -103,6 +103,7 @@ struct lhdh {
     int lh_rdtmo;	/* # secs to timeout on packetfilter reads */
     unsigned char lh_ipadr[4];	/* KLH10 IP address to filter on */
     unsigned char lh_gwadr[4];	/* Gateway IP address to use when needed */
+    unsigned char lh_tunadr[4];	/* Tunnel IP address on local side */
     unsigned char lh_ethadr[6];	/* Ether address to use, if dedicated */
 
     char *lh_dpname;	/* Pointer to dev process pathname */
@@ -171,6 +172,7 @@ static int  imp_outxfer(struct lhdh *lh);
 \
     prmdef(LHDHP_IP, "ipaddr"),   /* IP address of KLH10, if shared */\
     prmdef(LHDHP_GW, "gwaddr"),   /* IP address of prime GW to use */\
+    prmdef(LHDHP_TUN,"tunaddr"),  /* IP address of local side of tunnel */\
     prmdef(LHDHP_EN, "enaddr"),   /* Ethernet address to use (override) */\
     prmdef(LHDHP_IFC,"ifc"),      /* Ethernet interface name */\
     prmdef(LHDHP_BKL,"backlog"),/* Max bklog for rcvd pkts (else sys deflt) */\
@@ -298,6 +300,13 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
 	    if (!prm.prm_val)
 		break;
 	    if (!parip(prm.prm_val, &lh->lh_gwadr[0]))
+		break;
+	    continue;
+
+	case LHDHP_TUN:		/* Parse as IP address: u.u.u.u */
+	    if (!prm.prm_val)
+		break;
+	    if (!parip(prm.prm_val, &lh->lh_tunadr[0]))
 		break;
 	    continue;
 
@@ -1057,6 +1066,8 @@ imp_init(register struct lhdh *lh, FILE *of)
 		lh->lh_ipadr, 4);
     memcpy((char *)dpc->dpimp_gw,	/* Set our GW address for IMP */
 		lh->lh_gwadr, 4);
+    memcpy((char *)dpc->dpimp_tun,	/* Set our IP address for tunnel */
+		lh->lh_tunadr, 4);	/* (all zero if none) */
     memcpy(dpc->dpimp_eth,		/* Set EN address if any given */
 		lh->lh_ethadr, 6);	/* (all zero if none) */
 
