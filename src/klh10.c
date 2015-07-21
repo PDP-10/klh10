@@ -599,11 +599,9 @@ fc_quit(struct cmd_s *cm)
     printf("Are you sure you want to quit? [Confirm]");
     fe_ctycmforce();
     switch (cminchar()) {
-    case '\r':
-    case '\n':
     case 'y':
     case 'Y':
-    case -1:		/* EOF */
+    case EOF:		/* EOF */
 	break;
     default:		/* Anything else prevents quit */
 	return;
