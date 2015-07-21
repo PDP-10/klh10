@@ -1032,8 +1032,15 @@ cmdlsetup(struct cmd_s *cm)
 	fputs(cp, stdout);		/* Echo the input line */
     } else {
 	cp = fe_ctycmline(cm->cmd_inp, (int)cm->cmd_left-1);
-	if (cp == NULL)
-	    return NULL;
+	if (cp == NULL) {
+	    if (feof(stdin) || ferror(stdin)) {
+		cp = strncpy(cm->cmd_inp, "exit", (int)cm->cmd_left-1);
+		fprintf(stdout, "exit\n");
+		clearerr(stdin);
+	    } else {
+		return NULL;
+	    }
+	}
     }
 
     len = strlen(cp);
