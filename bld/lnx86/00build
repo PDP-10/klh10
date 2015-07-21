@@ -1,2 +1,2 @@
 #!/bin/sh
-make -k base-kl CONFFLAGS_AUX="-DKLH10_NET_TUN=1 -DKLH10_I_CIRC=1"
+make -k base-kl CONFFLAGS_AUX="-DKLH10_I_CIRC=1"
