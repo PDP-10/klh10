@@ -79,7 +79,7 @@ usage:
 	@echo 'Normally the target is one of these 3 base configs:'
 	@echo '  base-kl      KL10 version for TOPS (kn10-kl and utils)'
 	@echo '  base-ks      KS10 version for TOPS (kn10-ks and utils)'
-	@echo '  base-ks-its  KS10 version for ITS  (kn10-ks and utils)'
+	@echo '  base-ks-its  KS10 version for ITS  (kn10-ks-its and utils)'
 	@echo 'Or these utilities:'
 	@echo '  tapedd    Tape copy & conversion'
 	@echo '  vdkfmt    Virtual disk copy & conversion'
@@ -129,7 +129,7 @@ showdefs:
 # Don't flush these files if interrupted.
 #	Currently no intermediate source files are generated, so
 #	this can be empty, but hang on to last binary anyway.
-.PRECIOUS: kn10-ks kn10-kl
+.PRECIOUS: kn10-ks kn10-ks-its kn10-kl
 
 
 #######################################################################	
@@ -232,6 +232,9 @@ DINTFLAGS  = \
 kn10-ks: $(OFILES_KS)
 	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks $(OFILES_KS) $(LIBS)
 
+kn10-ks-its: $(OFILES_KS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks-its $(OFILES_KS) $(LIBS)
+
 kn10-kl: $(OFILES_KL)
 	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-kl $(OFILES_KL) $(LIBS)
 
@@ -240,7 +243,7 @@ kn10-kl: $(OFILES_KL)
 ##	Auxiliary action targets
 
 clean:
-	@rm -f  kn10-ks kn10-kl *.o \
+	@rm -f  kn10-ks kn10-ks-its kn10-kl *.o \
 		$(DPROCS_KL) $(DPROCS_KS) $(DPROCS_KSITS) \
 		$(ALL_UTILS)
 
@@ -253,6 +256,8 @@ install-unix:
 	@-mkdir  ${KLH10_HOME}/flushed
 	@if [ -x ${KLH10_HOME}/kn10-ks ]; then \
 		mv ${KLH10_HOME}/kn10-ks ${KLH10_HOME}/flushed; fi
+	@if [ -x ${KLH10_HOME}/kn10-ks-its ]; then \
+		mv ${KLH10_HOME}/kn10-ks-its ${KLH10_HOME}/flushed; fi
 	@if [ -x ${KLH10_HOME}/kn10-kl ]; then \
 		mv ${KLH10_HOME}/kn10-kl ${KLH10_HOME}/flushed; fi
 	@if [ -x ${KLH10_HOME}/dprpxx ]; then \
@@ -264,6 +269,7 @@ install-unix:
 	@if [ -x ${KLH10_HOME}/dpimp  ]; then \
 		mv ${KLH10_HOME}/dpimp  ${KLH10_HOME}/flushed; fi
 	@if [ -x kn10-ks  ]; then cp -p kn10-ks  ${KLH10_HOME}/; fi
+	@if [ -x kn10-ks-its ]; then cp -p kn10-ks-its ${KLH10_HOME}/; fi
 	@if [ -x kn10-kl  ]; then cp -p kn10-kl  ${KLH10_HOME}/; fi
 	@if [ -x dprpxx   ]; then cp -p dprpxx   ${KLH10_HOME}/; fi
 	@if [ -x dptm03   ]; then cp -p dptm03   ${KLH10_HOME}/; fi
@@ -287,7 +293,7 @@ install-unix:
 # Standard setup for KS ITS
 #
 base-ks-its:
-	$(MAKER) kn10-ks $(DPROCS_KSITS) $(BASE_UTILS) udlconv \
+	$(MAKER) kn10-ks-its $(DPROCS_KSITS) $(BASE_UTILS) udlconv \
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
@@ -388,7 +394,7 @@ base-kl:
 ##	Lintish versions to see how many compiler warnings we can generate
 ##
 lint-ks-its:
-	$(MAKER) kn10-ks $(DPROCS_KSITS) $(BASE_UTILS) udlconv \
+	$(MAKER) kn10-ks-its $(DPROCS_KSITS) $(BASE_UTILS) udlconv \
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \

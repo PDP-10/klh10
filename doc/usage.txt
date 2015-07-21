@@ -16,14 +16,14 @@
 
 KLH10 STARTUP:
 
-	A KLH10 installation has several binaries; the one you want to
-start is normally called either "kn10-ks" or "kn10-kl" depending on
-the version you have built.  These should all be installed in a KLH10
-"home directory" and you should be connected to that directory (see
-the file "install.txt" if necessary).  Then simply give the following
-shell command:
+    A KLH10 installation has several binaries; the one you want to start
+is normally called either "kn10-ks", "kn10-ks-its" or "kn10-kl" depending
+on the version you have built.  These should all be installed in a KLH10
+"home directory" and you should be connected to that directory (see the
+file "install.txt" if necessary).  Then simply give the following shell
+command:
 
-	 % ./kn10-kl			; or ./kn10-ks
+	 % ./kn10-kl			; or ./kn10-ks or ./kn10-ks-its
 
 The KN10 process will start up, allocate and clear KN10 memory, and
 begin reading commands from the default file "klh10.ini".  If you wish
