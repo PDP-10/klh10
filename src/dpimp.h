@@ -106,6 +106,7 @@ struct dpimp_s {
     unsigned char dpimp_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpimp_ip[4];	/* C 10's IP address to filter on, if shared */
     unsigned char dpimp_gw[4];	/* C Default GW address for IMP to use */
+    unsigned char dpimp_tun[4];	/* CD Tunnel address for IMP */
     int dpimp_inoff;		/* C Offset in buffer of input (I->H) data */
     int dpimp_outoff;		/* D Offset in buffer of output (H->I) data */
     int dpimp_backlog;		/* C Max sys backlog of rcvd packets */

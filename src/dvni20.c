@@ -157,6 +157,7 @@ struct ni20 {
     int ni_lsapf;	/* TRUE to filter on LSAP addr (if shared) */
     int ni_lsap;	/* LSAP src/dst address for above */
     unsigned char ni_ipadr[4];	/* KLH10 IP address to filter (if shared) */
+    unsigned char ni_tunadr[4];	/* Tunnel IP address (if masquerading) */
     int32 ni_c3dly;		/* Initial-cmd delay in ticks */
     int32 ni_c3dlyct;		/* Countdown (no delay if 0) */
 
@@ -294,6 +295,7 @@ static uint32 ni_ecpdigest(unsigned char *ucp, int len);
     prmdef(NIP_BKL,"backlog"),/* Max bklog for rcvd pkts (else sys default) */\
     prmdef(NIP_DED,"dedic"),    /* TRUE= Ifc dedicated (else shared) */\
     prmdef(NIP_IP, "ipaddr"),   /* IP address of KLH10, if shared */\
+    prmdef(NIP_TUN, "tunaddr"), /* IP address of local end of tunnel */\
     prmdef(NIP_DEC,"decnet"),   /* TRUE= if shared, seize DECNET pkts */\
     prmdef(NIP_ARP,"doarp"),    /* TRUE= if shared, do ARP hackery */\
     prmdef(NIP_LSAP,"lsap"),    /* Set= if shared, filter on LSAP pkts */\
@@ -388,6 +390,13 @@ ni20_conf(FILE *f, char *s, struct ni20 *ni)
 	    if (!prm.prm_val)
 		break;
 	    if (!parip(prm.prm_val, &ni->ni_ipadr[0]))
+		break;
+	    continue;
+
+	case NIP_TUN:		/* Parse as IP address: u.u.u.u */
+	    if (!prm.prm_val)
+		break;
+	    if (!parip(prm.prm_val, &ni->ni_tunadr[0]))
 		break;
 	    continue;
 
@@ -711,6 +720,8 @@ ni20_init(struct device *d,
 	dpc->dpni_ifnam[0] = '\0';	/* No specific interface */
     memcpy((char *)dpc->dpni_ip,	/* Set our IP address for filter */
 		ni->ni_ipadr, 4);
+    memcpy((char *)dpc->dpni_tun,	/* Set IP address for tunnel */
+		ni->ni_tunadr, 4);
     memcpy(dpc->dpni_eth,		/* Set EN address if any given */
 		ni->ni_ethadr, 6);	/* (all zero if none) */
 

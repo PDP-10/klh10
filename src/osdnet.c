@@ -835,7 +835,7 @@ osn_ifeaget(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	ea_set(def, ifdev.default_pa);
   }
 
-#elif KLH10_NET_LNX
+#elif CENV_SYS_LINUX
   {
     int ownsock = FALSE;
     struct ifreq ifr;
@@ -1169,7 +1169,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	    char *ifnam,	/* Interface name */
 	    unsigned char *newpa)	/* New ether address */
 {
-#if CENV_SYS_DECOSF || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE \
+#if CENV_SYS_DECOSF || CENV_SYS_LINUX || KLH10_NET_TAP_BRIDGE \
 		    || (CENV_SYS_FREEBSD && defined(SIOCSIFLLADDR))
 
     /* Common preamble code */
@@ -1200,7 +1200,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	return FALSE;
     }
 
-# elif KLH10_NET_LNX
+# elif CENV_SYS_LINUX
 
     /* Address family must match what device thinks it is, so find that
        out first... sigh.
@@ -1265,7 +1265,7 @@ osn_ifmcset(int s,
 	    int delf,
 	    unsigned char *pa)
 {
-#if CENV_SYS_DECOSF || KLH10_NET_LNX || CENV_SYS_FREEBSD
+#if CENV_SYS_DECOSF || CENV_SYS_LINUX || CENV_SYS_FREEBSD
 
     /* Common preamble code */
     int ownsock = FALSE;
@@ -1657,9 +1657,14 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 {
     int allowextern = TRUE;	/* For now, always try for external access */
     int fd;
+#if CENV_SYS_LINUX		/* [BV: tun support for Linux] */
+    struct ifreq ifr;
+    char ifnam[IFNAMSIZ];
+#else
     char tunname[sizeof "/dev/tun000"];
     char *ifnam = tunname + sizeof("/dev/")-1;
     int i = -1;
+#endif
     char ipb1[OSN_IPSTRSIZ];
     char ipb2[OSN_IPSTRSIZ];
     struct ifent *ife = NULL;	/* Native host's default IP interface if one */
@@ -1669,33 +1674,57 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 
     /* Remote address is always that of emulated machine */
     ipremote = osnpf->osnpf_ip.ia_addr;
+    iplocal = osnpf->osnpf_tun.ia_addr;
 
-    /* Local address is that of hardware machine if we want to permit
-       external access.  If not, it doesn't matter (and may not even
-       exist, if there is no hardware interface)
-    */
-    if (allowextern) {
-	if (osn_iftab_init(IFTAB_IPS) && (ife = osn_ipdefault())) {
-	    iplocal = ife->ife_ipia;
-	} else {
-	    error("Cannot find default IP interface for host");
-	    allowextern = FALSE;
-	}
-    }
-    if (!allowextern) {
-	/* Make up bogus IP address for internal use */
-	memcpy((char *)&iplocal, ipremset, 4);
+    /* Local address can be set explicitly if we plan to do full IP
+       masquerading. */
+    if (memcmp((char *)&iplocal, "\0\0\0\0", IP_ADRSIZ) == 0) {
+      /* Local address is that of hardware machine if we want to permit
+	 external access.  If not, it doesn't matter (and may not even
+	 exist, if there is no hardware interface)
+      */
+      if (allowextern) {
+	  if (osn_iftab_init(IFTAB_IPS) && (ife = osn_ipdefault())) {
+	      iplocal = ife->ife_ipia;
+	  } else {
+	      error("Cannot find default IP interface for host");
+	      allowextern = FALSE;
+	  }
+      }
+      if (!allowextern) {
+	  /* Make up bogus IP address for internal use */
+	  memcpy((char *)&iplocal, ipremset, 4);
+      }
+      osnpf->osnpf_tun.ia_addr = iplocal;
     }
 
     if (DP_DBGFLG)
 	dbprint("Opening TUN device");
 
+#if CENV_SYS_LINUX		/* [BV: Linux way] */
+    if ((fd = open("/dev/net/tun", O_RDWR)) < 0) /* get a fresh device */
+      esfatal(0, "Couldn't open tunnel device /dev/net/tun");
+    memset(&ifr, 0, sizeof(ifr));
+#if OSN_USE_IPONLY
+    ifr.ifr_flags = IFF_TUN | IFF_NO_PI; /* TUN (no Ethernet headers), no pkt info */
+#else
+    ifr.ifr_flags = IFF_TAP | IFF_NO_PI; /* TAP (yes Ethernet headers), no pkt info */
+#endif
+    if (ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) /* turn it on */
+      esfatal(0, "Couldn't set tun device");
+    strcpy(ifnam, ifr.ifr_name); /* get device name (typically "tun0") */
+#else
     do {
+#if OSN_USE_IPONLY
 	sprintf(tunname, "/dev/tun%d", ++i);
+#else
+	sprintf(tunname, "/dev/tap%d", ++i);
+#endif
     } while ((fd = open(tunname, O_RDWR)) < 0 && errno == EBUSY);
 
     if (fd < 0)
 	esfatal(1, "Couldn't open tunnel device %s", tunname);
+#endif
 
     if (DP_DBGFLG)
 	dbprintln("Opened %s, configuring for local %s, remote %s",
@@ -1703,6 +1732,7 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
 	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
 
+    strcpy(osnpf->osnpf_ifnam, ifnam);
 
     /* Activate TUN device.
        First address is "local" -- doesn't matter if all we care about is
@@ -1728,6 +1758,23 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
 	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
 
+    if ((res = system(cmdbuff)) != 0) {
+	esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
+    }
+  }
+#elif CENV_SYS_LINUX		/* [BV: Linux tun device] */
+				/* "Hacky" but simple method */
+  {
+    char cmdbuff[128];
+    int res;
+
+    /* ifconfig DEV IPLOCAL pointopoint IPREMOTE */
+    sprintf(cmdbuff, "ifconfig %s %s pointopoint %s up",
+	    ifnam,
+	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
+	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
+    if (DP_DBGFLG)
+      dbprintln("running \"%s\"",cmdbuff);
     if ((res = system(cmdbuff)) != 0) {
 	esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
     }
@@ -1811,8 +1858,19 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 	/* Return that as our ether address */
 	ea_set((char *)&osnpf->osnpf_ea, ife->ife_ea);
     } else {
-	/* Assume no useful ether addr */
+	/* ARP hackery will be handled by IP masquerading and packet forwarding. */
+#if 1 /*OSN_USE_IPONLY*/ /* TOPS-20 does not like NI20 with made up address? */
+	/* Assume no useful ether addr for tun interface. */
 	ea_clr((char *)&osnpf->osnpf_ea);
+#else
+        /* Assign requested address to tap interface or get kernel assigned one. */
+        if (memcmp((char *)&osnpf->osnpf_ea, "\0\0\0\0\0\0", ETHER_ADRSIZ) == 0) {
+          osn_ifeaget(-1, ifnam, (unsigned char *)&osnpf->osnpf_ea, NULL);
+        }
+        else {
+          osn_ifeaset(-1, ifnam, (unsigned char *)&osnpf->osnpf_ea);
+        }
+#endif
     }
 
     if (DP_DBGFLG)
