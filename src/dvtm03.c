@@ -1664,10 +1664,13 @@ tm_cmddon(register struct tmdev *tm)
 	    tm_ssta(tm);		/* update all status */
 	}
 	if (1) {
-	    /* Horrible crock to give feedback on mount/dismount requests */
+	    /* Horrible crock to give feedback on mount/dismount requests.
+            ** Use the dp status, rather than the register, in case the OS
+            ** happens to have another slave selected, as TOPS-20 will initially.
+            */
 	    fprintf(DVDBF(tm), "[%s: Tape %s]\r\n",
 		    tm->tm_dv.dv_name,
-		    (TMREG(tm, RHR_STS) & TM_SMOL) ? "online" : "offline");
+		    (tm->tm_sdptm->dptm_mol) ? "online" : "offline");
 	}
 	TMREG(tm, RHR_STS) |= TM_SSSC;	/* Set SSC - slave changed state */
 	tm_attn(tm);
