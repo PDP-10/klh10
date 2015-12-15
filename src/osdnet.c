@@ -364,7 +364,7 @@ osn_iftab_pass(int opts, int npass, int s, struct ifconf *ifc)
 	/* Pass 2 and dealing with an existing entry.  Flesh it out! */
 	switch (ifp->ifr_addr.sa_family) {
 	case AF_INET:
-	    ife->ife_pinet = ifp;	/* Remember pointer */
+	    ife->ife_gotip4 = TRUE;
 	    ife->ife_ipint = ((struct sockaddr_in *)
 				&ifp->ifr_addr)->sin_addr.s_addr;
 	    break;
@@ -376,13 +376,11 @@ osn_iftab_pass(int opts, int npass, int s, struct ifconf *ifc)
 		struct sockaddr_dl *dla = (struct sockaddr_dl *)&ifp->ifr_addr;
 		memcpy(ife->ife_ea,  LLADDR(dla), dla->sdl_alen);
 		ife->ife_gotea = TRUE;
-		ife->ife_plink = ifp;
 		break;
 	    }
 #endif
 	    /* Else drop through to "other" case */
 	default:
-    	    ife->ife_pother = ifp;
 	    break;
 	}
     }
@@ -510,20 +508,16 @@ osn_iftab_show(FILE *f, struct ifent *ifents, int nents)
 
     for (i = 0, ife = ifents; i < nents; ++i, ++ife) {
 	fprintf(f, "%2d: \"%s\"", i, ife->ife_name);
-	if (ife->ife_pinet) {
+	if (ife->ife_gotip4) {
 	    unsigned char *ucp = ife->ife_ipchr;
 	    fprintf(f, " (IP %d.%d.%d.%d)",
 		    ucp[0], ucp[1], ucp[2], ucp[3]);
 	}
-	if (ife->ife_plink || ife->ife_gotea) {
+	if (ife->ife_gotea) {
 	    unsigned char *ucp = ife->ife_ea;
 	    fprintf(f, " (%sEther %x:%x:%x:%x:%x:%x)",
-		    (ife->ife_plink ? "" : "Extracted "),
+		    "Extracted ",
 		    ucp[0], ucp[1], ucp[2], ucp[3], ucp[4], ucp[5]);
-	}
-	if (ife->ife_pother) {
-	    fprintf(f, " (Other: fam %d)",
-		    ife->ife_pother->ifr_addr.sa_family);
 	}
 	fprintf(f, "\r\n");
     }
@@ -598,7 +592,7 @@ osn_ifealookup(char *ifnam,		/* Interface name */
     register struct ifent *ife;
 
     if ((ife = osn_iflookup(ifnam))
-	&& (ife->ife_plink || ife->ife_gotea)) {
+	&& ife->ife_gotea) {
 	    ea_set(eap, ife->ife_ea);
 	    return TRUE;
     }
@@ -1265,7 +1259,7 @@ osn_ifmcset(int s,
 	    int delf,
 	    unsigned char *pa)
 {
-#if CENV_SYS_DECOSF || CENV_SYS_LINUX || CENV_SYS_FREEBSD
+#if CENV_SYS_DECOSF || CENV_SYS_LINUX || CENV_SYS_FREEBSD || CENV_SYS_NETBSD
 
     /* Common preamble code */
     int ownsock = FALSE;
@@ -1284,7 +1278,7 @@ osn_ifmcset(int s,
     ifr.ifr_addr.sa_family = AF_DECnet;	/* Known to work; AF_UNSPEC may not */
 # elif CENV_SYS_LINUX
     ifr.ifr_addr.sa_family = AF_UNSPEC;	/* MUST be this for Linux! */
-# elif CENV_SYS_FREEBSD
+# elif CENV_SYS_FREEBSD || CENV_SYS_NETBSD
     ifr.ifr_addr.sa_family = AF_LINK;	/* MUST be this for FreeBSD! */
 # else
 #  error "Unimplemented OS routine osn_ifmcset()"

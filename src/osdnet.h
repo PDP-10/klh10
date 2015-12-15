@@ -257,16 +257,13 @@ struct ifent {
 	char ife_name[IFNAMSIZ+1];	/* +1 so always null-terminated */
 	int  ife_flags;			/* IFF_ flags */
 	int  ife_mtu;			/* MTU (not really used) */
+	int  ife_gotip4;		/* TRUE if IPv4 addr set */
 	union {
 	    struct in_addr ifeu_ia;
 	    unsigned char ifeu_chr[4];
 	} ife_uip;
 	int ife_gotea;			/* TRUE if E/N addr set */
 	unsigned char ife_ea[6];	/* E/N address */
-
-	struct ifreq *ife_pinet;	/* Reference pointer to inet ifreq */
-	struct ifreq *ife_plink;	/* Reference pointer to link ifreq */
-	struct ifreq *ife_pother;	/* Reference pointer to ???? ifreq */
 };
 #define ife_ipia  ife_uip.ifeu_ia		/* IP address as in_addr */
 #define ife_ipint ife_uip.ifeu_ia.s_addr	/* IP address as integer */
