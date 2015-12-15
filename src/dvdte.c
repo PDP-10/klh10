@@ -48,6 +48,7 @@
 #include "kn10dev.h"
 #include "dvdte.h"
 #include "prmstr.h"	/* For parameter parsing */
+#include "fecmd.h"
 
 #ifdef RCSID
  RCSID(dvdte_c,"$Id: dvdte.c,v 2.7 2002/04/24 07:56:08 klh Exp $")

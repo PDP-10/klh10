@@ -46,6 +46,8 @@
 #include "kn10ops.h"
 #include "kn10dev.h"	/* For device PI handling */
 #include "dvcty.h"	/* For cty_ stuff */
+#include "fecmd.h"
+#include "klh10exp.h"
 
 #ifdef RCSID
  RCSID(kn10cpu_c,"$Id: kn10cpu.c,v 2.9 2002/05/21 16:54:32 klh Exp $")
@@ -64,14 +66,6 @@ void a1pr_undo(void);
 #elif KLH10_CPU_KI || KLH10_CPU_KL
 void afi_undo(void);
 #endif
-
-/* Imported functions */
-extern void fe_begpcfdbg(FILE *);
-extern void fe_endpcfdbg(FILE *);
-extern void pishow(FILE *);
-extern void pcfshow(FILE *, h10_t flags);
-extern void pinstr(FILE *, w10_t w, int flags, vaddr_t e);
-extern void fe_traceprint (register w10_t instr, vaddr_t e);
 
 /* Pre-declarations */
 static void trap_xct(void);

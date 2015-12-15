@@ -62,6 +62,10 @@
 # include "dvuba.h"	/* So can get at device info */
 #endif
 
+#if KLH10_DEV_LITES
+# include "dvlites.h"
+#endif
+
 #ifdef RCSID
  RCSID(klh10_c,"$Id: klh10.c,v 2.9 2002/05/21 16:54:32 klh Exp $")
 #endif

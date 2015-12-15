@@ -77,6 +77,7 @@ static int getw10(WFILE *wf, w10_t *wp);
 static char usage[] = "\
 Usage: %s [-v] < infile.exb > outfile.sav\n";
 
+int
 main(int argc, char **argv)
 {
     int n;

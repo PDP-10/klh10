@@ -44,6 +44,7 @@
 #include "prmstr.h"
 #include "dvcty.h"	/* For cty_ functions */
 #include "fecmd.h"
+#include "klh10exp.h"
 
 #if KLH10_CPU_KS
 # include "dvuba.h"	/* So can get at device info */
@@ -52,10 +53,6 @@
 #ifdef RCSID
  RCSID(fecmd_c,"$Id: fecmd.c,v 2.2 2002/05/21 09:43:39 klh Exp $")
 #endif
-
-/* Imported data */
-extern int proc_bkgd;	/* From klh10.c */
-
 
 /*
 	FE command parsing and CTY utilities

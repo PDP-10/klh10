@@ -59,6 +59,9 @@ extern void fe_ctycmforce(void);
 extern void fe_cmpromptset(char *);
 extern char *fe_cmprompt(int);
 
+extern enum haltcode fe_haltcode(void);
+extern void fe_ctyinit(void);
+
 /* Exported data */
 extern int feiosignulls;
 extern int feiosiginps;

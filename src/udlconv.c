@@ -242,6 +242,7 @@ void outlink(struct filent *fe);
 void outfile(struct filent *fe);
 
 
+int
 main(int argc, char *argv[])
 {
     register int i;
