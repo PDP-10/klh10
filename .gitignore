@@ -1,0 +1,15 @@
+new
+bld/*/*.h
+bld/*/*.o
+bld/*/dpimp
+bld/*/dprpxx
+bld/*/dptm03
+bld/*/enaddr
+bld/*/kn10-kl
+bld/*/kn10-ks
+bld/*/kn10-ks-its
+bld/*/tapedd
+bld/*/udlconv
+bld/*/vdkfmt
+bld/*/wfconv
+bld/*/wxtest
