@@ -475,10 +475,11 @@ void net_init(register struct dpni20_s *dpni)
     ** cannot be found by iftab_init).
     ** Also grab native IP and ethernet addresses, if ARP might need them.
     */
+    if (osn_iftab_init() <= 0)
+	esfatal(0, "Couldn't find interface information");
+
     if ((!dpni->dpni_ifnam[0] && !dpni->dpni_dedic)
       || (dpni->dpni_doarp & DPNI_ARPF_OCHK)) {
-	if (osn_iftab_init(IFTAB_IPS) <= 0)
-	    esfatal(0, "Couldn't find interface information");
 
 	/* Found at least one!  Pick first one, if a default is needed. */
 	if (!dpni->dpni_ifnam[0]) {
@@ -1338,8 +1339,7 @@ int arp_myreply(register unsigned char *buf, register int cnt)
 
     /* Found it!  ife now points to matching entry */
     if (!ife->ife_gotea) {
-	if (!osn_ifeaget(-1, ife->ife_name, ife->ife_ea,
-			 (unsigned char *)NULL)) {
+	if (!osn_ifeaget2(ife->ife_name, ife->ife_ea)) {
 	    error("ARP MyReply failed, no E/N addr for %s", ife->ife_name);
 	    return FALSE;
 	}

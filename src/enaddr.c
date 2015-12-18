@@ -115,22 +115,10 @@ Usage: enaddr [-v] [<ifc> [default | <ifaddr>] [+<addmcast>] [-<delmcast>]]\n\
    Set up for eventual extraction into a separate module
  */
 
-#if 1	/* ENADDR */
-# define LOG_EOL "\n"
-# undef  LOG_DP
-# define LOG_PROGNAME "enaddr"
-# define DP_DBGFLG debugf
-#else
-# define LOG_EOL "\r\n"
-# define LOG_DP dp
-# if KLH10_SIMP
-#  define LOG_PROGNAME "simp"
-# elif KLH10_DEV_DPIMP
-#  define LOG_PROGNAME "dpimp"
-# elif KLH10_DEV_DPNI20
-#  define LOG_PROGNAME "dpni20"
-# endif
-#endif
+#define LOG_EOL "\n"
+#undef  LOG_DP
+#define LOG_PROGNAME "enaddr"
+#define DP_DBGFLG debugf
 
 #if 1	/* Error and diagnostic stuff */
 
@@ -142,7 +130,7 @@ Usage: enaddr [-v] [<ifc> [default | <ifaddr>] [+<addmcast>] [-<delmcast>]]\n\
 
 static const char *log_progname = LOG_PROGNAME;
 
-char *log_strerror(err)
+char *log_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return log_strerror(errno);
@@ -265,6 +253,7 @@ static void logfatal_ser(int num, char *fmt, ...)
 #endif /* Error and Diagnostic stuff */
 
 
+int
 main(int argc, char **argv)
 {
     int i;
@@ -324,9 +313,7 @@ main(int argc, char **argv)
     }
 
     /* First, show interface info if desired */
-    if (debugf) {
-	osn_iftab_init(IFTAB_ALL);
-    }
+    osn_iftab_init();
 
     /* Now mung interface if one given */
     if (ifc) {
@@ -337,7 +324,8 @@ main(int argc, char **argv)
 	}
 
 	/* Read the default and current MAC address */
-	(void) osn_ifeaget(s, ifc, pa_cur, pa_def);
+	(void) osn_ifealookup(ifc, pa_cur); /* pa_def not looked up */
+
 
 	/* Print the MAC addresses */
 	penetaddr(ifc, pa_cur, pa_def);
@@ -350,7 +338,8 @@ main(int argc, char **argv)
 	    (void) osn_ifeaset(s, ifc, (endef ? pa_def : pa_new));
 
 	    /* Read back to confirm */
-	    (void) osn_ifeaget(s, ifc, pa_cur, pa_def);
+	    osn_iftab_init();
+	    (void) osn_ifealookup(ifc, pa_cur); /* pa_def not looked up */
 	    penetaddr(ifc, pa_cur, pa_def);
 	}
 

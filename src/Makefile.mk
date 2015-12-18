@@ -52,6 +52,7 @@ LINKER = $(CC)
 LDFLAGS =
 LDOUTF = -o
 LIBS = 
+NETLIBS = -lpcap
 
 # Variables specific to this makefile setup
 #	SRC and MAKE_CENV are normally overridden.
@@ -230,13 +231,13 @@ DINTFLAGS  = \
 ##
 
 kn10-ks: $(OFILES_KS)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks $(OFILES_KS) $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks $(OFILES_KS) $(NETLIBS) $(LIBS)
 
 kn10-ks-its: $(OFILES_KS)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks-its $(OFILES_KS) $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks-its $(OFILES_KS) $(NETLIBS) $(LIBS)
 
 kn10-kl: $(OFILES_KL)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-kl $(OFILES_KL) $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-kl $(OFILES_KL) $(NETLIBS) $(LIBS)
 
 
 ####################################################################
@@ -299,6 +300,7 @@ base-ks-its:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
 		-DKLH10_CPU_KS=1	\
@@ -326,6 +328,7 @@ base-ks:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
 		-DKLH10_CPU_KS=1	\
@@ -349,6 +352,7 @@ base-kl:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
 		-DKLH10_CPU_KLX=1	\
@@ -399,6 +403,7 @@ lint-ks-its:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX)"
 
@@ -409,6 +414,7 @@ lint-ks:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX)"
 
@@ -419,6 +425,7 @@ lint-kl:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX)"
 
@@ -439,6 +446,7 @@ port-ks:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
 		-DKLH10_CPU_KS=1	\
@@ -463,6 +471,7 @@ kl0i-sync:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
 		-DKLH10_CPU_KL0=1	\
@@ -486,6 +495,7 @@ kl0i-rtmopt:
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
 		-DKLH10_CPU_KL0=1	\
@@ -535,7 +545,7 @@ dpni20.o: $(SRC)/dpni20.c $(SRC)/dpni20.h $(SRC)/dpsup.h
 	$(BUILDMOD) $(SRC)/dpni20.c
 
 dpni20: dpni20.o dpsup.o
-	$(LINKER) $(LDFLAGS) $(LDOUTF) dpni20 dpni20.o dpsup.o $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) dpni20 dpni20.o dpsup.o $(NETLIBS) $(LIBS)
 
 
 # --------- IMP subprocess (ITS KS only; counterpart for dvlhdh)
@@ -544,7 +554,7 @@ dpimp.o: $(SRC)/dpimp.c $(SRC)/dpimp.h $(SRC)/dpsup.h
 	$(BUILDMOD) $(SRC)/dpimp.c
 
 dpimp: dpimp.o dpsup.o
-	$(LINKER) $(LDFLAGS) $(LDOUTF) dpimp dpimp.o dpsup.o $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) dpimp dpimp.o dpsup.o $(NETLIBS) $(LIBS)
 
 
 ####################################################################
@@ -615,7 +625,7 @@ enaddr.o: $(SRC)/enaddr.c $(SRC)/osdnet.h $(SRC)/osdnet.c
 	$(CC) $(CFLAGS) $(CENVFLAGS) $(CONFFLAGS) $(SRC)/enaddr.c
 
 enaddr: enaddr.o
-	$(LINKER) $(LDFLAGS) $(LDOUTF) enaddr enaddr.o $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) enaddr enaddr.o $(NETLIBS) $(LIBS)
 
 
 ####################################################################

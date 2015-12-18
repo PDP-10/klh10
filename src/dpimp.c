@@ -659,7 +659,7 @@ net_init(register struct dpimp_s *dpimp)
     */
     if ((!dpimp->dpimp_ifnam[0] && !dpimp->dpimp_dedic)
       || (dpimp->dpimp_doarp & DPIMP_ARPF_OCHK)) {
-	if (osn_iftab_init(IFTAB_IPS) <= 0)
+	if (osn_iftab_init() <= 0)
 	    esfatal(0, "Couldn't find interface information");
 
 	/* Found at least one!  Pick first one, if a default is needed. */
@@ -699,7 +699,7 @@ net_init(register struct dpimp_s *dpimp)
     if (gwdef_ip.s_addr == -1 || gwdef_ip.s_addr == 0)
 	efatal(1, "No default prime gateway specified");
 
-#endif
+#endif /* !KLH10_NET_TUN */
 
     /* Set up appropriate net fd and packet filter.
     ** Should also determine interface's ethernet addr, if possible,
@@ -1635,7 +1635,7 @@ imptohost(register struct dpimp_s *dpimp)
 	    /* Small enough to constitute one IMP message, so pass it on! */
 	    ihl_hhsend(dpimp, cnt, buffp + ETHER_HDRSIZ);
 	}
-#else
+#else /* !KLH10_NET_TUN */
 	if (cnt > SI_MAXMSG)
 	    ihl_frag(cnt, buffp);
 	else

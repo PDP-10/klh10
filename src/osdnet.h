@@ -201,12 +201,14 @@
 
 /* Determine whether:
  *    (1) sockaddr contains sa_len (NETIF_HAS_SALEN)
- *    (2) ifconf provides physical link addrs (NETIF_HAS_ETHLINK)
+ *    (2) ifconf provides physical link addrs (NETIF_HAS_AF_LINK or
+ *                                             NETIF_HAS_AF_PACKET)
  *    (3) ARP ioctls exist (NETIF_HAS_ARPIOCTL)
  *
  *			4.4BSD	DECOSF	SunOS	Solaris	Linux
  * NETIF_HAS_SALEN	yes	yes	no	no	no
- * NETIF_HAS_ETHLINK	yes	yes	no	no	no
+ * NETIF_HAS_AF_LINK	yes	yes	no	no	no
+ * NETIF_HAS_AF_PACKET	no	?	?	?	yes
  * NETIF_HAS_ARPIOCTL	no	yes	yes	yes	yes
  */
 #ifndef NETIF_HAS_SALEN		/* If not explicitly told, see if known OS */
@@ -224,17 +226,31 @@
 # endif
 #endif
 
+#if !defined(NETIF_HAS_AF_PACKET)
+#if CENV_SYS_LINUX || defined(AF_PACKET)
+#define NETIF_HAS_AF_PACKET	1
+#else
+#define NETIF_HAS_AF_PACKET	0
+#endif
+#endif /* !defined(NETIF_HAS_AF_PACKET) */
+
+#if NETIF_HAS_AF_PACKET
+#include <linux/if_packet.h>	/* For struct sockaddr_ll */
+#endif /* NETIF_HAS_AF_PACKET */
+
+
 #if NETIF_HAS_SALEN
 # ifdef AF_LINK
 #  include <net/if_dl.h>	/* For sockaddr_dl */
+#  include <net/if_types.h>	/* For IFT_ETHER */
 # endif
 # ifdef LLADDR			/* Double-check, make sure this is defined */
-#  define NETIF_HAS_ETHLINK 1
+#  define NETIF_HAS_AF_LINK 1
 # else
-#  define NETIF_HAS_ETHLINK 0
+#  define NETIF_HAS_AF_LINK 0
 # endif
 #else
-# define NETIF_HAS_ETHLINK 0
+# define NETIF_HAS_AF_LINK 0
 #endif
 
 #ifdef SIOCGARP
@@ -243,6 +259,19 @@
 # define NETIF_HAS_ARPIOCTL 0
 #endif
 
+#define HAVE_GETIFADDRS	1	/* assume this for now */
+#define HAVE_LIBPCAP	1	/* assume this for now */
+
+#if HAVE_LIBPCAP
+#include <pcap/pcap.h>
+#endif
+#if HAVE_GETIFADDRS
+#include <ifaddrs.h>
+#endif
+
+#if !HAVE_LIBPCAP && !HAVE_GETIFADDRS
+#error "Sorry, can't lookup ethernet interfaces without libpcap or getifaddrs(3)"
+#endif
 
 /* Interface table entry.
    This is needed to provide a more generic format that can
@@ -351,7 +380,7 @@ union ipaddr {
     struct in_addr ia_addr;
 };
 
-int osn_iftab_init(int);
+int osn_iftab_init(void);
 int osn_nifents(void);		/* # of entries cached by osn_iftab_init */
 
 int osn_ifsock(char *ifnam, ossock_t *);
@@ -361,7 +390,7 @@ void osn_ifctab_show(FILE *f, struct ifconf *ifc);
 int osn_ifipget(int s, char *ifnam, unsigned char *ipa);
 int osn_ifnmget(int s, char *ifnam, unsigned char *ipa);
 int osn_pfeaget(int s, char *ifnam, unsigned char *eap);
-int osn_ifeaget(int s, char *ifnam, unsigned char *eap, unsigned char *def);
+int osn_ifeaget2(char *ifnam, unsigned char *eap);
 #if !OSN_USE_IPONLY
 int osn_ifeaset(int s, char *ifnam, unsigned char *newpa);
 int osn_ifmcset(int s, char *ifc, int delf, unsigned char *pa);
@@ -370,6 +399,8 @@ int osn_ifmcset(int s, char *ifc, int delf, unsigned char *pa);
 struct ifent *osn_ipdefault(void);
 struct ifent *osn_iftab_arp(struct in_addr ia);
 int osn_iftab_arpget(struct in_addr ia, unsigned char *eap);
+
+int osn_ifealookup(char *ifnam, unsigned char *eap);
 
 #define OSN_EASTRSIZ sizeof("xx:xx:xx:xx:xx:xxZZ")
 char *eth_adrsprint(char *cp, unsigned char *ea);
@@ -390,5 +421,6 @@ struct osnpf {	/* Arg struct for common initialization params */
 	struct ether_addr osnpf_ea;	/* OUT: ether address of ifc */
 };
 int osn_pfinit(struct osnpf *, void *);
+void osn_pfdeinit(void);
 
 #endif /* ifndef OSDNET_INCLUDED */

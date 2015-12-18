@@ -1,6 +1,6 @@
 /* OSDNET.C - OS Dependent Network facilities
 */
-/* $Id: osdnet.c,v 2.8 2003/02/23 18:22:08 klh Exp $
+/* From: $Id: osdnet.c,v 2.8 2003/02/23 18:22:08 klh Exp $
 */
 /*  Copyright © 1999, 2001 Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -15,21 +15,6 @@
 **  This notice (including the copyright and warranty disclaimer)
 **  must be included in all copies or derivations of this software.
 */
-/*
- * $Log: osdnet.c,v $
- * Revision 2.8  2003/02/23 18:22:08  klh
- * Fix various problems for NetBSD/Alpha 1.6.
- *
- * Revision 2.7  2002/03/18 04:25:03  klh
- * Add support for promiscuous mode, fix minor ARP error output
- *
- * Revision 2.6  2001/11/19 10:32:34  klh
- * Solaris port fixups.
- *
- * Revision 2.5  2001/11/10 21:28:59  klh
- * Final 2.0 distribution checkin
- *
- */
 
 /*	This file, like DPSUP.C, is intended to be included directly
     into source code rather than compiled separately and then linked 
@@ -39,6 +24,7 @@
  */
 
 #include <unistd.h>	/* For basic Unix syscalls */
+#include <stdlib.h>
 
 /* The possible configuration macro definitions, with defaults:
  */
@@ -50,14 +36,10 @@
 # include "osdnet.h"	/* Insurance to make sure our defs are there */
 #endif
 
-#ifdef RCSID
- RCSID(osdnet_c,"$Id: osdnet.c,v 2.8 2003/02/23 18:22:08 klh Exp $")
-#endif
-
 /* Local predeclarations */
 
 struct ifent *osn_iflookup(char *ifnam);
-int osn_ifealookup(char *ifnam, unsigned char *eap);
+
 
 /* Get a socket descriptor suitable for general net interface
    examination and manipulation; this is not necessarily suitable for
@@ -107,66 +89,12 @@ ip_adrsprint(char *cp, unsigned char *ia)
 /* Interface Table initialization
 **	Gets info about all net interfaces known to the native system.
 **	Used for several purposes, hence fairly general.
+**	This table is used as much as possible, instead of using
+**	system specific lookup 
+**	A sticky point remains the ethernet addresses. They may or may
+**	not be reported, and if they are it is in a system specific way.
+**	Therefore we need to keep the system-specific functions for that.
 **
-*/
-/*
-  SIOCGIFCONF documentation is virtually non-existent.  The following
-  info comes from looking at source code.
-	struct ifconf ifconf;
-	s = socket(AF_INET, SOCK_DGRAM, 0);
-	ioctl(s, SIOCGIFCONF, &ifconf);
-
-  ifconf has only two elements:
-	<sys/if.h>: struct ifconf
-		caddr_t	ifcu_buf;	Buffer to use
-		int ifc_len;		Buffer size in bytes (or # bytes used)
-
-  On return, the buffer holds a series of "struct ifreq" entries, each of
-  which holds an interface name and address.  On older systems, each
-  such entry was a fixed size, but this was later changed in order to
-  accomodate longer addresses and consequently,
-		=====>> EACH ENTRY MAY BE OF VARYING SIZE!!!! <<======
-
-  This, by the way, is why SIOCGIFCONF appeared to be broken on OSF/1 when
-  used with a single ifreq's worth of buffer -- since it needed a larger
-  "ifreq" than the buffer had room for, it returned nothing.
-
-  Although the second element of "struct ifreq" is a union, SIOCGIFCONF always
-  uses it to return a sockaddr:
-	<sys/if.h>: struct ifreq
-		char ifr_name[16]		interface name, eg "de0"
-		struct sockaddr ifr_addr	interface address
-	<sys/socket.h>: struct sockaddr
-		unsigned char sa_len		# bytes in this sockaddr
-		unsigned char sa_family		address type, AF_xxx
-		char sa_data[14]		actually up to 253 bytes!
-
-  Note that the sa_len field is new; older versions of sockaddr had
-  just sa_family and sa_data.
-
-  To repeat, the actual size of an ifreq depends on the size of the
-  sockaddr it contains.  This is ALWAYS at least sizeof(struct sockaddr),
-  so trickiness is only needed when sa_len is greater than this default
-  size.
-
-#define	_SIZEOF_ADDR_IFREQ(p) \
-	((p)->ifr_addr.sa_len <= sizeof(struct sockaddr) \
-	?  sizeof(struct ifreq) \
-	: (sizeof(struct ifreq)-sizeof(struct sockaddr)+(p)->ifr_addr.sa_len))
-
-or alternatively:
-
-#define	_SIZEOF_ADDR_IFREQ(ifr) \
-	((ifr).ifr_addr.sa_len > sizeof(struct sockaddr) \
-	? (sizeof(struct ifreq) - sizeof(struct sockaddr) + (ifr).ifr_addr.sa_len) \
-	: sizeof(struct ifreq))
-
-  This has been made trickier by NetBSD 5.0, which doesn't put a sockaddr
-  but a (union with as largest member a) sockaddr_storage in the ifreq.
-  Now the size is always the same again, but not sizeof(struct sockaddr).
-  This can (probably) be recognised by the existence of
-  #define	ifr_space	ifr_ifru.ifru_space   / * sockaddr_storage * /
-
 */
 /*
   Note that searching for AF_INET or IP addresses only finds interfaces that
@@ -180,86 +108,107 @@ or alternatively:
   interface; there is none.
 */
 
-/* Complete table as returned from system by SIOCGIFCONF
- * Currently static for debugging, could be dynamic.
- */
-static struct ifconf ifctab;
-static char ifcbuf[sizeof(struct ifreq) * NETIFC_MAX];
-
-/* Our own internal table of interface entries, filtered
-   to keep only the ones we're interested in.
+/* Our own internal table of interface entries.
  */
 static int iftab_initf = 0;
 static int iftab_nifs = 0;
 static struct ifent iftab[NETIFC_MAX];
 
-static void osn_iftab_pass(int opts, int npass, int s, struct ifconf *ifc);
+static struct ifent *
+osn_iftab_addaddress(char *name, struct sockaddr *addr);
 
 /* Get table of all interfaces, using our own generic entry format.
- * Routine works as follows:
  *
- * First, grabs a IFCONF table of all interfaces from the kernel.
- *	Each IFR entry contains a name and an address.
+ * This uses either getifaddrs(3) (available on at least BSD, linux,
+ * OS X) or otherwise pcap_findalldevs(3).
  *
- * Second, scan this IFCONF table (pass 1) to build our own table of IFE
- * entries, made of all IFR entries that pass the following filter
- * flags:
- *	IFTAB_IPS   - if set, accepts AF_INET interfaces (with IP address)
- *	IFTAB_ETHS  - if set, accepts LINK interfaces with Ether-like addrs.
- *	IFTAB_OTH   - if set, accepts all others (with unknown addr)
+ * getifaddrs(3) will provide link-level (ethernet) addresses on at
+ * least NetBSD 1.5+, FreeBSD 4.1+, MacOS X 10.6+, Linux.
  *
- * Third, make another scan of IFCONF (pass 2) that grabs *all* information
- * about any interface present in our IFE table, regardless of what caused
- * it to be inserted.
+ * pcap_findalldevs(3) may omit interfaces that are not IFF_UP.
+ * It will provide ethernet addresses on at least NetBSD, FreeBSD, Linux.
  */
 int
-osn_iftab_init(int opts)
+osn_iftab_init(void)
 {
-    int s;
-    struct ifconf *ifc = &ifctab;
-    register struct ifent *ifet;
+    struct ifent *ife;
 
     /* Start out with empty table */
+    memset(&iftab[0], sizeof(iftab), 0);
     iftab_nifs = 0;
-    ifet = &iftab[0];
 
-    /* Open socket with AF_INET family to get at IP stuff.
-     */
+#if HAVE_GETIFADDRS
+    struct ifaddrs *ifp;
+
+    getifaddrs(&ifp);
+
+    while (ifp) {
+	if (!ifp->ifa_name)
+	    continue;
+	ife = osn_iftab_addaddress(ifp->ifa_name, ifp->ifa_addr);
+
+	if (ife) {
+	    ife->ife_flags = ifp->ifa_flags;
+	}
+
+	ifp = ifp->ifa_next;
+    }
+    freeifaddrs(ifp);
+
+#elif HAVE_LIBPCAP
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_if_t *alldevs;
+    struct ifreq ifr;
+    int s;
+
     if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-	esfatal(1, "osn_iftab_init socket()");
+	syserr(errno, "Can't get socket for SIOCGIFFLAGS");
+	return FALSE;
     }
 
-    /* Gobble table of config info about all interfaces, including name
-       and IP address.
+    /*
+     * This may only find interfaces that are IFF_UP.
      */
-    ifc->ifc_len = sizeof(ifcbuf);
-    ifc->ifc_buf = (caddr_t)ifcbuf;
-    if (ioctl(s, SIOCGIFCONF, (char *)ifc) < 0) {
-	close(s);
-	esfatal(1, "osn_iftab_init SIOCGIFCONF");
+    if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+	error("pcap_findalldevs: %s", errbuf);
+	return;
     }
-    if (ifc->ifc_len < sizeof(struct ifreq)) {
-	if (DP_DBGFLG)
-	    dbprintln("SIOCGIFCONF only got %d bytes (need %d)",
-			(int)ifc->ifc_len, (int)sizeof(struct ifreq));
-	close(s);
-	return 0;			/* Assume no interfaces */
+
+    while (alldevs) {
+	pcap_addr_t *addr;
+
+	if (!alldevs->name)
+	    continue;
+
+	/* These ioctls should work for all interfaces */
+	strncpy(ifr.ifr_name, alldevs->name, sizeof(ifr.ifr_name));
+	if (ioctl(s, SIOCGIFFLAGS, (char *)&ifr) < 0) {
+	    syserr(errno, "SIOCGIFFLAGS for \"%s\"", alldevs->name);
+	    continue;
+	}
+
+	addr = alldevs->addresses;
+
+	while (addr) {
+	    ife = osn_iftab_addaddress(alldevs->name, addr->addr);
+	    addr = addr->next;
+	}
+
+	if (ife) {
+	    ife->ife_flags = ifr.ifr_flags;
+	}
+
+	alldevs = alldevs->next;
     }
-    if (DP_DBGFLG)
-	dbprintln("SIOCGIFCONF returned %d bytes (%d ifcs?)",
-		 (int)ifc->ifc_len, (int)(ifc->ifc_len/sizeof(struct ifreq)));
 
-    if (DP_DBGFLG)
-	osn_ifctab_show(stdout, ifc);
-
-    /* Grabbed everything from OS, now grovel through it */
-    osn_iftab_pass(opts, 1, s, ifc);	/* Do pass 1 scan */
-    osn_iftab_pass(opts, 2, s, ifc);	/* Do pass 2 scan */
-    iftab_initf = opts;			/* Inited! */
+    pcap_freealldevs(alldevs);
 
     close(s);
+#endif
+
     if (DP_DBGFLG)
 	osn_iftab_show(stdout, &iftab[0], iftab_nifs);
+
     return iftab_nifs;
 }
 
@@ -269,239 +218,80 @@ osn_nifents(void)
     return iftab_nifs;
 }
 
-static void
-osn_iftab_pass(int opts, int npass, int s, struct ifconf *ifc)
+/*
+ * Remember a specific address for an interface.
+ *
+ * If multiple addresses are found, they overwrite each other.
+ *
+ * For AF_LINK addresses, in NetBSD at least it seems that the first one
+ * is the default hardware address, and later ones were set with
+ * "ifconfig re0 link <addr>" or removed with "ifconfig re0 link <addr>
+ * -alias".  The default hardware address can't be removed this way.
+ *  The net effect is that the last address set up (which is presumably
+ *  the one in use) is remembered.
+ *
+ * Maybe we should simply remember an array of addresses of each type.
+ */
+
+static struct ifent *
+osn_iftab_addaddress(char *name, struct sockaddr *addr)
 {
-    register int i;
-    int offset;
-    struct ifreq ifr;
-    register struct ifreq *ifp, *ifend, *ifnext;
-    register struct ifent *ife, *ifet;
-
-    /* Start out with empty table */
-    if (npass == 1)
-	iftab_nifs = 0;
-
-    ifet = &iftab[0];
-
-    ifp = ifc->ifc_req;
-    ifend = (struct ifreq *)((char *)ifp + ifc->ifc_len);
-    for (; ifp < ifend; ifp = ifnext) {
-
-	/* Find next pointer now, to simplify structure of code.
-	   This is complicated by the fact that the returned table format
-	   has changed under different OS versions.  The "new regime"
-	   uses a variable-size "ifreq" entry!  Choke...
-	 */
-	ifnext = ifp + 1;	/* Assume normal entry at first */
-#if NETIF_HAS_SALEN && !defined(ifr_space)
-	if (ifp->ifr_addr.sa_len > sizeof(struct sockaddr)) {
-	    offset = ifp->ifr_addr.sa_len - sizeof(struct sockaddr);
-	    ifnext = (struct ifreq *)((char *)ifnext + offset);
-	}
-#endif
-	/* See whether this entry is already in table.
-	*/
-	for (i = 0; i < iftab_nifs; ++i) {
-	    if (strncmp(ifp->ifr_name, ifet[i].ife_name, sizeof(ifp->ifr_name))
-		== 0) {
-		/* Found existing entry!  Use its pointer */
-		ife = &ifet[i];
-		break;
-	    }
-	}
-	if (i >= iftab_nifs) {
-	    if (npass == 2)
-		continue;
-	    /* Pass1, decide now whether to create entry or not */
-	    /* See if it's something we're interested in. */
-	    if ((opts & IFTAB_IPS) && (ifp->ifr_addr.sa_family == AF_INET)) {
-		/* yes */
-#if NETIF_HAS_ETHLINK
-	    } else if ((opts & IFTAB_ETHS)
-		       && (ifp->ifr_addr.sa_family == AF_LINK)
-		       && (((struct sockaddr_dl *)&ifp->ifr_addr)->sdl_alen
-			   == ETHER_ADRSIZ)){
-		/* yes */
-#endif
-	    } else if (opts & IFTAB_OTH) {
-		/* yes */
-	    } else {
-		/* Nope, ignore this one */
-		continue;
-	    }
-
-	    /* Yes, create this entry */
-	    if (iftab_nifs >= NETIFC_MAX-1) {
-		error("ifc table overflow, max %d", NETIFC_MAX);
-		return;			/* Stop now */
-	    }
-	    ife = &ifet[iftab_nifs++];	/* New table entry to fill out */
-
-	    /* Copy interface name and ensure null-terminated
-	       even if sizes someday get out of synch.
-	     */
-	    strncpy(ife->ife_name, ifp->ifr_name,
-		    (sizeof(ife->ife_name) < sizeof(ifp->ifr_name))
-		    ? sizeof(ife->ife_name) : sizeof(ifp->ifr_name));
-	    ife->ife_name[sizeof(ife->ife_name)-1] = '\0';
-
-	    /* These ioctls should work for all interfaces */
-	    strncpy(ifr.ifr_name, ifp->ifr_name, sizeof(ifr.ifr_name));
-	    if (ioctl(s, SIOCGIFFLAGS, (char *)&ifr) < 0) {
-		syserr(errno, "SIOCGIFFLAGS for \"%s\"", ife->ife_name);
-		continue;			/* Discard entry */
-	    }
-	    ife->ife_flags = ifr.ifr_flags;
-
-	    /* SIOCGIFMTU: ifr_mtu */
-	    /* SIOCGIFMETRIC: ifr_metric */
-	    continue;
-	}
-	if (npass == 1)
-	    continue;
-
-	/* Pass 2 and dealing with an existing entry.  Flesh it out! */
-	switch (ifp->ifr_addr.sa_family) {
-	case AF_INET:
-	    ife->ife_gotip4 = TRUE;
-	    ife->ife_ipint = ((struct sockaddr_in *)
-				&ifp->ifr_addr)->sin_addr.s_addr;
-	    break;
-#if NETIF_HAS_ETHLINK
-	case AF_LINK:
-	    if (((struct sockaddr_dl *)&ifp->ifr_addr)->sdl_alen
-		== ETHER_ADRSIZ) {
-		/* Looks like Ethernet physical link, save addr */
-		struct sockaddr_dl *dla = (struct sockaddr_dl *)&ifp->ifr_addr;
-		memcpy(ife->ife_ea,  LLADDR(dla), dla->sdl_alen);
-		ife->ife_gotea = TRUE;
-		break;
-	    }
-#endif
-	    /* Else drop through to "other" case */
-	default:
-	    break;
-	}
-    }
-}
-
-#include <stddef.h>
-
-void
-osn_ifctab_show(FILE *f, struct ifconf *ifc)
-{
-    register struct ifreq *ifr;
-    struct ifreq *ifrend;
-    int len;
+    struct ifent *ife, *ifet;
     int i;
-    unsigned char *cp;
-    int nents = 0;
-    int nvary = 0;
+    int idx;
 
-    fprintf(f, "sizeof struct ifreq = %d\r\n", (int) sizeof(struct ifreq));
-    fprintf(f, "IFNAMSIZ = %d\r\n", (int) IFNAMSIZ);
-#if CENV_SYS_NETBSD
-    fprintf(f, "offset of struct sockaddr_storage = %d\r\n", (int) offsetof(struct ifreq, ifr_space));
-#endif
-    fprintf(f, "sizeof struct sockaddr = %d\r\n", (int) sizeof(struct sockaddr));
-    fprintf(f, "sizeof struct sockaddr_storage = %d\r\n", (int) sizeof(struct sockaddr_storage));
-    fprintf(f, "sizeof union ifr_ifru = %d\r\n", (int) sizeof(ifr->ifr_ifru));
+    /* First see if the name is already known */
 
-    fprintf(f, "Interface table: %ld bytes (%d entries if std addr len %d)\r\n",
-	    (long)ifc->ifc_len, (int)(ifc->ifc_len/sizeof(struct ifreq)),
-	    (int)sizeof(struct sockaddr));
-
-    ifr = ifc->ifc_req;
-    ifrend = (struct ifreq *)((char *)(ifc->ifc_req) + ifc->ifc_len);
-    for (i = 0; ifr < ifrend; ++i) {
-	++nents;
-
-#if NETIF_HAS_SALEN
-	len = ifr->ifr_addr.sa_len;
-#else
-	len = sizeof(struct sockaddr);
-#endif
-
-	fprintf(f, "offset: %d\r\n", (int)((char *)ifr - (char *)ifc->ifc_req));
-	/* Output entry data */
-	fprintf(f, "%2d: \"%.*s\" sockaddr.sa_family %d, .sa_len %d",
-		i, (int)sizeof(ifr->ifr_name), ifr->ifr_name,
-		ifr->ifr_addr.sa_family, len);
-	if (len) {
-	    cp = (unsigned char *) ifr->ifr_addr.sa_data;
-	    fprintf(f, " = (sockaddr.sa_data) %x", *cp);
-	    for (--len; len > 0; --len) {
-		fprintf(f, ":%x", *++cp);
-	    }
+    idx = -1;
+    for (i = iftab_nifs - 1; i >= 0; i--) {
+	if (strcmp(iftab[i].ife_name, name) == 0) {
+	    idx = i;
+	    break;
 	}
-	fprintf(f, "\r\n");
-
-	cp = (unsigned char *) ifr->ifr_addr.sa_data;
-	switch (ifr->ifr_addr.sa_family) {
-	case AF_INET:
-	  {
-	    struct sockaddr_in *skin = (struct sockaddr_in *) &ifr->ifr_addr;
-	    struct in_addr *in = &skin->sin_addr;
-	    unsigned char *ucp = (unsigned char *) &in->s_addr;
-
-	    fprintf(f, "        AF_INET = port %d, IP %d.%d.%d.%d\r\n",
-		    (int)skin->sin_port,
-		    ucp[0], ucp[1], ucp[2], ucp[3]);
-	  }
-	    break;
-
-#if NETIF_HAS_ETHLINK
-	case AF_LINK:
-	  {
-	    struct sockaddr_dl *dla = (struct sockaddr_dl *) &ifr->ifr_addr;
-	    fprintf(f, "        AF_LINK = type %d, sdl_alen %d",
-		    dla->sdl_type, dla->sdl_alen);
-	    if (len = dla->sdl_alen) {
-		cp = (unsigned char *) LLADDR(dla);
-		fprintf(f, " = %x", *cp);
-		for (--len; len > 0; --len) {
-		    fprintf(f, ":%x", *++cp);
-		}
-	    }
-	    fprintf(f, "\r\n");
-	  }
-	    break;
-#endif
-
-#if defined(AF_INET6)
-	case AF_INET6:
-	    fprintf(f, "        AF_INET6 (No handler for this)\r\n");
-	    break;
-#endif
-	default:
-	    fprintf(f, "        No handler for this family\r\n");
-	}
-
-
-	/* Move onto next entry */
-#if NETIF_HAS_SALEN && !defined(ifr_space)
-	if (ifr->ifr_addr.sa_len > sizeof(struct sockaddr)) {
-	    ++nvary;
-	    ifr = (struct ifreq *)((char *)(ifr + 1) +
-			(ifr->ifr_addr.sa_len - sizeof(struct sockaddr)));
-	} else
-#endif
-	ifr++;
     }
-    if (nvary)
-	fprintf(f, "Interface summary: %d entries of varying length\r\n",
-		nents);
-    else
-	fprintf(f, "Interface summary: %d entries of std length %d\r\n",
-		nents, (int)sizeof(struct ifreq));
-}
 
+    if (idx < 0) {
+	idx = iftab_nifs++;
+	if (idx >= NETIFC_MAX)
+	    return NULL;	/* doesn't fit */
+	strncpy(iftab[idx].ife_name, name, IFNAMSIZ);
+	iftab[idx].ife_name[IFNAMSIZ] = '\0';
+    }
+
+    ifet = &iftab[idx];
+
+    switch (addr->sa_family) {
+    case AF_INET: {
+	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
+	ifet->ife_ipia = sin->sin_addr;
+	ifet->ife_gotip4 = TRUE;
+	break;
+		  }
+#if defined(AF_LINK)
+    case AF_LINK: {
+	struct sockaddr_dl *sdl = (struct sockaddr_dl *)addr;
+	if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADRSIZ) {
+	    ea_set(ifet->ife_ea, LLADDR(sdl));
+	    ifet->ife_gotea = TRUE;
+	}
+		  }
+#endif /* AF_LINK*/
+#if defined(AF_PACKET)
+    case AF_PACKET: {
+	struct sockaddr_ll *sll = (struct sockaddr_ll *)addr;
+	if (sll->sll_hatype == ARPHRD_ETHER && sll->sll_halen == ETHER_ADRSIZ) {
+	    ea_set(ifet->ife_ea, &sll->sll_addr);
+	    ifet->ife_gotea = TRUE;
+	}
+		    }
+#endif /* AF_PACKET*/
+    }
+}
 
 void
 osn_iftab_show(FILE *f, struct ifent *ifents, int nents)
 {
-    register struct ifent *ife;
+    struct ifent *ife;
     int i;
 
     fprintf(f, "Filtered IFE table: %d entries\r\n", nents);
@@ -528,8 +318,8 @@ osn_iftab_show(FILE *f, struct ifent *ifents, int nents)
 struct ifent *
 osn_iftab_arp(struct in_addr ia)
 {
-    register int i = 0;
-    register struct ifent *ife = iftab;
+    int i = 0;
+    struct ifent *ife = iftab;
 
     for (; i < iftab_nifs; ++i, ++ife)
 	if (ife->ife_ipia.s_addr == ia.s_addr)
@@ -542,7 +332,7 @@ osn_iftab_arp(struct in_addr ia)
 int
 osn_iftab_arpget(struct in_addr ia, unsigned char *eap)
 {
-    register struct ifent *ife;
+    struct ifent *ife;
 
     if ((ife = osn_iftab_arp(ia)) && ife->ife_gotea) {
 	ea_set(eap, ife->ife_ea);
@@ -558,8 +348,8 @@ osn_iftab_arpget(struct in_addr ia, unsigned char *eap)
 struct ifent *
 osn_ipdefault(void)
 {
-    register int i = 0;
-    register struct ifent *ife = iftab;
+    int i = 0;
+    struct ifent *ife = iftab;
 
     for (; i < iftab_nifs; ++i, ++ife)
 	if ((ife->ife_flags & IFF_UP) && !(ife->ife_flags & IFF_LOOPBACK))
@@ -572,8 +362,8 @@ osn_ipdefault(void)
 struct ifent *
 osn_iflookup(char *ifnam)
 {
-    register int i = 0;
-    register struct ifent *ife = iftab;
+    int i = 0;
+    struct ifent *ife = iftab;
 
     for (; i < iftab_nifs; ++i, ++ife)
 	if (strcmp(ifnam, ife->ife_name) == 0)
@@ -588,18 +378,18 @@ int
 osn_ifealookup(char *ifnam,		/* Interface name */
 	       unsigned char *eap)	/* Where to write ether address */
 {
-#if NETIF_HAS_ETHLINK
-    register struct ifent *ife;
+    struct ifent *ife;
 
-    if ((ife = osn_iflookup(ifnam))
-	&& ife->ife_gotea) {
+    if (ife = osn_iflookup(ifnam)) {
+	if (!ife->ife_gotea) {
+	    ife->ife_gotea = osn_ifeaget2(ifnam, ife->ife_ea);
+	}
+	if (ife->ife_gotea) {
 	    ea_set(eap, ife->ife_ea);
 	    return TRUE;
+	}
     }
     return FALSE;
-#else
-    return osn_ifeaget(-1, ifnam, eap, (unsigned char *)NULL);
-#endif
 }
 
 /* OSN_ARP_STUFF - stuff emulated-host ARP entry into kernel.
@@ -782,10 +572,16 @@ osn_ifnmget(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 }
 
 
-/* OSN_IFEAGET - get physical ethernet address for a given interface name.
+/* OSN_IFEAGET2 - get physical ethernet address for a given interface name.
  *
  * This is fairly tricky as the OSD mechanism for this tends to
  * be *very* poorly documented.
+ *
+ * Usually this information was already found by the information from
+ * either getifaddrs(3) or pcap_findalldevs(3).
+ *
+ * In the cases where it wasn't, we have fallbacks for DECOSF
+ * and via ARP.
  *
  * Apparently only DEC OSF/1 and Linux can find this directly.
  * However, other systems seem to be divided into either of two
@@ -797,117 +593,50 @@ osn_ifnmget(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
  *		AF_LINK family address in the ifconf table.
 */
 int
-osn_ifeaget(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
-	    char *ifnam,	/* Interface name */
-	    unsigned char *eap,	/* Current ether address */
-	    unsigned char *def)	/* Default (hardware) ether address */
+osn_ifeaget2(char *ifnam,	/* Interface name */
+	    unsigned char *eap)	/* Current ether address */
 {
     char eastr[OSN_EASTRSIZ];
 
 #if CENV_SYS_DECOSF		/* Direct approach */
-  {
-    int ownsock = FALSE;
-    struct ifdevea ifdev;
+    {
+	int ownsock = FALSE;
+	struct ifdevea ifdev;
 
-    if (s == -1) {
 	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 	    syserr(errno, "Can't get EN addr for \"%s\": socket()", ifnam);
 	    return FALSE;
 	}
-	ownsock = TRUE;
-    }
-    strncpy(ifdev.ifr_name, ifnam, sizeof(ifdev.ifr_name));
-    if (ioctl(s, SIOCRPHYSADDR, &ifdev) < 0) {
-	syserr(errno, "Can't get EN addr for \"%s\": SIOCRPHYSADDR", ifnam);
-	if (ownsock) close(s);
-	return FALSE;
-    }
-    if (ownsock)
-	close(s);
-    ea_set(eap, ifdev.current_pa);
-    if (def)
-	ea_set(def, ifdev.default_pa);
-  }
 
-#elif CENV_SYS_LINUX
-  {
-    int ownsock = FALSE;
-    struct ifreq ifr;
-
-    if (s == -1) {
-	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-	    syserr(errno, "Can't get EN addr for \"%s\": socket()", ifnam);
+	strncpy(ifdev.ifr_name, ifnam, sizeof(ifdev.ifr_name));
+	if (ioctl(s, SIOCRPHYSADDR, &ifdev) < 0) {
+	    syserr(errno, "Can't get EN addr for \"%s\": SIOCRPHYSADDR", ifnam);
+	    if (ownsock) close(s);
 	    return FALSE;
 	}
-	ownsock = TRUE;
-    }
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
-    if (ioctl(s, SIOCGIFHWADDR, &ifr) < 0 ) {
-	syserr(errno, "SIOCGIFHWADDR of %s failed", ifnam);
-	if (ownsock) close(s);
-	return FALSE;
-    }
-
-    if (ifr.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
-	error("%s is not an ethernet - ARPHRD type %d",
-	       ifnam, ifr.ifr_hwaddr.sa_family);
-	if (ownsock) close(s);
-	return FALSE;
-    }
-    if (ownsock)
 	close(s);
-    ea_set(eap, &ifr.ifr_addr.sa_data[0]);	/* Return the ether address */
-    if (def)
-	memset(def, 0, ETHER_ADRSIZ);
-  }
-
-#elif NETIF_HAS_ARPIOCTL
-  {
-    /* Much more general hack */
-    unsigned char ipchr[IP_ADRSIZ];
-    char ipstr[OSN_IPSTRSIZ];
-
-    /* Get IP address for this interface, as an argument for ARP lookup */
-    if (!osn_ifipget(s, ifnam, ipchr)) {
-	error("Can't get EN addr for \"%s\": osn_ifipget failed", ifnam);
-	return FALSE;
+	ea_set(eap, ifdev.current_pa);
     }
-
-    /* Have IP address, now do ARP lookup hackery */
-    if (!osn_arp_look((struct in_addr *)ipchr, eap)) {
-	syserr(errno,"Can't find EN addr for \"%s\" %s using ARP",
-	       ifnam, ip_adrsprint(ipstr, ipchr));
-	return FALSE;
-    }
-    if (def)
-	memset(def, 0, ETHER_ADRSIZ);
-  }
-
-#elif NETIF_HAS_ETHLINK
-  /* Should never happen unless osn_ifeaget() is called directly
-     without going through osn_ifealookup().  If so, attempt
-     to do right thing anyway.
-  */
-  {
-    register struct ifent *ife;
-
-    if (iftab_initf == 0) {
-	/* Try to initialize iftab, ignore errors */
-	(void) osn_iftab_init(IFTAB_ETHS);
-    }
-    if (!(ife = osn_iflookup(ifnam))
-     || !(ife->ife_gotea)) {
-	error("No EN addr in iftab for \"%s\"", ifnam);
-	return FALSE;
-    }
-    ea_set(eap, ife->ife_ea);
-    if (def)
-	memset(def, 0, ETHER_ADRSIZ);
-  }
 
 #else
-# error "Unimplemented OS routine osn_ifeaget()"
+    {
+	/* Much more general hack */
+	unsigned char ipchr[IP_ADRSIZ];
+	char ipstr[OSN_IPSTRSIZ];
+
+	/* Get IP address for this interface, as an argument for ARP lookup */
+	if (!osn_ifipget(-1, ifnam, ipchr)) {
+	    error("Can't get EN addr for \"%s\": osn_ifipget failed", ifnam);
+	    return FALSE;
+	}
+
+	/* Have IP address, now do ARP lookup hackery */
+	if (!osn_arp_look((struct in_addr *)ipchr, eap)) {
+	    syserr(errno,"Can't find EN addr for \"%s\" %s using ARP",
+		    ifnam, ip_adrsprint(ipstr, ipchr));
+	    return FALSE;
+	}
+    }
 #endif
     dbprintln("EN addr for \"%s\" = %s",
 	      ifnam, eth_adrsprint(eastr, eap));
@@ -999,7 +728,7 @@ osn_pfeaget(int pfs,		/* Packetfilter socket or FD */
 	return FALSE;
   }
 #else
-    if (!osn_ifeaget(pfs, ifnam, eap, (unsigned char *)NULL))
+    if (!osn_ifealookup(ifnam, eap))
 	return FALSE;
 #endif
 
@@ -1485,7 +1214,7 @@ osn_pfinit(struct osnpf *osnpf, void *pfarg)
 #if KLH10_NET_BPF
 
 int
-osn_pfinit(register struct osnpf *osnpf, void *arg)
+osn_pfinit(struct osnpf *osnpf, void *arg)
 {
     int fd;
     struct bpf_version bv;
@@ -1522,6 +1251,25 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
     i = 1;
     if (ioctl(fd, BIOCIMMEDIATE, (char *) &i) < 0)
 	esfatal(1, "BIOCIMMEDIATE failed");
+
+    /* BIOCSFEEDBACK causes packets that we send via bpf to be
+     * seen as incoming by the host OS.
+     * Without this, there is no working communication between
+     * the host and the guest OS (just in one direction).
+     */
+#if !defined(BIOCSFEEDBACK) && defined(BIOCFEEDBACK)
+# define BIOCSFEEDBACK BIOCSFEEDBACK
+#endif
+//#if defined(__NetBSD_Version__) && __NetBSD_Version__ < 799002500
+//# undef BIOCSFEEDBACK	/* buggy before NetBSD 7.99.24 or 7.1 */
+//#endif
+#if defined(BIOCSFEEDBACK)
+    error("trying BIOCSFEEDBACK");
+    errno = 0;
+    i = 1;
+    if (ioctl(fd, BIOCSFEEDBACK, (char *) &i) < 0)
+	syserr(errno, "BIOCSFEEDBACK failed");
+#endif
 
     /* Set the read() buffer size.
        Must be set before interface is attached!
@@ -1647,7 +1395,7 @@ The ifra_mask field is ignored (left as-is or zeroed if new) unless
  */
 
 int
-osn_pfinit(register struct osnpf *osnpf, void *arg)
+osn_pfinit(struct osnpf *osnpf, void *arg)
 {
     int allowextern = TRUE;	/* For now, always try for external access */
     int fd;
@@ -1678,7 +1426,7 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
 	 exist, if there is no hardware interface)
       */
       if (allowextern) {
-	  if (osn_iftab_init(IFTAB_IPS) && (ife = osn_ipdefault())) {
+	  if (osn_iftab_init() && (ife = osn_ipdefault())) {
 	      iplocal = ife->ife_ipia;
 	  } else {
 	      error("Cannot find default IP interface for host");
@@ -1707,13 +1455,13 @@ osn_pfinit(register struct osnpf *osnpf, void *arg)
     if (ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) /* turn it on */
       esfatal(0, "Couldn't set tun device");
     strcpy(ifnam, ifr.ifr_name); /* get device name (typically "tun0") */
-#else
+#else /* not CENV_SYS_LINUX */
     do {
 #if OSN_USE_IPONLY
 	sprintf(tunname, "/dev/tun%d", ++i);
 #else
 	sprintf(tunname, "/dev/tap%d", ++i);
-#endif
+#endif /* not CENV_SYS_LINUX */
     } while ((fd = open(tunname, O_RDWR)) < 0 && errno == EBUSY);
 
     if (fd < 0)
@@ -2012,7 +1760,8 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
 /*
  * Too bad that this is never called...
  */
-osn_pfdeinit()
+void
+osn_pfdeinit(void)
 {
 #if KLH10_NET_TAP_BRIDGE
     void tap_bridge_close();
@@ -2022,7 +1771,7 @@ osn_pfdeinit()
 
 #if KLH10_NET_TAP_BRIDGE
 
-osn_pfinit(register struct osnpf *osnpf, void *arg)
+osn_pfinit(struct osnpf *osnpf, void *arg)
 {
     int fd;
     char *ifnam = osnpf->osnpf_ifnam;
