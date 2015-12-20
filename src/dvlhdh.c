@@ -225,7 +225,7 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
     lh->lh_backlog = 0;
     lh->lh_dedic = FALSE;
     lh->lh_doarp = TRUE;
-    lh->lh_rdtmo = 1;			/* Default to 1 sec timeout check */
+    lh->lh_rdtmo = 60;			/* Default to 60 sec timeout check */
     lh->lh_dpidly = 0;
     lh->lh_dpdbg = FALSE;
 #if KLH10_DEV_DPIMP

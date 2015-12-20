@@ -191,7 +191,7 @@ fail because the arp_look() call can't find it.
 Algorithm to use:
 	- See if IMP ifc is same as default IP ifc.
 	- If yes - shared, not dedicated.
-		Get ether addr from PFFD as usual and copy into arptab cache.
+		Get ether addr from pfdata.pf_FD as usual and copy into arptab cache.
 	- If no - dedicated, not shared.
 		See if native IP address can be found in OS ARP table.
 		If yes - save in cache, done.
@@ -277,7 +277,7 @@ int chpid;			/* PID of child (R proc) */
 int mylockid;			/* Locker IDs: 1 for W, 0 for R */
 int othlockid;
 int swstatus = TRUE;
-int pffd;			/* Packet-Filter FD (bidirectional) */
+struct pfdata pfdata;		/* Packet-Filter state */
 
 struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
 struct in_addr ihost_ip;	/* IMP/Native host IP addr, net order */
@@ -595,7 +595,8 @@ main(int argc, char **argv)
     */
 #if !KLH10_NET_TUN	/* If TUN, already done by osn_pfinit */
     arp_init(dpimp);
-    if (!osn_arp_stuff((unsigned char *)&ehost_ip,
+    if (!osn_arp_stuff(dpimp->dpimp_ifnam,
+		       (unsigned char *)&ehost_ip,
 		       (unsigned char *)&ihost_ea, TRUE))	/* Set us up */
 	esfatal(1, "OSN_ARP_STUFF failed");
 #endif
@@ -720,7 +721,7 @@ net_init(register struct dpimp_s *dpimp)
        the packetfilter open may use and/or change it.
     */
     ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);	/* Set requested ea if any */
-    pffd = osn_pfinit(&npf, (void *)dpimp);	/* Will abort if fails */
+    osn_pfinit(&pfdata, &npf, (void *)dpimp);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea if one */
 #if KLH10_NET_TUN
     tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
@@ -808,7 +809,7 @@ pfshow(struct OSN_PFSTRUCT *pf)
 
 #endif /* KLH10_NET_PFLT || KLH10_NET_NIT || KLH10_NET_DLPI */
 
-#if KLH10_NET_BPF
+#if KLH10_NET_BPF || KLH10_NET_PCAP
 
 /*
 ** BPF filter program stuff.
@@ -908,9 +909,10 @@ pfbuild(void *arg, struct in_addr *ipa)
 
 	/* Want to pass ARP replies as well, so we can see responses to any
 	** ARPs we send out?
-	** NOTE!!!  ARP *requests* are not passed!  The assumption is that
+	** ARP *requests* are also passed!  The hope is that
 	** osn_arp_stuff() will have ensured that the host platform
-	** proxy-answers requests for our IP address.
+	** proxy-answers requests for our IP address, but that doesn't
+	** always work.
 	*/
 	*p++ = BPFI_LDH(PKBOFF_ETYPE);		/* Load ethernet type field */
 	*p++ = BPFI_CAMN(ETHERTYPE_ARP);	/* Skip unless ARP packet */
@@ -959,7 +961,7 @@ pfshow(struct OSN_PFSTRUCT *pf)
 		pf->PF_FILT[i].k);
     fprintf(stderr, "]\r\n");
 }
-#endif /* KLH10_NET_BPF */
+#endif /* KLH10_NET_BPF || KLH10_NET_PCAP */
 
 #if KLH10_NET_LNX
 
@@ -986,11 +988,11 @@ int lnx_filter(register struct dpimp_s *dpimp,
      */
     etyp = ntohs(sp[PKSWOFF_ETYPE]);
     switch (etyp) {
-
-#if 1 	/* Must pass on ARP processing (Linux doesn't proxy ARP for us!!) */
+	/* Must pass on ARP processing (Linux doesn't proxy ARP for us!!)
+         */
     case ETHERTYPE_ARP:
 	return TRUE;
-#endif
+
     case ETHERTYPE_IP:
 	/* For IP packet, return TRUE if IP destination matches ours */
 	return (memcmp(dpimp->dpimp_ip, bp + PKBOFF_IPDEST, 4) == 0);
@@ -1293,6 +1295,10 @@ arp_look(struct in_addr ip,
     return NULL;
 }
 
+struct offset_ether_arp {
+    unsigned char offset[DPIMP_DATAOFFSET];
+    struct ether_arp arp;
+};
 
 /* ARP_REQ - Generates and sends ARP request.
    Must remember the fact in our cache, so can process reply ourself
@@ -1303,7 +1309,7 @@ arp_req(struct in_addr *ipa)
 {
     static int ethbuild = 0, arpbuild = 0;
     static struct eth_header eh;
-    static struct ether_arp arp;
+    static struct offset_ether_arp arp;
     register struct arpent *at;
     struct ether_addr ea;
 
@@ -1322,20 +1328,20 @@ arp_req(struct in_addr *ipa)
 
     /* Now put together the ARP packet */
     if (!arpbuild) {
-	arp.arp_hrd = htons(ARPHRD_ETHER);	/* Set hdw addr format */
-	arp.arp_pro = htons(ETHERTYPE_IP);	/* Set ptcl addr fmt */
-	arp.arp_hln = sizeof(arp.arp_sha);	/* Hdw address len */
-	arp.arp_pln = sizeof(arp.arp_spa);	/* Ptcl address len */
-	arp.arp_op = htons(ARPOP_REQUEST);	/* Type REQUEST */
-	ea_set(arp.arp_sha, &ihost_ea);		/* Sender hdw addr */
-	memcpy((char *)arp.arp_spa,		/* Sender IP addr */
-		(char *)&ihost_ip, sizeof(arp.arp_sha));
+	arp.arp.arp_hrd = htons(ARPHRD_ETHER);	/* Set hdw addr format */
+	arp.arp.arp_pro = htons(ETHERTYPE_IP);	/* Set ptcl addr fmt */
+	arp.arp.arp_hln = sizeof(arp.arp.arp_sha);	/* Hdw address len */
+	arp.arp.arp_pln = sizeof(arp.arp.arp_spa);	/* Ptcl address len */
+	arp.arp.arp_op = htons(ARPOP_REQUEST);	/* Type REQUEST */
+	ea_set(arp.arp.arp_sha, &ihost_ea);		/* Sender hdw addr */
+	memcpy((char *)arp.arp.arp_spa,		/* Sender IP addr */
+		(char *)&ihost_ip, sizeof(arp.arp.arp_sha));
 	arpbuild = TRUE;
     }
 
     /* Now do only thing that varies -- set IP addr we're looking up. */
-    memcpy((char *)arp.arp_tpa,			/* Target IP addr */
-		(char *)ipa, sizeof(arp.arp_tpa));
+    memcpy((char *)arp.arp.arp_tpa,			/* Target IP addr */
+		(char *)ipa, sizeof(arp.arp.arp_tpa));
 
     /* Now send it! */
     if (swstatus) {
@@ -1343,15 +1349,15 @@ arp_req(struct in_addr *ipa)
 	dbprintln("ARP req %s", ip_adrsprint(ipbuf, (unsigned char *)ipa));
     }
 
-    ether_write(&eh, (unsigned char *)&arp, sizeof(arp));
+    ether_write(&eh, (unsigned char *)&arp.arp, sizeof(arp.arp));
 }
 
 
-/* ARP_GOTREP - Process an ARP Reply
+/* ARP_GOTREP - Process an ARP Request or Reply.
    If it matches a request we already sent out, remember its
    information.  Next time we try sending a packet to that IP address
    we'll find the entry.
-   Should we respond to ARP requests (proxy ARP)???
+   We should respond to ARP requests for our own IPv4 address.
 */
 
 #define ARP_PKTSIZ (sizeof(struct ether_header)	+ sizeof(struct ether_arp))
@@ -1365,6 +1371,7 @@ arp_gotrep(unsigned char *buf, int cnt)
 
     if (DP_DBGFLG) {
 	char eabuf[OSN_EASTRSIZ];
+
 	dbprintln("Got ARP from %s", eth_adrsprint(eabuf, eh_sptr(buf)));
     }
 
@@ -1411,8 +1418,11 @@ arp_gotrep(unsigned char *buf, int cnt)
 	}
 	if (DP_DBGFLG) {
 	    char ipbuf[OSN_IPSTRSIZ];
-	    dbprintln("Dropped ARP req for %s",
-		      ip_adrsprint(ipbuf, (unsigned char *)&ent.at_iaddr));
+	    char eabuf[OSN_EASTRSIZ];
+
+	    dbprintln("Dropped ARP req for %s from %s",
+		      ip_adrsprint(ipbuf, (unsigned char *)&ent.at_iaddr),
+		      eth_adrsprint(eabuf, (unsigned char *)&aa->arp_sha));
 	}
 	return;
     }
@@ -1460,7 +1470,7 @@ arp_reply(unsigned char *eap,	/* Requestor ether addr */
 	  unsigned char *iap)	/* Requestor IP addr */
 {
     struct eth_header eh;
-    struct ether_arp arp;
+    struct offset_ether_arp arp;
 
     /* Build ethernet header */
     eh_dset(&eh, eap);			/* Set dest addr */
@@ -1468,31 +1478,38 @@ arp_reply(unsigned char *eap,	/* Requestor ether addr */
     eh_tset(&eh, ETHERTYPE_ARP);
 
     /* Now put together the ARP packet */
-    arp.arp_hrd = htons(ARPHRD_ETHER);	/* Set hdw addr format */
-    arp.arp_pro = htons(ETHERTYPE_IP);	/* Set ptcl addr fmt */
-    arp.arp_hln = sizeof(arp.arp_sha);	/* Hdw address len */
-    arp.arp_pln = sizeof(arp.arp_spa);	/* Ptcl address len */
-    arp.arp_op = htons(ARPOP_REPLY);	/* Type REPLY */
+    arp.arp.arp_hrd = htons(ARPHRD_ETHER);	/* Set hdw addr format */
+    arp.arp.arp_pro = htons(ETHERTYPE_IP);	/* Set ptcl addr fmt */
+    arp.arp.arp_hln = sizeof(arp.arp.arp_sha);	/* Hdw address len */
+    arp.arp.arp_pln = sizeof(arp.arp.arp_spa);	/* Ptcl address len */
+    arp.arp.arp_op = htons(ARPOP_REPLY);	/* Type REPLY */
 
-    memcpy((char *)arp.arp_spa,		/* Sender IP addr */
-	    (char *)&ihost_ip, sizeof(arp.arp_sha));
+    memcpy((char *)arp.arp.arp_spa,		/* Sender IP addr */
+	    (char *)&ihost_ip, sizeof(arp.arp.arp_sha));
 
     /* Sender hdw addr and IP addr (that's us - the resolved info) */
-    ea_set(arp.arp_sha, &ihost_ea);	/* Sender hdw addr */
-    memcpy((char *)arp.arp_spa, (char *)&ehost_ip, IP_ADRSIZ);
+    ea_set(arp.arp.arp_sha, &ihost_ea);	/* Sender hdw addr */
+    memcpy((char *)arp.arp.arp_spa, (char *)&ehost_ip, IP_ADRSIZ);
 
     /* Target hdw addr and IP addr (for politeness?) */
-    ea_set(arp.arp_tha, eap);		/* Target hdw addr */
-    memcpy((char *)arp.arp_tpa, iap, IP_ADRSIZ);
+    ea_set(arp.arp.arp_tha, eap);		/* Target hdw addr */
+    memcpy((char *)arp.arp.arp_tpa, iap, IP_ADRSIZ);
 
     /* Now send it! */
     if (swstatus) {
 	char ipbuf[OSN_IPSTRSIZ];
-	dbprintln("ARP reply sent to %s",
-		  ip_adrsprint(ipbuf, iap));
+	char eabuf[OSN_EASTRSIZ];
+	char ipbuf2[OSN_IPSTRSIZ];
+	char eabuf2[OSN_EASTRSIZ];
+
+	dbprintln("ARP reply sent to %s %s (%s %s)",
+		  ip_adrsprint(ipbuf, iap),
+		  eth_adrsprint(eabuf2, (unsigned char *)&arp.arp.arp_tha),
+		  ip_adrsprint(ipbuf2, (unsigned char *)&arp.arp.arp_spa),
+		  eth_adrsprint(eabuf, (unsigned char *)&arp.arp.arp_sha));
     }
 
-    ether_write(&eh, (unsigned char *)&arp, sizeof(arp));
+    ether_write(&eh, (unsigned char *)&arp.arp, sizeof(arp.arp));
 }
 #endif /* !KLH10_NET_TUN */
 
@@ -1527,7 +1544,7 @@ imptohost(register struct dpimp_s *dpimp)
     if (DBGFLG)
 	fprintf(stderr, "[dpimp-R: sent INIT]\r\n");
 
-#if (KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_PFLT || \
+#if (KLH10_NET_PCAP || KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_PFLT || \
 	KLH10_NET_TUN || KLH10_NET_LNX)
     for (;;) {
 	/* Make sure that buffer is free before clobbering it */
@@ -1545,7 +1562,11 @@ imptohost(register struct dpimp_s *dpimp)
 #endif
 
 	/* OK, now do a blocking read on packetfilter input! */
-	cnt = read(pffd, buffp, MAXETHERLEN);
+#if KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_TAP_BRIDGE
+	cnt = osn_pfread(&pfdata, buffp, MAXETHERLEN);
+#else
+	cnt = read(pfdata.pf_fd, buffp, MAXETHERLEN);
+#endif
 #if KLH10_NET_TUN
 	if (cnt <= 0) {		/* No ether headers on TUN */
 #else
@@ -1567,17 +1588,17 @@ imptohost(register struct dpimp_s *dpimp)
 	    if (errno == EINTR)		/* Ignore spurious signals */
 		continue;
 
-#if CENV_SYS_NETBSD
+#if 0 && CENV_SYS_NETBSD
 	    /* NetBSD bpf is broken.
 	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
 	       understand why this crock is necessary.
 	       Always block for at least 1 sec, will wake up sooner if
 	       input arrives.
 	     */
-	    if (errno == EWOULDBLOCK) {
+	    if (errno == EAGAIN || errno == EWOULDBLOCK) {
 		int ptimeout = (dpimp->dpimp_rdtmo ? dpimp->dpimp_rdtmo : 1);
 		struct pollfd myfd;
-		myfd.fd = pffd;
+		myfd.fd = pfdata.pf_fd;
 		myfd.events = POLLIN;
 		(void) poll(&myfd, 1, ptimeout*1000);
 		continue;
@@ -1608,7 +1629,6 @@ imptohost(register struct dpimp_s *dpimp)
 
 #endif /* KLH10_NET_LNX */
 #if !KLH10_NET_TUN
-#if 1				
 	/* Verify that pf filtering is doing its job */
 	switch (eh_tget((struct eth_header *)buffp)) {
 	case ETHERTYPE_IP:
@@ -1621,7 +1641,6 @@ imptohost(register struct dpimp_s *dpimp)
 			eh_tget((struct eth_header *)buffp));
 	    continue;
 	}
-#endif
 #endif /* !KLH10_NET_TUN */
 
 	/* OK, it claims to be an IP packet, see if so long that we
@@ -1655,7 +1674,7 @@ imptohost(register struct dpimp_s *dpimp)
 
 	buffp = inibuf + DPIMP_DATAOFFSET;
 
-	if ((cnt = read(pffd, buffp, OSN_BPF_MTU)) < 0) {
+	if ((cnt = read(pfdata.pf_fd, buffp, OSN_BPF_MTU)) < 0) {
 	    fprintf(stderr, "dpimp: BPF read = %d, ", cnt);
 	    if (--stoploop <= 0)
 		efatal(1, "Too many retries, aborting");
@@ -1879,7 +1898,7 @@ hosttoimp(register struct dpimp_s *dpimp)
 #if KLH10_NET_TUN
 	    if (DBGFLG)
 		dbprintln("net out = %d", rcnt - (SIH_HSIZ+SI_LDRSIZ));
-	    if (write(pffd, &buff[SIH_HSIZ+SI_LDRSIZ],
+	    if (osn_pfwrite(&pfdata, &buff[SIH_HSIZ+SI_LDRSIZ],
 		      rcnt - (SIH_HSIZ+SI_LDRSIZ)) < 0)
 		syserr(errno, "tun write() failed");
 	    else {
@@ -2012,13 +2031,32 @@ ip_write(struct in_addr *ipa, unsigned char *buf, int len)
     ether_write(&eh, buf, len);
 }
 
-
+/*
+ * Write an ethernet frame, consisting of the header and the
+ * data. They are supplied separately but sent together.
+ *
+ * It is assumed there is space before the payload data to put
+ * a copy of the header!
+ */
 void
 ether_write(register struct eth_header *hp,
 	    register unsigned char *pp,
 	    register int cnt)
 {
-#if KLH10_NET_NIT
+#if KLH10_NET_PCAP || KLH10_NET_TAP_BRIDGE
+    char *buf = (char *)(pp - ETHER_HDRSIZ);
+
+    if (DP_DBGFLG)
+	dbprintln("net out = %d", cnt);
+
+    memcpy(buf, (char *)hp, ETHER_HDRSIZ);
+
+    if (osn_pfwrite(&pfdata, buf, (size_t)(cnt + ETHER_HDRSIZ)) < 0) {
+	/* What to do here?  For debugging, complain but return. */
+	error("write failed - %s", dp_strerror(errno));
+    }
+
+#elif KLH10_NET_NIT
     struct strbuf ctl, dat;
     struct sockaddr sa;
 
@@ -2047,7 +2085,7 @@ ether_write(register struct eth_header *hp,
     if (DP_DBGFLG)
 	dbprintln("net out = %d", cnt);
 
-    if (putmsg(pffd, &ctl, &dat, 0) < 0) {
+    if (putmsg(pfdata.pf_fd, &ctl, &dat, 0) < 0) {
 	/* What to do here?  For debugging, complain but return. */
 	error("putmsg failed - %s", dp_strerror(errno));
     }
@@ -2069,7 +2107,7 @@ ether_write(register struct eth_header *hp,
     if (DP_DBGFLG)
 	dbprintln("net out = %d", cnt);
 
-    if (putmsg(pffd, NULL, &dat, 0) < 0) {
+    if (putmsg(pfdata.pf_fd, NULL, &dat, 0) < 0) {
 	/* What to do here?  For debugging, complain but return. */
 	error("putmsg failed - %s", dp_strerror(errno));
     }
@@ -2090,7 +2128,7 @@ ether_write(register struct eth_header *hp,
     if (DP_DBGFLG)
 	dbprintln("net out = %d", cnt);
 
-    if (write(pffd, buf, (size_t)(cnt + ETHER_HDRSIZ)) < 0) {
+    if (write(pfdata.pf_fd, buf, (size_t)(cnt + ETHER_HDRSIZ)) < 0) {
 	/* What to do here?  For debugging, complain but return. */
 	error("write failed - %s", dp_strerror(errno));
     }
@@ -2106,7 +2144,7 @@ ether_write(register struct eth_header *hp,
     if (DP_DBGFLG)
 	dbprintln("net out = %d", cnt);
 
-    if (writev(pffd, iov, sizeof(iov)/sizeof(*iov)) < 0) {
+    if (writev(pfdata.pf_fd, iov, sizeof(iov)/sizeof(*iov)) < 0) {
 	/* What to do here?  For debugging, complain but return. */
 	error("writev() failed - %s", dp_strerror(errno));
     }

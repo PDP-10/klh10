@@ -1346,8 +1346,8 @@ tim_init(void)
 	os_rtmget(&cpu.tim.osbase);
 	return FALSE;
     }
-    fread((char *)&cpu.tim.wrbase, sizeof(cpu.tim.wrbase), 1, f);
-    fread((char *)&cpu.tim.osbase, sizeof(cpu.tim.osbase), 1, f);
+    (void)fread((char *)&cpu.tim.wrbase, sizeof(cpu.tim.wrbase), 1, f);
+    (void)fread((char *)&cpu.tim.osbase, sizeof(cpu.tim.osbase), 1, f);
     os_rtm_adjust_base(&cpu.tim.osbase, &cpu.tim.osbase, 0);
     if (ferror(f)) {
 	fclose(f);

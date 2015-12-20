@@ -68,18 +68,20 @@
 #ifndef  KLH10_NET_LNX	/* Linux PF_PACKET interface */
 # define KLH10_NET_LNX 0
 #endif
+#ifndef  KLH10_NET_PCAP	/* pretty generic libpcap interface */
+# define KLH10_NET_PCAP 0
+#endif
 
 #if !(KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
+	KLH10_NET_LNX || KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_TAP_BRIDGE)
     /* None explicitly specified, pick a reasonable default */
 # if ((CENV_SYS_NETBSD || CENV_SYS_FREEBSD || CENV_SYS_LINUX) && OSN_USE_IPONLY)
 #  undef  KLH10_NET_TUN
 #  define KLH10_NET_TUN 1
+# elif 0
+#  undef KLH10_NET_PCAP
+#  define KLH10_NET_PCAP 1
 # elif (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
-/*
- * #  undef  KLH10_NET_BPF
- * #  define KLH10_NET_BPF 1
- */
 #  undef  KLH10_NET_TAP_BRIDGE
 #  define KLH10_NET_TAP_BRIDGE 1
 # elif CENV_SYS_DECOSF
@@ -263,10 +265,12 @@
 #define HAVE_LIBPCAP	1	/* assume this for now */
 
 #if HAVE_LIBPCAP
-#include <pcap/pcap.h>
+# define  USE_LIBPCAP	1
+# include <pcap/pcap.h>
+# include <pcap/bpf.h>
 #endif
 #if HAVE_GETIFADDRS
-#include <ifaddrs.h>
+# include <ifaddrs.h>
 #endif
 
 #if !HAVE_LIBPCAP && !HAVE_GETIFADDRS
@@ -379,6 +383,17 @@ union ipaddr {
     unsigned char ia_octet[IP_ADRSIZ];
     struct in_addr ia_addr;
 };
+
+/*
+ * A structure that aggregates information about the packet filter variant
+ * which is in use. 
+ */
+struct pfdata {
+    int		 pf_fd;		/* most but not all have a file descriptor */
+    void 	*pf_handle;	/* pcap has a handle */
+    int 	 pf_can_filter;	/* has a packet filter built-in and enabled */
+    int		 pf_ip4_only;	/* set TRUE for IP i/f; FALSE for ethernet i/f */
+};
 
 int osn_iftab_init(void);
 int osn_nifents(void);		/* # of entries cached by osn_iftab_init */
@@ -400,6 +415,7 @@ struct ifent *osn_ipdefault(void);
 struct ifent *osn_iftab_arp(struct in_addr ia);
 int osn_iftab_arpget(struct in_addr ia, unsigned char *eap);
 
+struct ifent *osn_ifcreate(char *ifnam);
 int osn_ifealookup(char *ifnam, unsigned char *eap);
 
 #define OSN_EASTRSIZ sizeof("xx:xx:xx:xx:xx:xxZZ")
@@ -408,7 +424,7 @@ char *eth_adrsprint(char *cp, unsigned char *ea);
 #define OSN_IPSTRSIZ sizeof("ddd.ddd.ddd.dddZZZZ")
 char *ip_adrsprint(char *cp, unsigned char *ip);
 
-int osn_arp_stuff(unsigned char *ipa, unsigned char *eap, int pubf);
+int osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf);
 int osn_arp_look(struct in_addr *ipa, unsigned char *eap);
 
 struct osnpf {	/* Arg struct for common initialization params */
@@ -420,7 +436,11 @@ struct osnpf {	/* Arg struct for common initialization params */
 	union ipaddr osnpf_tun;		/* INOUT: IP address of tunnel */
 	struct ether_addr osnpf_ea;	/* OUT: ether address of ifc */
 };
-int osn_pfinit(struct osnpf *, void *);
+/* the void * is an argument to pass on to pfbuild() */
+void osn_pfinit(struct pfdata *, struct osnpf *, void *);
 void osn_pfdeinit(void);
+
+ssize_t osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes);
+int osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes);
 
 #endif /* ifndef OSDNET_INCLUDED */

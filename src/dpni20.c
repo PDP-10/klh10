@@ -174,7 +174,7 @@ The following general situations are possible:
 
 int chpid;		/* PID of child, handles input (net-to-10). */
 int swstatus = TRUE;
-int pffd;			/* Packet-Filter FD (bidirectional) */
+struct pfdata pfdata;		/* Packet-Filter state */
 struct dp_s dp;			/* Device-Process struct for DP ops */
 
 struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
@@ -413,7 +413,8 @@ main(int argc, char **argv)
     ** monitor can do it).
     */
     if (dpni->dpni_doarp & (DPNI_ARPF_PUBL|DPNI_ARPF_PERM)) {
-	if (!osn_arp_stuff(&dpni->dpni_ip[0],	/* Set up fake IP addr */
+	if (!osn_arp_stuff(dpni->dpni_ifnam,	/* interface name */
+		           &dpni->dpni_ip[0],	/* Set up fake IP addr */
 			   &dpni->dpni_eth[0],	/* mapped to this ether addr */
 			   (dpni->dpni_doarp & DPNI_ARPF_PUBL))) /* Publicized if nec */
 	    esfatal(1, "ARP_STUFF failed");
@@ -517,7 +518,7 @@ void net_init(register struct dpni20_s *dpni)
        the packetfilter open may use and/or change it.
     */
     ea_set(&npf.osnpf_ea, dpni->dpni_eth);	/* Set requested ea if any */
-    pffd = osn_pfinit(&npf, (void *)dpni);	/* Will abort if fails */
+    osn_pfinit(&pfdata, &npf, (void *)dpni);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea */
 #if KLH10_NET_TUN
     tun_ip = npf.osnpf_tun.ia_addr;		/* Get actual tunnel addr */
@@ -798,7 +799,7 @@ pfeabuild(void *arg, unsigned char *ea)
 
 /* BPF packetfilter initialization */
 
-#if KLH10_NET_BPF
+#if KLH10_NET_PCAP || KLH10_NET_BPF
 
 /*
 ** BPF filter program stuff.
@@ -1023,8 +1024,6 @@ pfshow(struct OSN_PFSTRUCT *pf)
 
 /* LNX packetfilter initialization */
 
-#if KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE
-
 /*
   The Linux PF_PACKET interface is described to some extent
   by the packet(7) man page.
@@ -1111,7 +1110,6 @@ int lnx_filter(register struct dpni20_s *dpni,
     return FALSE;
 }
 
-#endif /* KLH10_NET_LNX */
 
 
 /* ETH_SETADR - Attempt to set physical ethernet address to dpni_rqeth.
@@ -1120,7 +1118,7 @@ int lnx_filter(register struct dpni20_s *dpni,
 void eth_adrset(register struct dpni20_s *dpni)
 {
 #if OSN_USE_IPONLY
-    dbprintln("\"%s\" multicast table ignored - IP-only interface",
+    dbprintln("\"%s\" ethernet address change ignored - IP-only interface",
 		  dpni->dpni_ifnam);
 #else
     unsigned char rdea[ETHER_ADRSIZ];
@@ -1175,7 +1173,7 @@ void eth_adrset(register struct dpni20_s *dpni)
     /* Apparently won!  Try reading it back just to be paranoid,
      * using packetfilter FD.
      */
-    if (!osn_pfeaget(pffd, dpni->dpni_ifnam, rdea)) {
+    if (!osn_pfeaget(pfdata.pf_fd, dpni->dpni_ifnam, rdea)) {
 	error("Can't read \"%s\" e/n addr!", dpni->dpni_ifnam);
 	/* Proceed as if set won, sigh */
     } else {
@@ -1407,13 +1405,13 @@ int arp_myreply(register unsigned char *buf, register int cnt)
 	struct strbuf data;
 	data.buf = (char *)pktbuf;
 	data.len = sizeof(pktbuf);
-	(void) putmsg(pffd, NULL, &data, 0);
+	(void) putmsg(pfdata.pf_fd, NULL, &data, 0);
     }
 #else
     /* XXX
      * Why is this sent to the packet filter (= host) and not to the -10?????
      */
-    (void)write(pffd, pktbuf, sizeof(pktbuf));
+    (void)write(pfdata.pf_fd, pktbuf, sizeof(pktbuf));
 #endif
     return TRUE;
 }
@@ -1470,7 +1468,9 @@ void ethtoten(register struct dpni20_s *dpni)
 	    dbprintln("InWait");
 
 	/* OK, now do a blocking read on packetfilter input! */
-#if KLH10_NET_DLPI
+#if KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_TAP_BRIDGE
+	cnt = osn_pfread(&pfdata, buff, max);
+#elif KLH10_NET_DLPI
     {
 	struct strbuf data;
 	int flagsp = 0;
@@ -1478,15 +1478,15 @@ void ethtoten(register struct dpni20_s *dpni)
 	data.buf = (char *)buff;
 	data.maxlen = max;
 	data.len = 0;
-	if ((cnt = getmsg(pffd, (struct strbuf *)NULL, &data, &flagsp)) == 0)
+	if ((cnt = getmsg(pfdata.pf_fd, (struct strbuf *)NULL, &data, &flagsp)) == 0)
 	    cnt = data.len;
 	/* Else cnt must be -1 as call failed */
     }
 #elif KLH10_NET_BPF
-	cnt = read(pffd, tbuff, tmax);
+	cnt = read(pfdata.pf_fd, tbuff, tmax);
 #else
-	cnt = read(pffd, buff, max);
-#endif
+	cnt = read(pfdata.pf_fd, buff, max);
+#endif /* reading choice */
 	if (cnt <= cmin) {		/* Must get enough for ether header */
 
 	    /* If call timed out, should return 0 */
@@ -1505,17 +1505,17 @@ void ethtoten(register struct dpni20_s *dpni)
 	    if (errno == EINTR)		/* Ignore spurious signals */
 		continue;
 
-#if CENV_SYS_NETBSD
+#if 0 && CENV_SYS_NETBSD
 	    /* NetBSD bpf is broken.
 	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
 	       understand why this crock is necessary.
 	       Always block for at least 1 sec, will wake up sooner if
 	       input arrives.
 	     */
-	    if (errno == EWOULDBLOCK) {
+	    if (errno == EAGAIN || errno == EWOULDBLOCK) {
 		int ptimeout = (dpni->dpni_rdtmo ? dpni->dpni_rdtmo : 1);
 		struct pollfd myfd;
-		myfd.fd = pffd;
+		myfd.fd = pfdata.pf_fd;
 		myfd.events = POLLIN;
 		(void) poll(&myfd, 1, ptimeout*1000);
 		continue;
@@ -1540,11 +1540,11 @@ void ethtoten(register struct dpni20_s *dpni)
 	    else
 		dbprint("Read=%d", cnt);
 	}
-#if KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE
+
 	/* Linux has no packet filtering, thus must apply manual check to
 	   each and every packet read, unless dedicated.  Ugh!
 	*/
-	if (KLH10_NET_TAP_BRIDGE || !dpni->dpni_dedic) {
+	if (!pfdata.pf_can_filter && !dpni->dpni_dedic) {
 	    /* Sharing interface.  Check for IP, DECNET, 802.3 */
 	    if (!lnx_filter(dpni, buff, cnt)) {
 		if (DBGFLG)
@@ -1552,7 +1552,7 @@ void ethtoten(register struct dpni20_s *dpni)
 		continue;		/* Drop packet, continue reading */
 	    }
 	}
-#endif /* KLH10_NET_LNX */
+
 #if !KLH10_NET_BPF
 #if 0
 	if (DBGFLG)
@@ -1677,16 +1677,18 @@ void tentoeth(register struct dpni20_s *dpni)
 	      && arp_myreply(buff, rcnt)) {	/* and it fits, & is hacked */
 		break;				/* then drop this req pkt */
 	    }
-#if KLH10_NET_DLPI
+#if KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_TAP_BRIDGE
+	    cnt = osn_pfwrite(&pfdata, buff, rcnt);
+#elif KLH10_NET_DLPI
 	    {
 		struct strbuf data;
 		data.buf = (char *)buff;
 		data.len = rcnt;
-		if ((cnt = putmsg(pffd, NULL, &data, 0)) == 0)
+		if ((cnt = putmsg(pfdata.pf_fd, NULL, &data, 0)) == 0)
 		    cnt = rcnt;		/* Assume successful */
 	    }
 #else
-	    cnt = write(pffd, buff, rcnt);
+	    cnt = write(pfdata.pf_fd, buff, rcnt);
 #endif	/* else KLH10_NET_DLPI */
 	    if (cnt != rcnt) {
 		if ((cnt < 0) && (errno == EINTR)) {

@@ -418,8 +418,8 @@ static int pareth(char *cp, unsigned char *adr)
 /* Include OSDNET code, faking out unneeded packetfilter inits
  * XXX: clean this up in future OSDNET.
  */
-struct fakepf { int foo; };
-#define OSN_PFSTRUCT fakepf
+
+#define OSN_PFSTRUCT bpf_program
 
 struct OSN_PFSTRUCT *
 pfbuild(void *arg, struct in_addr *ipa)

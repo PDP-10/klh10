@@ -50,7 +50,7 @@ int
 osn_ifsock(char *ifnam, ossock_t *as)
 {
 #if (KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
+	KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
     return ((*as = socket(AF_INET, SOCK_DGRAM, 0)) >= 0);
 #else
 # error OSD implementation needed for osn_ifsock
@@ -61,7 +61,7 @@ int
 osn_ifclose(ossock_t s)
 {
 #if (KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
+	KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
     return (close(s) >= 0);
 #else
 # error OSD implementation needed for osn_ifclose
@@ -236,7 +236,7 @@ osn_nifents(void)
 static struct ifent *
 osn_iftab_addaddress(char *name, struct sockaddr *addr)
 {
-    struct ifent *ife, *ifet;
+    struct ifent *ife;
     int i;
     int idx;
 
@@ -258,21 +258,21 @@ osn_iftab_addaddress(char *name, struct sockaddr *addr)
 	iftab[idx].ife_name[IFNAMSIZ] = '\0';
     }
 
-    ifet = &iftab[idx];
+    ife = &iftab[idx];
 
     switch (addr->sa_family) {
     case AF_INET: {
 	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
-	ifet->ife_ipia = sin->sin_addr;
-	ifet->ife_gotip4 = TRUE;
+	ife->ife_ipia = sin->sin_addr;
+	ife->ife_gotip4 = TRUE;
 	break;
 		  }
 #if defined(AF_LINK)
     case AF_LINK: {
 	struct sockaddr_dl *sdl = (struct sockaddr_dl *)addr;
 	if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADRSIZ) {
-	    ea_set(ifet->ife_ea, LLADDR(sdl));
-	    ifet->ife_gotea = TRUE;
+	    ea_set(ife->ife_ea, LLADDR(sdl));
+	    ife->ife_gotea = TRUE;
 	}
 		  }
 #endif /* AF_LINK*/
@@ -280,12 +280,14 @@ osn_iftab_addaddress(char *name, struct sockaddr *addr)
     case AF_PACKET: {
 	struct sockaddr_ll *sll = (struct sockaddr_ll *)addr;
 	if (sll->sll_hatype == ARPHRD_ETHER && sll->sll_halen == ETHER_ADRSIZ) {
-	    ea_set(ifet->ife_ea, &sll->sll_addr);
-	    ifet->ife_gotea = TRUE;
+	    ea_set(ife->ife_ea, &sll->sll_addr);
+	    ife->ife_gotea = TRUE;
 	}
 		    }
 #endif /* AF_PACKET*/
     }
+
+    return ife;
 }
 
 void
@@ -308,6 +310,12 @@ osn_iftab_show(FILE *f, struct ifent *ifents, int nents)
 	    fprintf(f, " (%sEther %x:%x:%x:%x:%x:%x)",
 		    "Extracted ",
 		    ucp[0], ucp[1], ucp[2], ucp[3], ucp[4], ucp[5]);
+	}
+	if (ife->ife_flags & IFF_UP) {
+	    fprintf(f, " UP");
+	}
+	if (ife->ife_flags & IFF_LOOPBACK) {
+	    fprintf(f, " LOOPBACK");
 	}
 	fprintf(f, "\r\n");
     }
@@ -371,6 +379,21 @@ osn_iflookup(char *ifnam)
     return NULL;
 }
 
+/* OSN_IFCREATE - Create or find an interface entry in our table.
+ */
+struct ifent *
+osn_ifcreate(char *ifnam)
+{
+    struct ifent *ife = osn_iflookup(ifnam);
+
+    if (!ife && iftab_nifs < NETIFC_MAX) {
+	ife = &iftab[iftab_nifs];
+	iftab_nifs++;
+    }
+
+    return ife;
+}
+
 /* OSN_IFEALOOKUP - Find ethernet address, barf if neither in our table nor
  *	available via OS.
  */
@@ -399,10 +422,59 @@ osn_ifealookup(char *ifnam,		/* Interface name */
 **	setting rather than (eg) failing.
 */
 int
-osn_arp_stuff(unsigned char *ipa, unsigned char *eap, int pubf)
+osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
 {
     char ipbuf[OSN_IPSTRSIZ];
     char eabuf[OSN_EASTRSIZ];
+
+    if (DP_DBGFLG) {
+	dbprintln("Set up ARP: %s %s %s", 
+			ip_adrsprint(ipbuf, ipa),
+			eth_adrsprint(eabuf, eap),
+			(pubf ? "pub" : ""));
+    }
+
+#if CENV_SYS_LINUX
+    /**
+     * Linux won't do proxy ARP by default. It needs to be turned on.
+     * This is needed when we use an Ethernet device, not an IP tunnel.
+     *
+     * However, it seems not to help...
+     */
+    int fd;
+#if 0
+    char devproc[64];
+
+    snprintf(devproc, sizeof(devproc)-1, "/proc/sys/net/ipv4/conf/%s/proxy_arp", ifname);
+    fd = open(devproc, O_WRONLY|O_TRUNC);
+    if (fd >= 0) {
+	(void)write(fd, "1\n", 2);
+	close(fd);
+	dbprintln("Enabled net.ipv4.conf.%s.proxy_arp", ifname);
+    }
+
+    fd = open("/proc/sys/net/ipv4/conf/all/proxy_arp", O_WRONLY|O_TRUNC);
+    if (fd >= 0) {
+	(void)write(fd, "1\n", 2);
+	close(fd);
+	dbprintln("Enabled net.ipv4.conf.all.proxy_arp");
+    }
+#endif
+    /**
+     * When we use an IP tunnel, this is needed to cause ARP replies to
+     * be sent by Linux if OSN_USE_IPONLY and if you try to connect to
+     * ITS from elsewhere on the network.
+     * MAYBE also for plain proxy ARP...
+     *
+     * Or sysctl -w net.ipv4.ip_forward=1
+     */
+    fd = open("/proc/sys/net/ipv4/ip_forward", O_WRONLY|O_TRUNC);
+    if (fd >= 0) {
+	(void)write(fd, "1\n", 2);
+	close(fd);
+	dbprintln("Enabled net.ipv4.ip_forward");
+    }
+#endif /* CENV_SYS_LINUX */
 
 #if NETIF_HAS_ARPIOCTL
     struct arpreq arq;
@@ -652,7 +724,7 @@ static struct eth_addr emhost_ea = 	/* Emulated host ether addr for tap */
 */
 int
 osn_pfeaget(int pfs,		/* Packetfilter socket or FD */
-	    char *ifnam,		/* Interface name (sometimes needed) */
+	    char *ifnam,	/* Interface name (sometimes needed) */
 	    unsigned char *eap)	/* Where to write ether address */
 {
 
@@ -1064,6 +1136,188 @@ osn_ifmcset(int s,
  *	very OSD.
  *	FD is always opened for both read/write.
  */
+#if KLH10_NET_PCAP
+void
+osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
+{
+    char errbuf[PCAP_ERRBUF_SIZE];
+    char *what = "";
+    pcap_t *pc;
+    char *ifnam = osnpf->osnpf_ifnam;
+
+    if (DP_DBGFLG)
+	dbprint("Opening PCAP device");
+
+    if (!ifnam || !ifnam[0]) {	/* Allow default ifc */
+	struct ifent *ife = osn_ipdefault();
+	if (!ife)
+	    esfatal(1, "Ethernet interface must be specified");
+	ifnam = ife->ife_name;
+    }
+
+    pfdata->pf_handle = pc = pcap_create(ifnam, errbuf);
+    pfdata->pf_ip4_only = FALSE;
+
+    if (!pc) {
+	what = "pcap_create";
+	goto error;
+    }
+    if (pcap_set_snaplen(pc, ETHER_MTU + 100) < 0) {	/* fuzz */
+	what = "pcap_set_snaplen";
+	goto error;
+    }
+    /* Set immediate mode so that packets are processed as they arrive,
+       rather than waiting until timeout or buffer full.
+
+       WARNING: NetBSD does not implement this correctly!  The code in
+       src/sys/net/bpf.c:bpfread() treats the immediate flag in a way that
+       causes it to return EWOULDBLOCK [[ note: I see EAGAIN]] if no input is
+       available.  But this flag must still be set in order for bpfpoll() to
+       detect input as soon as it arrives!
+       See read loops in osn_pfread() below for workaround.
+     */
+    if (pcap_set_immediate_mode(pc, 1) < 0) {
+	what = "pcap_set_immediate_mode";
+	goto error;
+    }
+
+    /* Set read timeout.
+       Safety check in order to avoid infinite hangs if something
+       wedges up.  The periodic re-check overhead is insignificant.
+     */
+    if (osnpf->osnpf_rdtmo) {
+	if (pcap_set_timeout(pc, osnpf->osnpf_rdtmo * 1000) < 0) {
+	    syserr(1, "pcap_set_timeout failed");
+	}
+    }
+
+    if (pcap_activate(pc) < 0) {
+	what = "pcap_activate";
+	goto error;
+    }
+
+    /* Set up packet filter for it - only needed if sharing interface?
+       Not sure whether it's needed for a dedicated interface; will need
+       to experiment.
+     */
+    if (!osnpf->osnpf_dedic) {
+	struct OSN_PFSTRUCT *pf;
+
+	/* Set the kernel packet filter */
+	pf = pfbuild(pfarg, &(osnpf->osnpf_ip.ia_addr));
+	if (pcap_setfilter(pc, pf) < 0) {
+	    syserr(1, "pcap_setfilter failed");
+	}
+	pfdata->pf_can_filter = TRUE;
+    } else {
+	pfdata->pf_can_filter = FALSE;
+    }
+
+    if (pcap_setdirection(pc, PCAP_D_INOUT) < 0) {
+	what = "pcap_setdirection";
+	goto error;
+    }
+
+    if (pcap_set_datalink(pc, DLT_EN10MB) < 0) {
+	what = "pcap_set_datalink";
+	goto error;
+    }
+
+    pfdata->pf_fd = pcap_get_selectable_fd(pc);
+
+    /* Now get our interface's ethernet address.
+    **	In general, this has to wait until after the packetfilter is opened,
+    **	since until then we don't have a handle on the specific interface
+    **	that will be used.
+    */
+    //(void) osn_pfeaget(pfdata->pf_fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
+    (void) osn_ifealookup(ifnam, (unsigned char *) &osnpf->osnpf_ea);
+
+    return;
+
+error:
+    if (pc) {
+	syserr(1, "pcap_geterr: %s", pcap_geterr(pc));
+	pcap_close(pc);
+    }
+    esfatal(1, "pcap error for %s, %s: %s", ifnam, what, errbuf);
+
+    /* not reached */
+}
+
+
+#if CENV_SYS_NETBSD
+#include <poll.h>	/* For NetBSD mainly */
+#endif
+
+/*
+ * Like the standard read(2) call:
+ * Receives a single packet and returns its size.
+ * Include link-layer headers, but no BPF headers or anything like that.
+ */
+inline
+ssize_t
+osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes)
+{
+    struct pcap_pkthdr pkt_header;
+    const u_char *pkt_data;
+
+tryagain:
+    errno = 0;
+    pkt_data = pcap_next(pfdata->pf_handle, &pkt_header);
+
+    if (pkt_data) {
+	if (pkt_header.caplen < nbytes)
+	    nbytes = pkt_header.caplen;
+	memcpy(buf, pkt_data, nbytes);
+
+	if (DP_DBGFLG)
+	    dbprint("osn_pfread: read %d bytes", nbytes);
+
+	return nbytes;
+    }
+
+#if CENV_SYS_NETBSD
+	    /* NetBSD bpf is broken.
+	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
+	       understand why this crock is necessary.
+	       Always block for at least 10 sec, will wake up sooner if
+	       input arrives.
+	     */
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+	int ptimeout = 10;
+	struct pollfd myfd;
+	int err = errno;
+
+	if (DP_DBGFLG)
+	    dbprint("osn_pfread: polling after reading nothing (err=%d)", err);
+	myfd.fd = pfdata->pf_fd;
+	myfd.events = POLLIN;
+	(void) poll(&myfd, 1, ptimeout * 1000);
+	goto tryagain;
+    }
+#endif
+
+    /* From pcap_next_ex(3): "Unfortunately, there is no way to determine
+     * whether an error occurred or not."
+     */
+    return 0;
+}
+
+/*
+ * Like the standard write(2) call:
+ * Expect a full ethernet frame including link-layer header.
+ * returns the number of bytes written.
+ */
+inline
+int
+osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
+{
+    //if (DP_DBGFLG)
+    //	dbprint("osn_pfwrite: writing %d bytes", nbytes);
+    return pcap_inject(pfdata->pf_handle, buf, nbytes);
+}
+#endif
 
 #if KLH10_NET_PFLT || KLH10_NET_BPF
 
@@ -1223,6 +1477,9 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
     int i;
     char *ifnam = osnpf->osnpf_ifnam;
 
+    if (DP_DBGFLG)
+	dbprint("Opening BPF device");
+
     /* No "default interface" concept here */
     if (!ifnam || !ifnam[0])
 	esfatal(1, "Packetfilter interface must be specified");
@@ -1260,15 +1517,15 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
 #if !defined(BIOCSFEEDBACK) && defined(BIOCFEEDBACK)
 # define BIOCSFEEDBACK BIOCSFEEDBACK
 #endif
-//#if defined(__NetBSD_Version__) && __NetBSD_Version__ < 799002500
-//# undef BIOCSFEEDBACK	/* buggy before NetBSD 7.99.24 or 7.1 */
-//#endif
+#if defined(__NetBSD_Version__) && __NetBSD_Version__ < 799002500
+# undef BIOCSFEEDBACK	/* buggy before NetBSD 7.99.24 or 7.1 */
+#endif
 #if defined(BIOCSFEEDBACK)
-    error("trying BIOCSFEEDBACK");
-    errno = 0;
-    i = 1;
-    if (ioctl(fd, BIOCSFEEDBACK, (char *) &i) < 0)
-	syserr(errno, "BIOCSFEEDBACK failed");
+//    error("trying BIOCSFEEDBACK");
+//    errno = 0;
+//    i = 1;
+//    if (ioctl(fd, BIOCSFEEDBACK, (char *) &i) < 0)
+//	syserr(errno, "BIOCSFEEDBACK failed");
 #endif
 
     /* Set the read() buffer size.
@@ -1394,19 +1651,19 @@ The ifra_mask field is ignored (left as-is or zeroed if new) unless
 
  */
 
-int
-osn_pfinit(struct osnpf *osnpf, void *arg)
+void
+osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 {
     int allowextern = TRUE;	/* For now, always try for external access */
     int fd;
 #if CENV_SYS_LINUX		/* [BV: tun support for Linux] */
     struct ifreq ifr;
     char ifnam[IFNAMSIZ];
-#else
+#else /* not CENV_SYS_LINUX */
     char tunname[sizeof "/dev/tun000"];
     char *ifnam = tunname + sizeof("/dev/")-1;
     int i = -1;
-#endif
+#endif /* CENV_SYS_LINUX */
     char ipb1[OSN_IPSTRSIZ];
     char ipb2[OSN_IPSTRSIZ];
     struct ifent *ife = NULL;	/* Native host's default IP interface if one */
@@ -1417,6 +1674,9 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
     /* Remote address is always that of emulated machine */
     ipremote = osnpf->osnpf_ip.ia_addr;
     iplocal = osnpf->osnpf_tun.ia_addr;
+
+    if (DP_DBGFLG)
+	dbprint("Opening TUN device");
 
     /* Local address can be set explicitly if we plan to do full IP
        masquerading. */
@@ -1440,28 +1700,25 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
       osnpf->osnpf_tun.ia_addr = iplocal;
     }
 
-    if (DP_DBGFLG)
-	dbprint("Opening TUN device");
-
 #if CENV_SYS_LINUX		/* [BV: Linux way] */
     if ((fd = open("/dev/net/tun", O_RDWR)) < 0) /* get a fresh device */
       esfatal(0, "Couldn't open tunnel device /dev/net/tun");
     memset(&ifr, 0, sizeof(ifr));
-#if OSN_USE_IPONLY
+# if OSN_USE_IPONLY
     ifr.ifr_flags = IFF_TUN | IFF_NO_PI; /* TUN (no Ethernet headers), no pkt info */
-#else
+# else
     ifr.ifr_flags = IFF_TAP | IFF_NO_PI; /* TAP (yes Ethernet headers), no pkt info */
-#endif
+# endif
     if (ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) /* turn it on */
       esfatal(0, "Couldn't set tun device");
     strcpy(ifnam, ifr.ifr_name); /* get device name (typically "tun0") */
 #else /* not CENV_SYS_LINUX */
     do {
-#if OSN_USE_IPONLY
+# if OSN_USE_IPONLY
 	sprintf(tunname, "/dev/tun%d", ++i);
-#else
+# else
 	sprintf(tunname, "/dev/tap%d", ++i);
-#endif /* not CENV_SYS_LINUX */
+# endif /* not CENV_SYS_LINUX */
     } while ((fd = open(tunname, O_RDWR)) < 0 && errno == EBUSY);
 
     if (fd < 0)
@@ -1595,7 +1852,7 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
 	   publish an ARP entry mapping the virtual host to the same
 	   ether addr.
 	 */
-	(void) osn_arp_stuff((unsigned char *)&ipremote, ife->ife_ea, TRUE);
+	(void) osn_arp_stuff(ifnam, (unsigned char *)&ipremote, ife->ife_ea, TRUE);
 
 	/* Return that as our ether address */
 	ea_set((char *)&osnpf->osnpf_ea, ife->ife_ea);
@@ -1615,10 +1872,13 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
 #endif
     }
 
+    pfdata->pf_fd = fd;
+    pfdata->pf_handle = 0;
+    pfdata->pf_can_filter = FALSE;
+    pfdata->pf_ip4_only = OSN_USE_IPONLY;
+
     if (DP_DBGFLG)
 	dbprintln("osn_pfinit tun completed");
-
-    return fd;
 }
 
 #endif /* KLH10_NET_TUN */
@@ -1771,10 +2031,14 @@ osn_pfdeinit(void)
 
 #if KLH10_NET_TAP_BRIDGE
 
-osn_pfinit(struct osnpf *osnpf, void *arg)
+void
+osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 {
     int fd;
     char *ifnam = osnpf->osnpf_ifnam;
+
+    if (DP_DBGFLG)
+	dbprint("Opening TAP+BRIDGE device");
 
     /* No "default interface" concept here */
     if (!ifnam || !ifnam[0])
@@ -1786,8 +2050,50 @@ osn_pfinit(struct osnpf *osnpf, void *arg)
     */
     (void) osn_pfeaget(fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
 
-    return fd;
+    struct ifent *ife = osn_ifcreate(ifnam);
+    if (ife) {
+	ife->ife_flags = IFF_UP;
+	ea_set(ife->ife_ea, (unsigned char *)&osnpf->osnpf_ea);
+	ife->ife_gotea = TRUE;
+    }
+
+    pfdata->pf_fd = fd;
+    pfdata->pf_handle = 0;
+    pfdata->pf_ip4_only = FALSE;
+    pfdata->pf_can_filter = FALSE;
 }
+
+#endif /* KLH10_NET_TAP_BRIDGE */
+
+#if KLH10_NET_TAP_BRIDGE || KLH10_NET_TUN
+
+/*
+ * Like the standard read(2) call:
+ * Receives a single packet and returns its size.
+ * Include link-layer headers, but no BPF headers or anything like that.
+ */
+inline
+ssize_t
+osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes)
+{
+    return read(pfdata->pf_fd, buf, nbytes);
+}
+
+/*
+ * Like the standard write(2) call:
+ * Expect a full ethernet frame including link-layer header.
+ * returns the number of bytes written.
+ */
+inline
+int
+osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
+{
+    return write(pfdata->pf_fd, buf, nbytes);
+}
+
+#endif /* KLH10_NET_TAP_BRIDGE || KLH10_NET_TUN */
+
+#if KLH10_NET_TAP_BRIDGE
 
 #include <net/if_tap.h>
 #include <net/if_bridgevar.h>
