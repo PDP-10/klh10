@@ -38,7 +38,7 @@
 
 /* Version of DPNI20-specific shared memory structure */
 
-#define DPNI20_VERSION DPC_VERSION(1,1,1)	/* 1.1.1 */
+#define DPNI20_VERSION DPC_VERSION(1,1,2)	/* 1.1.2 */
 
 
 /* DPNI20-specific stuff */
@@ -50,6 +50,7 @@ struct dpni20_s {
 # define DPNI20F_LSAP	0x0100	/*	Set if LSAP value specified */
     int dpni_lsap;		/* C  Dest/Source LSAP value if needed */
     char dpni_ifnam[16];	/* CD Interface name if any */
+    char dpni_ifmeth[16];	/* C  Interface access method */
     unsigned char dpni_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpni_ip[4];	/* C 10's IP address to filter on, if shared */
     unsigned char dpni_tun[4];	/* CD host's IP address on tunnel */

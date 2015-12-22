@@ -701,6 +701,7 @@ net_init(struct dpimp_s *dpimp)
     struct osnpf npf;
 
     npf.osnpf_ifnam = dpimp->dpimp_ifnam;
+    npf.osnpf_ifmeth = dpimp->dpimp_ifmeth;
     npf.osnpf_dedic = FALSE;			/* Force filtering always! */
     npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
     npf.osnpf_backlog = dpimp->dpimp_backlog;

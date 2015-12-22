@@ -97,6 +97,7 @@ struct lhdh {
 
     /* Misc config info not set elsewhere */
     char *lh_ifnam;	/* Native platform's interface name */
+    char *lh_ifmeth;	/* Access method to the native interface */
     int lh_dedic;	/* TRUE if interface dedicated (else shared) */
     int lh_doarp;	/* TRUE to do ARP hackery (if shared) */
     int lh_backlog;	/* Max # input msgs to queue up in kernel */
@@ -175,6 +176,7 @@ static int  imp_outxfer(struct lhdh *lh);
     prmdef(LHDHP_TUN,"tunaddr"),  /* IP address of local side of tunnel */\
     prmdef(LHDHP_EN, "enaddr"),   /* Ethernet address to use (override) */\
     prmdef(LHDHP_IFC,"ifc"),      /* Ethernet interface name */\
+    prmdef(LHDHP_IFM,"ifmeth"),   /* Access method to Ethernet interface */\
     prmdef(LHDHP_BKL,"backlog"),/* Max bklog for rcvd pkts (else sys deflt) */\
     prmdef(LHDHP_DED,"dedic"),    /* TRUE= Ifc dedicated (else shared) */\
     prmdef(LHDHP_ARP,"doarp"),    /* TRUE= if shared, do ARP hackery */\
@@ -222,6 +224,7 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
      */
     DVDEBUG(lh) = FALSE;
     lh->lh_ifnam = NULL;
+    lh->lh_ifmeth = NULL;
     lh->lh_backlog = 0;
     lh->lh_dedic = FALSE;
     lh->lh_doarp = TRUE;
@@ -321,6 +324,12 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
 	    if (!prm.prm_val)
 		break;
 	    lh->lh_ifnam = s_dup(prm.prm_val);
+	    continue;
+
+	case LHDHP_IFM:		/* Parse as simple string */
+	    if (!prm.prm_val)
+		break;
+	    lh->lh_ifmeth = s_dup(prm.prm_val);
 	    continue;
 
 	case LHDHP_BKL:		/* Parse as decimal number */
@@ -1060,6 +1069,10 @@ imp_init(register struct lhdh *lh, FILE *of)
 
     if (lh->lh_ifnam)			/* Pass on interface name if any */
 	strncpy(dpc->dpimp_ifnam, lh->lh_ifnam, sizeof(dpc->dpimp_ifnam)-1);
+    else
+	dpc->dpimp_ifnam[0] = '\0';	/* No specific interface */
+    if (lh->lh_ifmeth)			/* Pass on interface method if any */
+	strncpy(dpc->dpimp_ifmeth, lh->lh_ifmeth, sizeof(dpc->dpimp_ifmeth)-1);
     else
 	dpc->dpimp_ifnam[0] = '\0';	/* No specific interface */
     memcpy((char *)dpc->dpimp_ip,	/* Set our IP address for filter */

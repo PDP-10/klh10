@@ -429,6 +429,7 @@ int osn_arp_look(struct in_addr *ipa, unsigned char *eap);
 
 struct osnpf {	/* Arg struct for common initialization params */
 	char *osnpf_ifnam;	/* Interface name */
+	char *osnpf_ifmeth;	/* Which connection method to use (pcap, tun, tap, etc */
 	int osnpf_dedic;	/* TRUE if dedicated ifc, else shared */
 	int osnpf_rdtmo;	/* Read timeout, if any */
 	int osnpf_backlog;	/* Allow # backlogged packets, if any */

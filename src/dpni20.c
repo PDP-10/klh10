@@ -500,6 +500,7 @@ void net_init(struct dpni20_s *dpni)
     struct osnpf npf;
 
     npf.osnpf_ifnam = dpni->dpni_ifnam;
+    npf.osnpf_ifmeth = dpni->dpni_ifmeth;
     npf.osnpf_dedic = dpni->dpni_dedic;
     npf.osnpf_rdtmo = dpni->dpni_rdtmo;
     npf.osnpf_backlog = dpni->dpni_backlog;

@@ -149,6 +149,7 @@ struct ni20 {
 
     /* Misc config info not set elsewhere */
     char *ni_ifnam;	/* Native platform's interface name */
+    char *ni_ifmeth;	/* Native platform's interface access method */
     int ni_dedic;	/* TRUE if interface dedicated (else shared) */
     int ni_decnet;	/* TRUE to filter DECNET packets (if shared) */
     int ni_doarp;	/* TRUE to do ARP hackery (if shared) */
@@ -292,6 +293,7 @@ static uint32 ni_ecpdigest(unsigned char *ucp, int len);
     prmdef(NIP_DBG,"debug"),    /* Initial debug flag */\
     prmdef(NIP_EN, "enaddr"),   /* Ethernet address to use (override) */\
     prmdef(NIP_IFC,"ifc"),      /* Ethernet interface name */\
+    prmdef(NIP_IFM,"ifmeth"),   /* Ethernet interface access method */\
     prmdef(NIP_BKL,"backlog"),/* Max bklog for rcvd pkts (else sys default) */\
     prmdef(NIP_DED,"dedic"),    /* TRUE= Ifc dedicated (else shared) */\
     prmdef(NIP_IP, "ipaddr"),   /* IP address of KLH10, if shared */\
@@ -343,6 +345,7 @@ ni20_conf(FILE *f, char *s, struct ni20 *ni)
     /* First set defaults for all configurable parameters */
     DVDEBUG(ni) = FALSE;
     ni->ni_ifnam = NULL;
+    ni->ni_ifmeth = NULL;
     ni->ni_backlog = 0;
     ni->ni_decnet = FALSE;
     ni->ni_dedic = FALSE;
@@ -411,6 +414,12 @@ ni20_conf(FILE *f, char *s, struct ni20 *ni)
 	    if (!prm.prm_val)
 		break;
 	    ni->ni_ifnam = s_dup(prm.prm_val);
+	    continue;
+
+	case NIP_IFM:		/* Parse as simple string */
+	    if (!prm.prm_val)
+		break;
+	    ni->ni_ifmeth = s_dup(prm.prm_val);
 	    continue;
 
 	case NIP_BKL:		/* Parse as decimal number */
@@ -718,6 +727,10 @@ ni20_init(struct device *d,
 	strncpy(dpc->dpni_ifnam, ni->ni_ifnam, sizeof(dpc->dpni_ifnam)-1);
     else
 	dpc->dpni_ifnam[0] = '\0';	/* No specific interface */
+    if (ni->ni_ifmeth)			/* Pass on interface access method */
+	strncpy(dpc->dpni_ifmeth, ni->ni_ifmeth, sizeof(dpc->dpni_ifmeth)-1);
+    else
+	dpc->dpni_ifmeth[0] = '\0';	/* No specific access method */
     memcpy((char *)dpc->dpni_ip,	/* Set our IP address for filter */
 		ni->ni_ipadr, 4);
     memcpy((char *)dpc->dpni_tun,	/* Set IP address for tunnel */

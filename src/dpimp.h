@@ -93,7 +93,7 @@
 
 /* Version of DPIMP-specific shared memory structure */
 
-#define DPIMP_VERSION ((1<<10) | (1<<5) | (2))	/* 1.1.2 */
+#define DPIMP_VERSION ((1<<10) | (1<<5) | (3))	/* 1.1.3 */
 
 /* DPIMP-specific stuff */
 			/* C = controlling parent sets, D = Device proc sets */
@@ -103,6 +103,7 @@ struct dpimp_s {
     int dpimp_ver;		/* C  Version of shared struct */
     int dpimp_attrs;		/* C  Attribute flags */
     char dpimp_ifnam[16];	/* CD Interface name if any */
+    char dpimp_ifmeth[16];	/* C  Interface access method */
     unsigned char dpimp_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpimp_ip[4];	/* C 10's IP address to filter on, if shared */
     unsigned char dpimp_gw[4];	/* C Default GW address for IMP to use */
