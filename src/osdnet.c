@@ -1928,11 +1928,6 @@ tap_bridge_close()
 #define	MAXCTLBUF (sizeof (dl_unitdata_req_t) + sizeof (long) + MAXADDR)
 #define	MAXDLBUF  8192		/* Maybe just MAXCTLBUF */
 
-struct  ledladdr {
-	struct  ether_addr  dl_phys;
-	unsigned short dl_sap;
-};
-
 struct dlpictx {
 	int  dc_fd;
 	struct strbuf dc_ctl;
@@ -1940,25 +1935,9 @@ struct dlpictx {
 	long dc_buf[MAXDLBUF];
 };
 
-/* Fake SAP must be above 1500 to avoid 802.3 interpretation, but
-** might be dangerous if it were 2048 which is IP (try that later, tho)
-*/
-#define FAKESAP 2049
-
-#if OSN_USE_IPONLY
-static int dlfastpathon(struct dlpictx *dc, int sap);
-#endif
-
-static int strioctl(int fd, int cmd, int len, char *dp);
 static int dl_sendreq(struct dlpictx *dc, char *ptr, int len, char *what);
 static int strgetmsg(struct dlpictx *dc, char *caller, struct strbuf *datap,
 		     int *flagsp);
-static int dlattachreq(struct dlpictx *dc, long ppa);
-static int dlokack(struct dlpictx *dc);
-static int dlbindreq(struct dlpictx *dc, u_long sap, u_long max_conind,
-		     unsigned short service_mode, unsigned short conn_mgmt);
-static int dlbindack(struct dlpictx *dc);
-static int dlpromisconreq(struct dlpictx *dc, u_long level);
 static int dladdrreq(struct dlpictx *dc, int type);
 static int dladdrack(struct dlpictx *dc, unsigned char *addr);
 static int dlsetaddrreq(struct dlpictx *dc, unsigned char *addr);
@@ -1982,58 +1961,9 @@ dleaget(int fd, unsigned char *eap)
     return TRUE;
 }
 
-#if OSN_USE_IPONLY	/* Apparently only needed for this */
-static int
-dlfastpathon(struct dlpictx *dc, int sap)
-{
-    dl_unitdata_req_t *req;
-    struct  ledladdr {
-	    struct  ether_addr  dl_phys;
-	    unsigned short dl_sap;
-    } *dladdrp;
-    int	n;
-
-    /* Construct DL_UNITDATA_REQ primitive. */
-    req = (dl_unitdata_req_t *) dc->dc_buf;
-    req->dl_primitive = DL_UNITDATA_REQ;
-    req->dl_dest_addr_length = sizeof (short) + ETHER_ADRSIZ;
-    req->dl_dest_addr_offset = sizeof (dl_unitdata_req_t);
-    req->dl_priority.dl_min = 0;
-    req->dl_priority.dl_max = 0;
-
-    /* Set up addr - instead of a specific dest address, just clear it out */
-    dladdrp = (struct ledladdr *)
-			(((char *)req) + req->dl_dest_addr_offset);
-    dladdrp->dl_sap = sap;
-    memset(&dladdrp->dl_phys, 0, ETHER_ADRSIZ);
-
-    if ((n = strioctl(dc->dc_fd, DL_IOC_HDR_INFO,
-		      sizeof(*req)+sizeof(*dladdrp),
-		      (char *)req)) < 0) {
-	esfatal(1, "DL_IOC_HDR_INFO ioctl failed");
-    }
-    return n;
-}
-#endif /* OSN_USE_IPONLY */
-
 
 /* Derived variously from TCPDUMP and Sun's ugly DLTX sample program
  */
-
-static int
-strioctl(int fd, int cmd, int len, char *dp)
-{
-    struct strioctl str;
-    int rc;
-
-    str.ic_cmd = cmd;
-    str.ic_timout = INFTIM;
-    str.ic_len = len;
-    str.ic_dp = dp;
-    rc = ioctl(fd, I_STR, &str);
-
-    return (rc < 0) ? rc : str.ic_len;
-}
 
 static int
 dl_sendreq(struct dlpictx *dc, char *ptr, int len, char *what)
@@ -2125,107 +2055,6 @@ strgetmsg(struct dlpictx *dc,
     return 0;
 }
 #undef DL_MAXWAIT
-
-static int
-dlattachreq(struct dlpictx *dc, long ppa)
-{
-    dl_attach_req_t req;
-
-    req.dl_primitive = DL_ATTACH_REQ;
-    req.dl_ppa = ppa;
-    return dl_sendreq(dc, (char *)&req, sizeof(req), "dlattach");
-}
-
-static int
-dlokack(struct dlpictx *dc)
-{
-    union DL_primitives *dlp;
-
-    if (strgetmsg(dc, "dlokack", NULL, NULL) < 0)
-	return -1;
-
-    dlp = (union DL_primitives *) dc->dc_ctl.buf;
-
-    if (dlp->dl_primitive != DL_OK_ACK) {
-	sprintf(dc->dc_ebuf, "dlokack unexpected primitive %0lX",
-	    (long)dlp->dl_primitive);
-	return -1;
-#if 0
-	    /* Possibly insert general error handler (DLTX) */
-	if (dlp->dl_primitive == DL_ERROR_ACK)
-	    dlerror(dlp->error_ack.dl_errno);
-	else
-	    printdlprim(dlp);
-#endif
-    }
-
-    if (dc->dc_ctl.len != sizeof(dl_ok_ack_t)) {
-	sprintf(dc->dc_ebuf, "dlokack incorrect size %ld",
-	    (long)dc->dc_ctl.len);
-	return -1;
-    }
-    return 0;
-}
-
-static int
-dlbindreq(struct dlpictx *dc,
-	  u_long sap,
-	  u_long max_conind,
-	  unsigned short service_mode,
-	  unsigned short conn_mgmt)
-{
-    dl_bind_req_t	req;
-
-    req.dl_primitive = DL_BIND_REQ;
-    req.dl_sap = sap;
-    req.dl_max_conind = max_conind;
-    req.dl_service_mode = service_mode;
-    req.dl_conn_mgmt = conn_mgmt;
-    req.dl_xidtest_flg = 0;
-
-    return dl_sendreq(dc, (char *)&req, sizeof(req), "dlbind");
-}
-
-static int
-dlbindack(struct dlpictx *dc)
-{
-    union DL_primitives *dlp;
-
-    if (strgetmsg(dc, "dlbindack", NULL, NULL) < 0)
-	return -1;
-
-    dlp = (union DL_primitives *) dc->dc_ctl.buf;
-
-    if (dlp->dl_primitive != DL_BIND_ACK) {
-	sprintf(dc->dc_ebuf, "dlbindack unexpected response %0lX",
-		(long)dlp->dl_primitive);
-	return -1;
-    }
-
-    if (dc->dc_ctl.len < sizeof (dl_bind_ack_t)) {
-	sprintf(dc->dc_ebuf, "dlbindack: short response: %d",
-		dc->dc_ctl.len);
-	return -1;
-    }
-#if 0	/* Don't understand this */
-    if (flags != RS_HIPRI) {
-	sprintf(dc->dc_ebuf, "dlbindack:  DL_OK_ACK was not M_PCPROTO");
-	return -1;
-    }
-#endif
-    return 0;
-}
-
-
-static int
-dlpromisconreq(struct dlpictx *dc, u_long level)
-{
-    dl_promiscon_req_t req;
-
-    req.dl_primitive = DL_PROMISCON_REQ;
-    req.dl_level = level;
-    return dl_sendreq(dc, (char *)&req, sizeof(req), "dlpromiscon");
-}
 
 /*
  * type arg: DL_FACT_PHYS_ADDR for "factory" address,
