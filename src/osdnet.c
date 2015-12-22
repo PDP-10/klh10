@@ -230,6 +230,10 @@ osn_iftab_addaddress(char *name, struct sockaddr *addr)
     int i;
     int idx;
 
+    if (!name) {
+	return NULL;
+    }
+
     /* First see if the name is already known */
 
     idx = -1;
@@ -250,31 +254,33 @@ osn_iftab_addaddress(char *name, struct sockaddr *addr)
 
     ife = &iftab[idx];
 
-    switch (addr->sa_family) {
-    case AF_INET: {
-	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
-	ife->ife_ipia = sin->sin_addr;
-	ife->ife_gotip4 = TRUE;
-	break;
-		  }
+    if (addr) {
+	switch (addr->sa_family) {
+	case AF_INET: {
+	    struct sockaddr_in *sin = (struct sockaddr_in *)addr;
+	    ife->ife_ipia = sin->sin_addr;
+	    ife->ife_gotip4 = TRUE;
+	    break;
+		      }
 #if defined(AF_LINK)
-    case AF_LINK: {
-	struct sockaddr_dl *sdl = (struct sockaddr_dl *)addr;
-	if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADRSIZ) {
-	    ea_set(ife->ife_ea, LLADDR(sdl));
-	    ife->ife_gotea = TRUE;
-	}
-		  }
+	case AF_LINK: {
+	    struct sockaddr_dl *sdl = (struct sockaddr_dl *)addr;
+	    if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADRSIZ) {
+		ea_set(ife->ife_ea, LLADDR(sdl));
+		ife->ife_gotea = TRUE;
+	    }
+		      }
 #endif /* AF_LINK*/
 #if defined(AF_PACKET)
-    case AF_PACKET: {
-	struct sockaddr_ll *sll = (struct sockaddr_ll *)addr;
-	if (sll->sll_hatype == ARPHRD_ETHER && sll->sll_halen == ETHER_ADRSIZ) {
-	    ea_set(ife->ife_ea, &sll->sll_addr);
-	    ife->ife_gotea = TRUE;
-	}
-		    }
+	case AF_PACKET: {
+	    struct sockaddr_ll *sll = (struct sockaddr_ll *)addr;
+	    if (sll->sll_hatype == ARPHRD_ETHER && sll->sll_halen == ETHER_ADRSIZ) {
+		ea_set(ife->ife_ea, &sll->sll_addr);
+		ife->ife_gotea = TRUE;
+	    }
+			}
 #endif /* AF_PACKET*/
+	}
     }
 
     return ife;
