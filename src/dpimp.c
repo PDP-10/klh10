@@ -36,12 +36,9 @@ that looks like a simplified IMP.  It uses the host system's
 packet-filtering mechanism to access the ethernet, and assumes that
 only IP packets will be transferred in and out.  This mechanism might
 be one of:
-	NIT  - SunOS Network Interface Tap.
-	DLPI - Solaris Data-Link-Provider Interface (the ugliest).
-	BPF  - BSD packetfilter.
-	PFLT - OSF/1 packetfilter.
-	TUN  - FreeBSD tunnel device (the simplest).
-	LNX  - Linux "PF_PACKET" interface (the dumbest).
+	PCAP - The portable packet capture library
+	TAP  - Ethernet tunnel device
+	TUN  - IP tunnel device (the simplest).
 
 In what follows, "NET" is understood to be one of the above.
 
@@ -283,11 +280,8 @@ struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
 struct in_addr ihost_ip;	/* IMP/Native host IP addr, net order */
 struct in_addr ihost_nm;	/* IMP/Native host subnet netmask, net order */
 struct in_addr ihost_net;	/* IMP/Native host net #, net order */
-#if KLH10_NET_TUN
-struct in_addr tun_ip;		/* IP addr of tunnel */
-#else
+struct in_addr tun_ip;		/* IP addr of host side of tunnel */
 struct in_addr gwdef_ip;	/* IP addr of default prime gateway */
-#endif
 
 struct ether_addr ehost_ea;	/* Emulated host ethernet addr */
 struct ether_addr ihost_ea;	/* IMP/Native host ethernet addr */
@@ -421,7 +415,7 @@ int initdebug = 0;
 int
 main(int argc, char **argv)
 {
-    register struct dpimp_s *dpimp;	/* Ptr to shared memory area */
+    struct dpimp_s *dpimp;	/* Ptr to shared memory area */
 
     /* Search for a "-debug" command-line argument so that we can start
        debug output ASAP if necessary.
@@ -505,11 +499,8 @@ main(int argc, char **argv)
        shared DP area.
     */
     memcpy((void *)&ehost_ip, dpimp->dpimp_ip, 4);	/* Host IP addr */
-#if KLH10_NET_TUN
     memcpy((void *)&tun_ip, dpimp->dpimp_tun, 4);	/* Tunnel addr */
-#else
     memcpy((void *)&gwdef_ip, dpimp->dpimp_gw, 4);	/* Default GW addr */
-#endif
     memcpy((void *)&ehost_ea, dpimp->dpimp_eth, 6);	/* Host Ether addr */
 
     /* IMP must always have IP address specified! */
@@ -638,7 +629,7 @@ main(int argc, char **argv)
 **	given network interface we'll use.
 */
 void
-net_init(register struct dpimp_s *dpimp)
+net_init(struct dpimp_s *dpimp)
 {
     struct ifreq ifr;
 
@@ -714,18 +705,14 @@ net_init(register struct dpimp_s *dpimp)
     npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
     npf.osnpf_backlog = dpimp->dpimp_backlog;
     npf.osnpf_ip.ia_addr = ehost_ip;
-#if KLH10_NET_TUN
     npf.osnpf_tun.ia_addr = tun_ip;
-#endif
     /* Ether addr is both a potential arg and a returned value;
        the packetfilter open may use and/or change it.
     */
     ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);	/* Set requested ea if any */
     osn_pfinit(&pfdata, &npf, (void *)dpimp);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea if one */
-#if KLH10_NET_TUN
     tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
-#endif
   }
 }
 
@@ -738,78 +725,8 @@ net_init(register struct dpimp_s *dpimp)
 ** native host.  We do this even before checking whether the packet contains
 ** IP data; if it's too short, it's rejected anyway.
 */
-
-/* Common packetfilter definitions - for all but BPF */
-
-#if KLH10_NET_PFLT || KLH10_NET_NIT || KLH10_NET_DLPI
-
-#if KLH10_NET_PFLT
-# define OSN_PFSTRUCT enfilter
-# define PF_PRIO enf_Priority
-# define PF_FLEN enf_FilterLen
-# define PF_FILT enf_Filter
-#elif (KLH10_NET_DLPI || KLH10_NET_NIT)
-# define OSN_PFSTRUCT packetfilt
-# define PF_PRIO Pf_Priority
-# define PF_FLEN Pf_FilterLen
-# define PF_FILT Pf_Filter
-#endif
-
-struct OSN_PFSTRUCT pfilter;
-
-static void pfshow(struct OSN_PFSTRUCT *);
-
-/* Build packet filter to pass on only IP packets for given IP addr */
-
-struct OSN_PFSTRUCT *
-pfbuild(void *arg, struct in_addr *ipa)
-{
-    register struct dpimp_s *dpimp = (struct dpimp_s *)arg;
-    register unsigned short *p;
-    register union ipaddr *uipa = (union ipaddr *)ipa;
-    register struct OSN_PFSTRUCT *pfp = &pfilter;
-
-    p = pfp->PF_FILT;		/* Get addr of filter (length ENMAXFILTERS) */
-
-    *p++ = ENF_PUSHWORD + PKSWOFF_IPDEST+1;
-    *p++ = ENF_PUSHLIT | ENF_CAND;	/* Compare low wds of IP addrs */
-    *p++ = htons((uipa->ia_octet[2]<<8) | (uipa->ia_octet[3]));
-
-    *p++ = ENF_PUSHWORD + PKSWOFF_IPDEST;
-    *p++ = ENF_PUSHLIT | ENF_CAND;	/* Compare high wds of IP addrs */
-    *p++ = htons((uipa->ia_octet[0]<<8) | (uipa->ia_octet[1]));
-
-    *p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Verify IP packet */
-    *p++ = ENF_PUSHLIT | ENF_EQ;
-    *p++ = htons(ETHERTYPE_IP);
-
-    pfp->PF_FLEN = p - pfp->PF_FILT;	/* Set # of items on list */
-    pfp->PF_PRIO = 128;			/* Pick middle of 0-255 range */
-				/* "Ignored", but RARPD recommends > 2 */
-
-    if (DBGFLG)		/* If debugging, print out resulting filter */
-	pfshow(pfp);
-
-    return pfp;
-}
-
-/* Debug auxiliary to print out packetfilter we composed.
-*/
-static void
-pfshow(struct OSN_PFSTRUCT *pf)
-{
-    int i;
-
-    fprintf(stderr,"[%s: kernel packetfilter pri %d, len %d:", progname,
-	    pf->PF_PRIO, pf->PF_FLEN);
-    for (i = 0; i < pf->PF_FLEN; ++i)
-	fprintf(stderr, " %04X", pf->PF_FILT[i]);
-    fprintf(stderr, "]\r\n");
-}
-
-#endif /* KLH10_NET_PFLT || KLH10_NET_NIT || KLH10_NET_DLPI */
 
-#if KLH10_NET_BPF || KLH10_NET_PCAP
+#if KLH10_NET_PCAP
 
 /*
 ** BPF filter program stuff.
@@ -893,10 +810,10 @@ static void pfshow(struct OSN_PFSTRUCT *);
 struct OSN_PFSTRUCT *
 pfbuild(void *arg, struct in_addr *ipa)
 {
-    register struct dpimp_s *dpimp = (struct dpimp_s *)arg;
-    register unsigned char *ucp = (unsigned char *)ipa;
-    register struct OSN_PFSTRUCT *pfp = &bpf_pfilter;
-    register struct bpf_insn *p;
+    struct dpimp_s *dpimp = (struct dpimp_s *)arg;
+    unsigned char *ucp = (unsigned char *)ipa;
+    struct OSN_PFSTRUCT *pfp = &bpf_pfilter;
+    struct bpf_insn *p;
 
     p = pfp->PF_FILT;		/* Point to 1st instruction in BPF program  */
 
@@ -961,9 +878,8 @@ pfshow(struct OSN_PFSTRUCT *pf)
 		pf->PF_FILT[i].k);
     fprintf(stderr, "]\r\n");
 }
-#endif /* KLH10_NET_BPF || KLH10_NET_PCAP */
+#endif /* KLH10_NET_PCAP */
 
-#if KLH10_NET_LNX
 
 /* Because until very recently LNX had no kernel packet filtering, must do it
    manually.  Ugh!
@@ -974,13 +890,13 @@ pfshow(struct OSN_PFSTRUCT *pf)
    Returns TRUE if packet OK, FALSE if it should be dropped.
    Note that the code parallels that for pfbuild().
 */
-int lnx_filter(register struct dpimp_s *dpimp,
+int lnx_filter(struct dpimp_s *dpimp,
 	       unsigned char *bp,
 	       int cnt)
 {
     /* Code assumes buffer is at least shortword-aligned. */
-    register unsigned short *sp = (unsigned short *)bp;
-    register unsigned short etyp;
+    unsigned short *sp = (unsigned short *)bp;
+    unsigned short etyp;
 
     /* Get ethernet protocol type.
        Could also test packet length, but for now assume higher level
@@ -997,44 +913,11 @@ int lnx_filter(register struct dpimp_s *dpimp,
 	/* For IP packet, return TRUE if IP destination matches ours */
 	return (memcmp(dpimp->dpimp_ip, bp + PKBOFF_IPDEST, 4) == 0);
 
-#if 0	/* No other types allowed through IMP */
-    /* Check for DECNET protocol types if requested.
-    ** The following are the known types:
-    **	6001 DNA/MOP
-    **	6002 RmtCon
-    **	6003 DECnet
-    **	6004 LAT
-    **	6016 ANF-10	(T10 only; not DECNET)
-    **	9000 Loopback (?)
-    */
-    case 0x6001:	/* DNA/MOP */
-    case 0x6002:	/* RmtCon */
-    case 0x6003:	/* DECnet */
-    case 0x6004:	/* LAT */
-    case 0x6016:	/* ANF-10 (T10 only; not DECNET) */
-    case 0x9000:	/* Loopback (?) */
- 	return (dpni->dpni_decnet);	/* TRUE if wanted Decnet stuff */
-
-    default:
-      /* Test for an IEEE 802.3 packet with a specific dst/src LSAP.
-	 Packet is 802.3 if type field is actually packet length -- in which
-	 case it will be 1 <= len <= 1500 (note 1514 is max, of which header
-	 uses 6+6+2=14).
-
-	 Dst/src LSAPs are in the 1st shortwd after packet length.
-      */
-      if (etyp <= 1500
-	&& (dpni->dpni_attrs & DPNI20F_LSAP)
-	&& (dpni->dpni_lsap == sp[PKSWOFF_SAPS]))
-	  return TRUE;
-      break;
-#endif /* 0 */
-
     }
+    /* No other types allowed through IMP */
+
     return FALSE;
 }
-
-#endif /* KLH10_NET_LNX */
 
 
 #if !KLH10_NET_TUN
@@ -1061,7 +944,6 @@ used.
 
  */
 
-#if 1 /* New stuff */
 
 /* Set up by init for easier reference */
 static struct dpimpsh_s *arpp;
@@ -1069,27 +951,6 @@ static struct arpent *arptab_lim;
 
 #define	ARPTAB_HASH(max,a) \
 	((unsigned long)(a) % (max))
-
-#else /* Old stuff - temporarily saved */
-
-#define	ARPTAB_BSIZ	6		/* bucket size */
-#define	ARPTAB_NB	31		/* number of buckets (prime) */
-#define	ARPTAB_SIZE	(ARPTAB_BSIZ * ARPTAB_NB)
-struct arpent arptab[ARPTAB_SIZE];
-
-#define	ARPTAB_HASH(a) \
-	((unsigned long)(a) % ARPTAB_NB)
-
-#define	ARPTAB_LOOK(at,addr) { \
-	register int n; \
-	at = &arptab[ARPTAB_HASH(addr.s_addr) * ARPTAB_BSIZ]; \
-	for (n = 0 ; n < ARPTAB_BSIZ ; n++,at++) \
-		if (at->at_iaddr.s_addr == addr.s_addr) \
-			break; \
-	if (n >= ARPTAB_BSIZ) \
-		at = 0; \
-}
-#endif /* 0 */
 
 
 /* ARP_INIT
@@ -1099,7 +960,7 @@ struct arpent arptab[ARPTAB_SIZE];
 void
 arp_init(struct dpimp_s *dpimp)
 {
-    register struct dpimpsh_s *dsh = DPIMPSH(dpimp);
+    struct dpimpsh_s *dsh = DPIMPSH(dpimp);
     struct ether_addr ea;
     struct arpent *at;
 
@@ -1140,10 +1001,10 @@ arp_init(struct dpimp_s *dpimp)
 int
 arp_refreset(void)
 {
-    register struct dpimpsh_s *dsh = arpp;
-    register struct arpent *at = &dsh->dpimpsh_arptab[0];
-    register int max = dsh->dpimpsh_arpsiz;
-    register int i;
+    struct dpimpsh_s *dsh = arpp;
+    struct arpent *at = &dsh->dpimpsh_arptab[0];
+    int max = dsh->dpimpsh_arpsiz;
+    int i;
 
     for (i = 0; i < max; i++, at++) {
 	at->at_lastref = 0;
@@ -1155,10 +1016,10 @@ arp_refreset(void)
 struct arpent *
 arptab_look(struct in_addr addr)
 {
-    register struct dpimpsh_s *dsh = arpp;
-    register int i;
-    register int max = dsh->dpimpsh_arpsiz;
-    register struct arpent *at =
+    struct dpimpsh_s *dsh = arpp;
+    int i;
+    int max = dsh->dpimpsh_arpsiz;
+    struct arpent *at =
 	&dsh->dpimpsh_arptab[ARPTAB_HASH(max, addr.s_addr)];
 
     for (i = 0; i < max; i++, at++) {
@@ -1186,14 +1047,14 @@ arp_tnew(struct in_addr addr,
 	 struct ether_addr *eap,
 	 int flags)
 {
-    register struct dpimpsh_s *dsh = arpp;
-    register int i;
-    register int max = dsh->dpimpsh_arpsiz;
-    register struct arpent *at =
+    struct dpimpsh_s *dsh = arpp;
+    int i;
+    int max = dsh->dpimpsh_arpsiz;
+    struct arpent *at =
 	&dsh->dpimpsh_arptab[ARPTAB_HASH(max, addr.s_addr)];
 
     int oldest = dsh->dpimpsh_arprefs;
-    register struct arpent *ato = NULL;
+    struct arpent *ato = NULL;
 
     for (i = 0; i < max; i++, at++) {
 	if (at >= arptab_lim)
@@ -1226,12 +1087,12 @@ arp_tnew(struct in_addr addr,
  * the update access control, even though it's quite simple.
  */
 void
-arp_set(register struct arpent *at,
+arp_set(struct arpent *at,
 	struct in_addr addr,
 	struct ether_addr *eap,
 	int flags)
 {
-    register struct dpimpsh_s *dsh = arpp;
+    struct dpimpsh_s *dsh = arpp;
 
     /* Get write lock */
     dsh->dpimpsh_lock[mylockid] = TRUE;
@@ -1263,11 +1124,11 @@ struct arpent *
 arp_look(struct in_addr ip,
 	 struct ether_addr *eap)
 {
-    register struct arpent *at;
+    struct arpent *at;
 
     at = arptab_look(ip);		/* Look up IP addr */
     if (at && (at->at_flags & ARPF_COM)) {
-	register int i;
+	int i;
 
 	/* Exists and complete */
 	ea_set(eap, &(at->at_eaddr));	/* Return ether addr */
@@ -1310,7 +1171,7 @@ arp_req(struct in_addr *ipa)
     static int ethbuild = 0, arpbuild = 0;
     static struct eth_header eh;
     static struct offset_ether_arp arp;
-    register struct arpent *at;
+    struct arpent *at;
     struct ether_addr ea;
 
     /* Store request in cache */
@@ -1365,8 +1226,8 @@ arp_req(struct in_addr *ipa)
 void
 arp_gotrep(unsigned char *buf, int cnt)
 {
-    register struct ether_arp *aa;
-    register struct arpent *at;
+    struct ether_arp *aa;
+    struct arpent *at;
     struct arpent ent;
 
     if (DP_DBGFLG) {
@@ -1385,13 +1246,13 @@ arp_gotrep(unsigned char *buf, int cnt)
     if (aa->arp_hrd != htons(ARPHRD_ETHER)) {	/* Check hdw addr format */
 	if (DP_DBGFLG)
 	    dbprintln("Dropped ARP, hrd %0x != %0x",
-		      aa->arp_hrd, htons(ARPHRD_ETHER));
+		      aa->arp_hrd, ARPHRD_ETHER);
 	return;
     }
     if (aa->arp_pro != htons(ETHERTYPE_IP)) {	/* Check ptcl addr fmt */
 	if (DP_DBGFLG)
 	    dbprintln("Dropped ARP, pro %0x != %0x",
-		      aa->arp_pro, htons(ETHERTYPE_IP));
+		      aa->arp_pro, ETHERTYPE_IP);
 	return;
     }
     if (aa->arp_hln != sizeof(aa->arp_sha)) {	/* Check Hdw address len */
@@ -1517,19 +1378,15 @@ arp_reply(unsigned char *eap,	/* Requestor ether addr */
 **	Reads packets from net, fragments if necessary, and feeds
 **	IMP packets to DP superior process.
 */
-#if KLH10_NET_BPF
-# define MAXETHERLEN OSN_BPF_MTU
-#else
 # define MAXETHERLEN 1600	/* Actually 1519 but be generous */
-#endif
 
 #define NINBUFSIZ (DPIMP_DATAOFFSET+MAXETHERLEN)
 
 void
-imptohost(register struct dpimp_s *dpimp)
+imptohost(struct dpimp_s *dpimp)
 {
-    register struct dpx_s *dpx = dp_dpxfr(&dp);
-    register int cnt;
+    struct dpx_s *dpx = dp_dpxfr(&dp);
+    int cnt;
     unsigned char *inibuf;
     unsigned char *buffp;
     size_t max;
@@ -1544,8 +1401,12 @@ imptohost(register struct dpimp_s *dpimp)
     if (DBGFLG)
 	fprintf(stderr, "[dpimp-R: sent INIT]\r\n");
 
-#if (KLH10_NET_PCAP || KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_PFLT || \
-	KLH10_NET_TUN || KLH10_NET_LNX)
+#if KLH10_NET_TUN
+# define ETHER_HDR_OFFSET	0	/* No ether headers on TUN */
+#else
+# define ETHER_HDR_OFFSET	ETHER_HDRSIZ
+#endif
+
     for (;;) {
 	/* Make sure that buffer is free before clobbering it */
 	dp_xswait(dpx);			/* Wait until buff free */
@@ -1554,24 +1415,12 @@ imptohost(register struct dpimp_s *dpimp)
 	    fprintf(stderr, "[dpimp-R: InWait]\r\n");
 
 	/* Set up buffer and initialize offsets */
-#if KLH10_NET_TUN
-	/* XXX clean up TUN condits by using "0" ETHER_HDRSIZ substitute */
-	buffp = inibuf + DPIMP_DATAOFFSET;
-#else
-	buffp = inibuf + (DPIMP_DATAOFFSET - ETHER_HDRSIZ);
-#endif
+	buffp = inibuf + DPIMP_DATAOFFSET - ETHER_HDR_OFFSET;
 
 	/* OK, now do a blocking read on packetfilter input! */
-#if KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_TAP_BRIDGE
 	cnt = osn_pfread(&pfdata, buffp, MAXETHERLEN);
-#else
-	cnt = read(pfdata.pf_fd, buffp, MAXETHERLEN);
-#endif
-#if KLH10_NET_TUN
-	if (cnt <= 0) {		/* No ether headers on TUN */
-#else
-	if (cnt <= ETHER_HDRSIZ) {
-#endif
+
+	if (cnt <= ETHER_HDR_OFFSET) {
 	    /* If call times out due to E/BIOCSRTIMEOUT, will return 0 */
 	    if (cnt == 0 && dpimp->dpimp_rdtmo)
 		continue;		/* Just try again */
@@ -1588,22 +1437,6 @@ imptohost(register struct dpimp_s *dpimp)
 	    if (errno == EINTR)		/* Ignore spurious signals */
 		continue;
 
-#if 0 && CENV_SYS_NETBSD
-	    /* NetBSD bpf is broken.
-	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
-	       understand why this crock is necessary.
-	       Always block for at least 1 sec, will wake up sooner if
-	       input arrives.
-	     */
-	    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-		int ptimeout = (dpimp->dpimp_rdtmo ? dpimp->dpimp_rdtmo : 1);
-		struct pollfd myfd;
-		myfd.fd = pfdata.pf_fd;
-		myfd.events = POLLIN;
-		(void) poll(&myfd, 1, ptimeout*1000);
-		continue;
-	    }
-#endif
 	    syserr(errno, "Eread = %d, errno %d", cnt, errno);
 	    if (--stoploop <= 0)
 		efatal(1, "Too many retries, aborting");
@@ -1620,112 +1453,46 @@ imptohost(register struct dpimp_s *dpimp)
 	}
 
 	/* Have packet, now dispatch it to host */
-#if KLH10_NET_LNX
-	/* Linux has no packet filtering, thus must apply manual check to
-	   each and every packet read, even if dedicated.
-	*/
-	if (!lnx_filter(dpimp, buffp, cnt))
-	    continue;		/* Drop packet, continue reading */
 
-#endif /* KLH10_NET_LNX */
-#if !KLH10_NET_TUN
-	/* Verify that pf filtering is doing its job */
-	switch (eh_tget((struct eth_header *)buffp)) {
-	case ETHERTYPE_IP:
-	    break;
-	case ETHERTYPE_ARP:		/* If ARP, */
-	    arp_gotrep(buffp, cnt);	/* attempt to process replies */
-	    continue;			/* and always drop packet */
-	default:
-	    error("Non-IP ether packet: %0X",
-			eh_tget((struct eth_header *)buffp));
-	    continue;
+	/* If there hasn't been any packet filtering yet, then must apply
+	 * manual check to each and every packet read, even if dedicated.
+	 */
+	if (!pfdata.pf_can_filter) {
+	    if (!lnx_filter(dpimp, buffp, cnt))
+		continue;		/* Drop packet, continue reading */
 	}
-#endif /* !KLH10_NET_TUN */
+
+#if !KLH10_NET_TUN
+	/* if (!pfdata.pf_ip4_only) */ {
+	    /* Verify that pf filtering is doing its job */
+	    switch (eh_tget((struct eth_header *)buffp)) {
+	    case ETHERTYPE_IP:
+		break;
+	    case ETHERTYPE_ARP:		/* If ARP, */
+		arp_gotrep(buffp, cnt);	/* attempt to process replies */
+		continue;		/* and always drop packet */
+	    default:
+		error("Non-IP ether packet: %0X",
+			    eh_tget((struct eth_header *)buffp));
+		continue;
+	    }
+	}
+#endif
 
 	/* OK, it claims to be an IP packet, see if so long that we
 	** need to fragment it.  Yech!
 	*/
-#if !KLH10_NET_TUN
-	cnt -= ETHER_HDRSIZ;
+	cnt -= ETHER_HDR_OFFSET;
+	buffp += ETHER_HDR_OFFSET;
+
 	if (cnt > SI_MAXMSG) {
-	    ihl_frag(cnt, buffp + ETHER_HDRSIZ);
+	    ihl_frag(cnt, buffp);
 	} else {
 	    /* Small enough to constitute one IMP message, so pass it on! */
-	    ihl_hhsend(dpimp, cnt, buffp + ETHER_HDRSIZ);
-	}
-#else /* !KLH10_NET_TUN */
-	if (cnt > SI_MAXMSG)
-	    ihl_frag(cnt, buffp);
-	else
 	    ihl_hhsend(dpimp, cnt, buffp);
-#endif /* KLH10_NET_TUN */
+	}
 
     }
-#endif /* NIT || DLPI || PFLT || TUN || LNX */
-
-#if KLH10_NET_BPF
-    for (;;) {
-	char *bp, *ep, *pp;
-	size_t caplen, hdrlen;
-
-	/* Make sure that buffer is free before clobbering it */
-	dp_xswait(dpx);			/* Wait until buff free */
-
-	buffp = inibuf + DPIMP_DATAOFFSET;
-
-	if ((cnt = read(pfdata.pf_fd, buffp, OSN_BPF_MTU)) < 0) {
-	    fprintf(stderr, "dpimp: BPF read = %d, ", cnt);
-	    if (--stoploop <= 0)
-		efatal(1, "Too many retries, aborting");
-	    fprintf(stderr, "errno %d = %s]\r\n", errno, dp_strerror(errno));
-	}
-	/* If call times out, will return 0 */
-/* XXX fix up like dpni20 */
-	if (cnt == 0 /* && dpimp->dpimp_rdtmo */)
-	    continue;		/* Just try again */
-
-	if (DBGFLG)
-	    dbprintln("BPF read = %d", cnt);
-
-	/* Grovel through buffer, sending each packet.  Note that
-	** sending can prepend stuff onto data, which trashes the BPF header;
-	** thus pointer to next header must be derived BEFORE each send.
-	** The LHDH can also pad-trash the following 3 bytes if the data count
-	** isn't a multiple of 4 -- hence need to preserve vals from next hdr!
-	*/
-	bp = buffp; ep = bp + cnt;
-# define bhp(p) ((struct bpf_hdr *)(p))
-	caplen = bhp(bp)->bh_caplen;	/* Pre-fetch first BPF header */
-	hdrlen = bhp(bp)->bh_hdrlen;
-	while (bp < ep) {
-	    
-	    cnt = caplen - ETHER_HDRSIZ;
-	    pp = bp + hdrlen + ETHER_HDRSIZ;
-
-	    /* Point to next header now, before current one is trashed */
-	    bp += BPF_WORDALIGN(caplen + hdrlen);
-	    if (bp < ep) {
-		caplen = bhp(bp)->bh_caplen;
-		hdrlen = bhp(bp)->bh_hdrlen;
-	    }
-# undef bhp
-	    if (DBGFLG)
-		dbprintln("BPF pkt = %d", cnt);
-
-	    /* See if so long that we need to fragment it.  Yech! */
-	    if (cnt > SI_MAXMSG) {
-		ihl_frag(cnt, pp);
-	    } else {
-		/* Small enough for one IMP message, so pass it on! */
-		ihl_hhsend(dpimp, cnt, pp);
-	    }
-
-	    /* Wait until send ACKed, assume buff still OK */
-	    dp_xswait(dpx);
-	}
-    }
-#endif /* KLH10_NET_BPF */
 }
 
 void
@@ -1763,12 +1530,12 @@ unsigned char ihobuf[SIH_HSIZ+SI_LDRSIZ] = {
 
 
 void
-ihl_hhsend(register struct dpimp_s *dpimp,
+ihl_hhsend(struct dpimp_s *dpimp,
 	   int cnt,
-	   register unsigned char *pp)
+	   unsigned char *pp)
 	/* "pp" is packet data ptr, has room for header preceding */
 {
-    register int bits = cnt * 8;	/* Why not... msg length in bits */
+    int bits = cnt * 8;	/* Why not... msg length in bits */
     union ipaddr haddr;
 
     /* Set up IMP leader */
@@ -1801,8 +1568,8 @@ ihl_hhsend(register struct dpimp_s *dpimp,
 
     /* Send up to host!  Assume we're already in shared buffer. */
   {
-    register struct dpx_s *dpx = dp_dpxfr(&dp);
-    register unsigned char *buff;
+    struct dpx_s *dpx = dp_dpxfr(&dp);
+    unsigned char *buff;
     size_t off, max;
 
     buff = dp_xsbuff(dpx, &max);	/* Set up buffer ptr & max count */
@@ -1823,12 +1590,12 @@ ihl_hhsend(register struct dpimp_s *dpimp,
 **	outputs to NET.
 */
 void
-hosttoimp(register struct dpimp_s *dpimp)
+hosttoimp(struct dpimp_s *dpimp)
 {
-    register struct dpx_s *dpx = dp_dpxto(&dp);	/* Get ptr to "To-DP" dpx */
-    register unsigned char *buff;
+    struct dpx_s *dpx = dp_dpxto(&dp);	/* Get ptr to "To-DP" dpx */
+    unsigned char *buff;
     size_t max;
-    register int rcnt;
+    int rcnt;
     unsigned char *inibuf;
 #if !KLH10_NET_TUN
     struct in_addr ipdest;
@@ -2039,9 +1806,9 @@ ip_write(struct in_addr *ipa, unsigned char *buf, int len)
  * a copy of the header!
  */
 void
-ether_write(register struct eth_header *hp,
-	    register unsigned char *pp,
-	    register int cnt)
+ether_write(struct eth_header *hp,
+	    unsigned char *pp,
+	    int cnt)
 {
 #if KLH10_NET_PCAP || KLH10_NET_TAP_BRIDGE
     char *buf = (char *)(pp - ETHER_HDRSIZ);
@@ -2056,98 +1823,6 @@ ether_write(register struct eth_header *hp,
 	error("write failed - %s", dp_strerror(errno));
     }
 
-#elif KLH10_NET_NIT
-    struct strbuf ctl, dat;
-    struct sockaddr sa;
-
-    /* First set up control message to specify destination, expressed as a
-    ** sockaddr.  The interface output driver builds an ethernet header
-    ** from that information.
-    **		If sa_family is AF_UNSPEC, then sa_data is interpreted
-    ** as a ether_header (it just so happens to be the same length,
-    ** 14 bytes - bleah!) and the dest host is taken from ether_dhost,
-    ** plus type from ether_type.
-    **		If sa_family is AF_INET, then sa_data is interpreted as
-    ** the rest of a sockaddr_in, and ARP resolution is done on the sin_addr
-    ** field to find the correct destination ethernet addr.  The type is always
-    ** set to ETHERTYPE_IP.
-    **		Unfortunately AF_INET cannot be used on NIT output
-    ** currently; only AF_UNSPEC is allowed.
-    */
-    sa.sa_family = AF_UNSPEC;			/* Copy ether header */
-    memcpy(sa.sa_data, (char *)hp, ETHER_HDRSIZ);
-
-    ctl.maxlen = ctl.len = sizeof(struct sockaddr);
-    ctl.buf = (char *)&sa;
-    dat.maxlen = dat.len = cnt;
-    dat.buf = (char *)pp;
-
-    if (DP_DBGFLG)
-	dbprintln("net out = %d", cnt);
-
-    if (putmsg(pfdata.pf_fd, &ctl, &dat, 0) < 0) {
-	/* What to do here?  For debugging, complain but return. */
-	error("putmsg failed - %s", dp_strerror(errno));
-    }
-
-#elif KLH10_NET_DLPI
-    struct strbuf ctl, dat;
-# if DPIMP_DATAOFFSET	/* New code, OK to simply prepend header */
-    dat.buf = (char *)(pp - ETHER_HDRSIZ);
-    memcpy(dat.buf, (char *)hp, ETHER_HDRSIZ);
-# else	/* Old code, does extra buffer copy */
-    unsigned char buf[MAXETHERLEN];
-
-    memcpy(buf, (char *)hp, ETHER_HDRSIZ);
-    memcpy(buf+ETHER_HDRSIZ, pp, cnt);
-    dat.buf = (char *)buf;
-# endif
-    dat.maxlen = dat.len = (cnt + ETHER_HDRSIZ);
-
-    if (DP_DBGFLG)
-	dbprintln("net out = %d", cnt);
-
-    if (putmsg(pfdata.pf_fd, NULL, &dat, 0) < 0) {
-	/* What to do here?  For debugging, complain but return. */
-	error("putmsg failed - %s", dp_strerror(errno));
-    }
-#elif KLH10_NET_PFLT
-    /* The lossage is endless... on DEC OSF/1 packetfilter FDs, 
-    ** writev() *WILL NOT WORK*.  It appears to succeed, but nothing
-    ** ever shows up on the output!
-    */
-# if DPIMP_DATAOFFSET	/* New code, OK to simply prepend header */
-    char *buf = (char *)(pp - ETHER_HDRSIZ);
-    memcpy(buf, (char *)hp, ETHER_HDRSIZ);
-# else	/* Old code, does extra buffer copy */
-    unsigned char buf[MAXETHERLEN];
-    memcpy(buf, (char *)hp, ETHER_HDRSIZ);
-    memcpy(buf+ETHER_HDRSIZ, pp, cnt);
-# endif
-
-    if (DP_DBGFLG)
-	dbprintln("net out = %d", cnt);
-
-    if (write(pfdata.pf_fd, buf, (size_t)(cnt + ETHER_HDRSIZ)) < 0) {
-	/* What to do here?  For debugging, complain but return. */
-	error("write failed - %s", dp_strerror(errno));
-    }
-
-#elif KLH10_NET_BPF || KLH10_NET_LNX
-    struct iovec iov[2];
-
-    iov[0].iov_base = (char *) hp;
-    iov[0].iov_len = ETHER_HDRSIZ;
-    iov[1].iov_base = pp;
-    iov[1].iov_len = cnt;
-
-    if (DP_DBGFLG)
-	dbprintln("net out = %d", cnt);
-
-    if (writev(pfdata.pf_fd, iov, sizeof(iov)/sizeof(*iov)) < 0) {
-	/* What to do here?  For debugging, complain but return. */
-	error("writev() failed - %s", dp_strerror(errno));
-    }
 #elif KLH10_NET_TUN
     /* No code needed here -- routine never used */
 #else

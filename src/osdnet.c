@@ -49,23 +49,13 @@ struct ifent *osn_iflookup(char *ifnam);
 int
 osn_ifsock(char *ifnam, ossock_t *as)
 {
-#if (KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
     return ((*as = socket(AF_INET, SOCK_DGRAM, 0)) >= 0);
-#else
-# error OSD implementation needed for osn_ifsock
-#endif
 }
 
 int
 osn_ifclose(ossock_t s)
 {
-#if (KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
     return (close(s) >= 0);
-#else
-# error OSD implementation needed for osn_ifclose
-#endif
 }
 
 
@@ -434,32 +424,50 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
 			(pubf ? "pub" : ""));
     }
 
-#if CENV_SYS_LINUX
+#if CENV_SYS_LINUX && OSN_USE_IPONLY
     /**
      * Linux won't do proxy ARP by default. It needs to be turned on.
      * This is needed when we use an Ethernet device, not an IP tunnel.
      *
-     * However, it seems not to help...
+     *-----
+     * According to
+     * http://mailman.ds9a.nl/pipermail/lartc/2003q2/008315.html, this
+     * is how Linux handles ARP requests:
+     *
+     * When an arp request arrives on an interface, if proxy_arp is OFF at
+     * that interface, then we reply only if it asks who has an IP address
+     * assigned to that interface.  In that case we reply that this IP
+     * address is at the MAC address of the receiving interface.
+     * 
+     * If, however, proxy_arp is ON at that interface, then we check the
+     * routing table (here things get a little fuzzy, since in reality the
+     * routing can depend on all sorts of things other than the destination
+     * address, and the arp request isn't specifying any of those) to find
+     * out, if we were sending a packet to that IP address, which interface
+     * we would use to send it out.  If there is such an interface (we do
+     * have a route to that address) and it's NOT the same one that the
+     * request arrived on, then we reply with the MAC address of the
+     * interface on which the request arrived.
+     *-----
+     * So, that helps with a tunnel device, not with a tap device.
+     * Why then does linux have ATF_PUBL flags in its ARP table?
      */
     int fd;
-#if 0
     char devproc[64];
 
     snprintf(devproc, sizeof(devproc)-1, "/proc/sys/net/ipv4/conf/%s/proxy_arp", ifname);
+    /*
+     * or sysctl -w net.ipv4.conf.%s.proxy_arp=1
+     */
     fd = open(devproc, O_WRONLY|O_TRUNC);
     if (fd >= 0) {
 	(void)write(fd, "1\n", 2);
 	close(fd);
 	dbprintln("Enabled net.ipv4.conf.%s.proxy_arp", ifname);
     }
-
-    fd = open("/proc/sys/net/ipv4/conf/all/proxy_arp", O_WRONLY|O_TRUNC);
-    if (fd >= 0) {
-	(void)write(fd, "1\n", 2);
-	close(fd);
-	dbprintln("Enabled net.ipv4.conf.all.proxy_arp");
-    }
-#endif
+    /*
+     * or sysctl -w net.ipv4.conf.all.proxy_arp=1 (seems not needeede)
+     */
     /**
      * When we use an IP tunnel, this is needed to cause ARP replies to
      * be sent by Linux if OSN_USE_IPONLY and if you try to connect to
@@ -474,7 +482,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
 	close(fd);
 	dbprintln("Enabled net.ipv4.ip_forward");
     }
-#endif /* CENV_SYS_LINUX */
+#endif /* CENV_SYS_LINUX  && OSN_USE_IPONLY */
 
 #if NETIF_HAS_ARPIOCTL
     struct arpreq arq;
@@ -493,6 +501,13 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
     if (pubf)
 	arq.arp_flags |= ATF_PUBL;		/* Publish it for us too! */
 
+#if CENV_SYS_LINUX
+    /*
+     * Fill in the name of the interface from which we expect the
+     * requests.
+     */
+    strncpy(arq.arp_dev, ifname, sizeof (arq.arp_dev));
+#endif
     if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {	/* Get random socket */
 	syserr(errno, "Cannot set ARP entry for %s %s - socket()",
 			ip_adrsprint(ipbuf, ipa),
@@ -559,7 +574,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
 	      ip_adrsprint(ipbuf, ipa),
 	      eth_adrsprint(eabuf, eap));
     return FALSE;
-#endif
+#endif /* NETIF_HAS_ARPIOCTL, CENV_SYS_XBSD, or else */
 }
 
 /* OSN_IFIPGET - get IP address for a given interface name.
@@ -1319,7 +1334,7 @@ osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
 }
 #endif
 
-#if KLH10_NET_PFLT || KLH10_NET_BPF
+#if KLH10_NET_BPF
 
 /* Adapted from DEC's pfopen.c - doing it ourselves here because pfopen(3)
  * did not always exist, and this way we can report errors better.
@@ -1328,11 +1343,7 @@ osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
 static int
 pfopen(void)
 {
-#if KLH10_NET_PFLT
-# define PFDEVPREF "/dev/pf/pfilt"
-#elif KLH10_NET_BPF
 # define PFDEVPREF "/dev/bpf"
-#endif
     char pfname[sizeof(PFDEVPREF)+10];
     int fd;
     int i = 0;
@@ -1354,247 +1365,8 @@ pfopen(void)
     return fd;		/* Success! */
 }
 
-#endif /* KLH10_NET_PFLT || KLH10_NET_BPF */
-
-
-#if KLH10_NET_PFLT
-
-int
-osn_pfinit(struct osnpf *osnpf, void *pfarg)
-{
-    int fd; 
-    int arg;
-    unsigned short bits;
-
-    /* Open PF fd.  We'll be doing both R and W. */
-    fd = pfopen();		/* Open, will abort if fails  */
-    if (osnpf->osnpf_ifnam && osnpf->osnpf_ifnam[0]) {	/* Allow default ifc */
-	/* Bind to specified HW interface */
-	if (ioctl(fd, EIOCSETIF, osnpf->osnpf_ifnam) < 0)
-	    esfatal(1, "Couldn't open packetfilter for \"%s\" - EIOCSETIF",
-		    osnpf->osnpf_ifnam);
-    }
-
-    /* Set up various mode & flag stuff */
-    
-    /* Only the super-user can allow promiscuous or copy-all to be set. */
-#if 0
-    /* Allow promiscuous mode if someone wants to use it.
-    ** For shared interface, never true.
-    */
-    arg = 1;
-    if (ioctl(fd, EIOCALLOWPROMISC, &arg))
-	esfatal(1, "EIOCALLOWPROMISC failed");	/* Maybe not SU? */
-#endif
-    /* Allow ENCOPYALL bit to be set.
-    ** Always use this for shared interface so the multicast-bit stuff
-    ** we grab can also be seen by kernel and other sniffers.
-    */
-    arg = 1;
-    if (ioctl(fd, EIOCALLOWCOPYALL, &arg))
-	esfatal(1, "EIOCALLOWCOPYALL failed");	/* Maybe not SU? */
-
-
-    /* Ensure following bits clear:
-    **	no timestamps, no batching, no held signal
-    */
-    bits = (ENTSTAMP | ENBATCH | ENHOLDSIG);
-    if (ioctl(fd, EIOCMBIC, &bits))
-	esfatal(1, "EIOCMBIC failed");
-
-    /* Set:
-    **	??? Put interface into promisc mode (if allowed by SU)
-    **		KLH: No longer -- shouldn't be necessary.
-    **	Pass packet along to other filters
-    **	Copy packets to/from native kernel ptcls - to allow talking with 
-    **		native host platform!
-    */
-    bits = (/* ENPROMISC | */ ENNONEXCL | ENCOPYALL);
-    if (ioctl(fd, EIOCMBIS, &bits))
-	esfatal(1, "ioctl: EIOCMBIS");
-
-    /* Set up packet filter for it - only needed if sharing interface */
-    if (!osnpf->osnpf_dedic) {
-	if (ioctl(fd, EIOCSETF, pfbuild(pfarg, &(osnpf->osnpf_ip.ia_addr))) < 0)
-	    esfatal(1, "EIOCSETF failed");
-    }
-
-    /* Now can get our interface's ethernet address.
-    **	In general, this has to wait until after the packetfilter is opened,
-    **	since until then we don't have a handle on the specific interface
-    **	that will be used.
-    */
-    {
-	struct endevp endp;
-
-	if (ioctl(fd, EIOCDEVP, (caddr_t *)&endp) < 0)
-	    esfatal(1, "EIOCDEVP failed");
-	if (endp.end_dev_type != ENDT_10MB
-	  || endp.end_addr_len != 6)
-	    esfatal(1, "EIOCDEVP returned non-Ethernet info!");
-	ea_set(&(osnpf->osnpf_ea), endp.end_addr);
-    }
-
-    /* Miscellaneous stuff */
-
-    /* Hack: use timeout mechanism to see if it helps avoid wedging system
-    ** when using OSF/1 V3.0.
-    */
-    if (osnpf->osnpf_rdtmo)
-    {
-	struct timeval tv;
-    
-	tv.tv_sec = osnpf->osnpf_rdtmo;
-	tv.tv_usec = 0;
-
-	if (ioctl(fd, EIOCSRTIMEOUT, &tv) < 0)
-	    esfatal(1, "EIOCSRTIMEOUT failed");
-    }
-
-    /* If backlog param was provided, try to set system's idea of how many
-    ** input packets can be kept on kernel queue while waiting for us to
-    ** read them into user space.
-    */
-    if (osnpf->osnpf_backlog) {
-	if (ioctl(fd, EIOCSETW, &(osnpf->osnpf_backlog)) < 0)
-	    esfatal(1, "EIOCSETW failed");
-    }
-
-    /* Ready to roll! */
-    return fd;
-}
-#endif /* KLH10_NET_PFLT */
-
-#if KLH10_NET_BPF
-
-int
-osn_pfinit(struct osnpf *osnpf, void *arg)
-{
-    int fd;
-    struct bpf_version bv;
-    struct ifreq ifr;
-    u_int u;
-    int i;
-    char *ifnam = osnpf->osnpf_ifnam;
-
-    if (DP_DBGFLG)
-	dbprint("Opening BPF device");
-
-    /* No "default interface" concept here */
-    if (!ifnam || !ifnam[0])
-	esfatal(1, "Packetfilter interface must be specified");
-
-    /* Open an unused BPF device for R/W */
-    fd = pfopen();		/* Will abort if fail */
-
-    /* Check the filter language version number */
-    if (ioctl(fd, BIOCVERSION, (char *) &bv) < 0)
-	esfatal(1, "kernel BPF interpreter out of date");
-    else if (bv.bv_major != BPF_MAJOR_VERSION ||
-	     bv.bv_minor < BPF_MINOR_VERSION)
-	efatal(1, "requires BPF language %d.%d or higher; kernel is %d.%d",
-	       BPF_MAJOR_VERSION, BPF_MINOR_VERSION, bv.bv_major, bv.bv_minor);
-
-    /* Set immediate mode so that packets are processed as they arrive,
-       rather than waiting until timeout or buffer full.
-
-       WARNING: NetBSD does not implement this correctly!  The code
-       in src/sys/net/bpf.c:bpfread() treats the immediate flag in a way
-       that causes it to return EWOULDBLOCK if no input is available.  But
-       this flag must still be set in order for bpfpoll() to detect input
-       as soon as it arrives!
-       See dpni20 and dpimp read loops for workaround.
-     */
-    i = 1;
-    if (ioctl(fd, BIOCIMMEDIATE, (char *) &i) < 0)
-	esfatal(1, "BIOCIMMEDIATE failed");
-
-    /* BIOCSFEEDBACK causes packets that we send via bpf to be
-     * seen as incoming by the host OS.
-     * Without this, there is no working communication between
-     * the host and the guest OS (just in one direction).
-     */
-#if !defined(BIOCSFEEDBACK) && defined(BIOCFEEDBACK)
-# define BIOCSFEEDBACK BIOCSFEEDBACK
-#endif
-#if defined(__NetBSD_Version__) && __NetBSD_Version__ < 799002500
-# undef BIOCSFEEDBACK	/* buggy before NetBSD 7.99.24 or 7.1 */
-#endif
-#if defined(BIOCSFEEDBACK)
-//    error("trying BIOCSFEEDBACK");
-//    errno = 0;
-//    i = 1;
-//    if (ioctl(fd, BIOCSFEEDBACK, (char *) &i) < 0)
-//	syserr(errno, "BIOCSFEEDBACK failed");
-#endif
-
-    /* Set the read() buffer size.
-       Must be set before interface is attached!
-    */
-    u = OSN_BPF_MTU;
-    if (ioctl(fd, BIOCSBLEN, (char *) &u) < 0)
-	esfatal(1, "BIOCSBLEN failed");
-
-    /* Set up packet filter for it - only needed if sharing interface?
-       Not sure whether it's needed for a dedicated interface; will need
-       to experiment.
-     */
-    if (!osnpf->osnpf_dedic) {
-	struct OSN_PFSTRUCT *pf;
-
-	/* Set the kernel packet filter */
-	pf = pfbuild(arg, &(osnpf->osnpf_ip.ia_addr));
-	if (ioctl(fd, BIOCSETF, (char *)pf) < 0)
-	    esfatal(1, "BIOCSETF failed");
-    }
-
-
-    /* Set read timeout.
-       Safety check in order to avoid infinite hangs if something
-       wedges up.  The periodic re-check overhead is insignificant.
-     */
-    /* Set read timeout.
-       Safety hack derived from need to use timeout to avoid wedging system
-       when using OSF/1 V3.0.  Probably useful for other systems too.
-    */
-    if (osnpf->osnpf_rdtmo)
-    {
-	struct timeval tv;
-    
-	tv.tv_sec = osnpf->osnpf_rdtmo;
-	tv.tv_usec = 0;
-
-	if (ioctl(fd, BIOCSRTIMEOUT, (char *) &tv) < 0)
-	    esfatal(1, "BIOCSRTIMEOUT failed");
-    }
-
-    /* Attach/bind to desired interface device
-     */
-    strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
-    if (ioctl(fd, BIOCSETIF, (char *) &ifr) < 0)
-	esfatal(1, "BIOCSETIF failed for interface \"%s\"", ifnam);
-
-    /* This code only works with Ethernet, so check for that.
-       Note cannot check until after interface is attached.
-     */
-    if (ioctl(fd, BIOCGDLT, (char *) &u) < 0)
-	esfatal(1, "BIOCGDLT failed for interface \"%s\"", ifnam);
-    if (u != DLT_EN10MB)
-	efatal(1, "%s is not an ethernet", ifnam);
-
-
-    /* Now get our interface's ethernet address.
-    **	In general, this has to wait until after the packetfilter is opened,
-    **	since until then we don't have a handle on the specific interface
-    **	that will be used.
-    */
-    (void) osn_pfeaget(fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
-
-    /* Ready to roll! */
-    return fd;
-}
-
 #endif /* KLH10_NET_BPF */
+
 
 #if KLH10_NET_TUN
 /*
@@ -1706,9 +1478,11 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     memset(&ifr, 0, sizeof(ifr));
 # if OSN_USE_IPONLY
     ifr.ifr_flags = IFF_TUN | IFF_NO_PI; /* TUN (no Ethernet headers), no pkt info */
+    /* ip tuntap add mode tun */
 # else
     ifr.ifr_flags = IFF_TAP | IFF_NO_PI; /* TAP (yes Ethernet headers), no pkt info */
-# endif
+    /* ip tuntap add mode tap */
+# endif /* OSN_USE_IPONLY */
     if (ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) /* turn it on */
       esfatal(0, "Couldn't set tun device");
     strcpy(ifnam, ifr.ifr_name); /* get device name (typically "tun0") */
@@ -1718,12 +1492,12 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	sprintf(tunname, "/dev/tun%d", ++i);
 # else
 	sprintf(tunname, "/dev/tap%d", ++i);
-# endif /* not CENV_SYS_LINUX */
+# endif /* OSN_USE_IPONLY */
     } while ((fd = open(tunname, O_RDWR)) < 0 && errno == EBUSY);
 
     if (fd < 0)
 	esfatal(1, "Couldn't open tunnel device %s", tunname);
-#endif
+#endif /* CENV_SYS_LINUX */
 
     if (DP_DBGFLG)
 	dbprintln("Opened %s, configuring for local %s, remote %s",
@@ -1747,6 +1521,8 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
        Second address is "remote" -- the one the emulated host is using.
        It should probably match the same network as the local address,
        especially if planning to connect from other machines.
+
+       This is only needed for TUNNEL devices, not TAP devices.
     */
 #if 0	/* Hacky method */
   {
@@ -1763,6 +1539,7 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
   }
 #elif CENV_SYS_LINUX		/* [BV: Linux tun device] */
 				/* "Hacky" but simple method */
+# if OSN_USE_IPONLY
   {
     char cmdbuff[128];
     int res;
@@ -1778,7 +1555,8 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
     }
   }
-#else
+# endif /* OSN_USE_IPONLY */
+#else /* not CENV_SYS_LINUX */
   {
     /* Internal method */
     int s;
@@ -1799,6 +1577,10 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	    syserr(errno, "osn_pfinit tun SIOCDIFADDR failed");
     }
 
+# if OSN_USE_IPONLY
+    /*
+     * Then set the point-to-point addresses for the tunnel.
+     */
     memset(&ifra, 0, sizeof(ifra));
     strncpy(ifra.ifra_name, ifnam, sizeof(ifra.ifra_name));
     ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_len = sizeof(struct sockaddr_in);
@@ -1810,6 +1592,8 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     if (ioctl(s, SIOCAIFADDR, &ifra) < 0) {
 	esfatal(1, "osn_pfinit tun SIOCAIFADDR failed");
     }
+# endif /* OSN_USE_IPONLY */
+
 
     /* Finally, turn on IFF_UP just in case the above didn't do it.
        Note interface name is still there from the SIOCDIFADDR.
@@ -1826,7 +1610,7 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	    dbprint("osn_pfinit tun did SIOCSIFFLAGS");
     }
   }
-#endif
+#endif /* CENV_SYS_LINUX */
 
     /* Now optionally determine ethernet address.
        This amounts to what if anything we should put in the native
@@ -1882,140 +1666,6 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 }
 
 #endif /* KLH10_NET_TUN */
-
-#if KLH10_NET_LNX
-
-/*
-  The Linux PF_PACKET interface is described to some extent
-  by the packet(7) man page.
-
-  Linux provides no kernel packet filtering mechanism other than
-  possibly a check on the ethernet protocol type, but this is useless
-  for us since we'll always want to check for more than just one type;
-  e.g. IP and ARP, plus possibly 802.3 or DECNET packets.
-
-  From the man page for packet(7):
-       By  default all packets of the specified protocol type are
-       passed to a packet socket. To only get packets from a spe-
-       cific  interface  use  bind(2)  specifying an address in a
-       struct sockaddr_ll to bind the packet socket to an  inter-
-       face.  Only  the  sll_protocol and the sll_ifindex address
-       fields are used for purposes of binding.
- */
-int
-osn_pfinit(struct osnpf *osnpf, void *arg)
-{
-    int fd;
-    char *ifcname = osnpf->osnpf_ifnam;
-    struct ifreq ifr;
-
-    /* Open a socket of the desired type.
-     */
-    struct sockaddr_ll sll;
-    int ifx;
-
-    /* Get raw packets with ethernet headers
-     */
-    fd = socket(PF_PACKET, SOCK_RAW,
-#if 0 /*OSN_USE_IPONLY*/		/* If DPIMP or otherwise IP only */
-		htons(ETH_P_IP)		/* for IP only */
-#else
-		htons(ETH_P_ALL)	/* for everything */
-#endif
-		);
-    if (fd < 0)
-	esfatal(1, "Couldn't open packet socket");
-
-    /* Need ifc index in order to do binding, so get it. */
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifcname, sizeof(ifr.ifr_name));
-    if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0 )
-	esfatal(1, "SIOCGIFINDEX of %s failed", ifcname);
-    ifx = ifr.ifr_ifindex;
-
-    /* Bind to proper device/interface using ifc index */
-    memset(&sll, 0, sizeof(sll));
-    sll.sll_family = AF_PACKET;
-    sll.sll_protocol = htons(ETH_P_ALL);
-    sll.sll_ifindex = ifx;
-    if (bind(fd, (struct sockaddr *)&sll, sizeof(sll)))
-	esfatal(1, "bind to %s failed", ifcname);
-
-    /* This code only works with Ethernet, so check for that */
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifcname, sizeof(ifr.ifr_name));
-    if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0 )
-	esfatal(1, "SIOCGIFHWADDR of %s failed", ifcname);
-
-    if (ifr.ifr_hwaddr.sa_family != ARPHRD_ETHER)
-	efatal(1, "%s is not an ethernet - ARPHRD type %d",
-	       ifcname, ifr.ifr_hwaddr.sa_family);
-
-    /* Finally, attempt to determine current ethernet MAC address.
-       Assume above call returned it in sa_data.
-     */
-    ea_set(&osnpf->osnpf_ea, &ifr.ifr_addr.sa_data[0]);
-
-    return fd;
-}
-
-#endif /* KLH10_NET_LNX */
-
-#if KLH10_NET_NIT
-
-/* NIT packetfilter initialization */
-
-int
-osn_pfinit(struct osnpf *osnpf, void *arg)
-{
-    int fd;
-    struct strioctl si;
-    struct ifreq ifr;
-
-    /* Open NIT stream.  We'll be doing both R and W. */
-    if ((fd = open("/dev/nit", O_RDWR)) < 0)
-	esfatal(1, "Couldn't open NIT");
-
-    /* Ensure that each read gives us one packet */
-    if (ioctl(fd, I_SRDOPT, (char *)RMSGD) < 0)
-	esfatal(1, "I_SRDOPT failed");
-
-    /* Set up kernel filtering */
-    if (ioctl(fd, I_PUSH, "pf") < 0)
-	esfatal("I_PUSH pf failed");
-
-    /* Set up packet filter for it */
-    if (!osnpf->osnpf_dedic) {
-	struct OSN_PFSTRUCT *pf;
-	pf = pfbuild(arg, &osnpf->osnpf_ip.ia_addr);
-	si.ic_timout = INFTIM;		/* Should this be osnpf_rdtmo? */
-	si.ic_cmd = NIOCSETF;		/* Set packet filter */
-	si.ic_len = sizeof(*pf);	/* XXX Unfortunate dependency */
-	si.ic_dp = (char *)pf;
-	if (ioctl(fd, I_STR, (char *)&si) < 0)
-	    esfatal(1, "NIOCSETF failed");
-    }
-
-    /* Finally, bind to proper device and flush anything accumulated */
-    strncpy(ifr.ifr_name, osnpf->osnpf_ifnam, sizeof(ifr.ifr_name));
-    si.ic_cmd = NIOCBIND;
-    si.ic_len = sizeof(ifr);
-    si.ic_dp = (char *)&ifr;
-    if (ioctl(fd, I_STR, (char *)&si) < 0)
-	esfatal(1, "NIOCBIND failed");
-
-    if (ioctl(fd, I_FLUSH, (char *)FLUSHR) < 0)
-	esfatal(1, "I_FLUSH failed");
-
-    /* Get our ethernet address.
-    **	This can't be done until after the NIT is open and bound.
-    */
-    (void) osn_pfeaget(fd, osnpf->osnpf_ifnam, &(osnpf->osnpf_ea));
-
-    /* Ready to roll! */
-    return fd;
-}
-#endif /* KLH10_NET_NIT */
 
 /*
  * Too bad that this is never called...
@@ -2254,7 +1904,6 @@ tap_bridge_close()
 {
     if (my_tap) {
 	int s, res;
-	struct ifreq tap_ifr;
 
 	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 	    esfatal(1, "tap_bridge_close: socket() failed");
@@ -2313,194 +1962,7 @@ static int dlpromisconreq(struct dlpictx *dc, u_long level);
 static int dladdrreq(struct dlpictx *dc, int type);
 static int dladdrack(struct dlpictx *dc, unsigned char *addr);
 static int dlsetaddrreq(struct dlpictx *dc, unsigned char *addr);
-#if 0
-static int dlpromiscoff(struct dlpictx *dc);
-static int dlinforeq(struct dlpictx *dc);
-static int dlinfoack(struct dlpictx *dc);
-static int dlenabmulti(struct dlpictx *dc, char	*addrp, int len);
-static int dldisabmulti(struct dlpictx *dc, char *addrp, int len);
-static int dldetachreq(struct dlpictx *dc);
-static int dlunbindreq(struct dlpictx *dc);
-#endif
 
-
-int osn_pfinit(struct osnpf *osnpf, void *arg)
-{
-    int fd;
-    int ppa;
-    char *cp;
-    unsigned char curea[ETHER_ADRSIZ];
-    char devpath[IFNAMSIZ+40];
-    char eastr[OSN_EASTRSIZ];
-    unsigned char *ucp;
-    struct dlpictx dc;
-
-    /* Figure out right name of device to use.
-    ** Munch device spec, eg "hmeNN" becomes /dev/hme, unit NN.
-    ** Code formerly allowed full pathname as device spec, but no longer.
-    */
-    if (osnpf->osnpf_ifnam[0] == 0)
-	efatal(1, "Ethernet DLPI interface must be specified");
-    strcpy(devpath, "/dev/");
-    strcat(devpath, osnpf->osnpf_ifnam); /* Buffer always big enough */
-    ppa = 0;				/* Assume unit #0 */
-    cp = &devpath[strlen(devpath)-1];	/* Point to end of string */
-    if (isdigit(*cp)) {			/* Go to start of unit digits */
-	while (isdigit(*--cp));		/* (code safe cuz of /dev/ prefix) */
-	ppa = atoi(++cp);
-	*cp = '\0';			/* Chop off unit digits */
-    }
-
-    /* Open device.  We'll be doing both R and W. */
-    if ((fd = open(devpath, O_RDWR)) < 0) {
-	esfatal(1, "Couldn't open DLPI packetfilter for ifc \"%s\" (%s)",
-			devpath, osnpf->osnpf_ifnam);
-    }
-    memset((void *)&dc, 0, sizeof(dc));
-    dc.dc_fd = fd;
-
-    /* Attach to specific unit */
-    if (dlattachreq(&dc, (long)ppa)
-     || dlokack(&dc))
-	efatal(1, dc.dc_ebuf);
-
-    /* Bind */
-#if OSN_USE_IPONLY	/* Note using IP SAP */
-    if (dlbindreq(&dc, 0x800, 0, DL_CLDLS, 0)
-#else			/* Note using fake SAP to avoid Solaris lossage */
-    if (dlbindreq(&dc, FAKESAP, 0, DL_CLDLS, 0)
-#endif
-     || dlbindack(&dc))
-	efatal(1, dc.dc_ebuf);
-
-#if OSN_USE_IPONLY	/* Apparently only needed for this */
-    /* Do stuff for "fastpath" which may be needed to allow header to
-       be included in data buffer rather than separate control struct.
-    */
-    if (dlfastpathon(&dc, 0) < 0)
-	efatal(1, dc.dc_ebuf);
-#elif 0 /* !OSN_USE_IPONLY */	/* Apparently not needed */
-    if (dlfastpathon(&dc, FAKESAP) < 0)
-	efatal(1, dc.dc_ebuf);
-#endif
-
-    /* Set up various mode & flag stuff */
-
-    /* Do input side of DLPI stream */
-
-#if CENV_SYS_SOLARIS
-    /* Turn on raw receive path, so that ethernet header is included in data.
-    ** This is a special Solaris frob.
-    */
-    if (strioctl(fd, DLIOCRAW, 0, NULL) < 0) {
-	esfatal(1, "DLIOCRAW ioctl");
-    }
-#endif
-
-#if !OSN_USE_IPONLY
-    /* Don't need this hackery if only want IP packets */
-    /* Enable receiving all packets, all SAPs (ethernet header type values) */
-
-# if CENV_SYS_SOLARIS
-    /* Enable promiscuous mode.  On Solaris, this is required in order
-    ** for ALLSAP to work!!!  Gross bletcherous misfeatured bug!!!
-    */
-    if ((dlpromisconreq(&dc, DL_PROMISC_PHYS) < 0)
-	|| dlokack(&dc) < 0)
-	    efatal(1, dc.dc_ebuf);
-# endif
-    /* Evidently must explicitly ask for promiscuous SAPs */
-    if (dlpromisconreq(&dc, DL_PROMISC_SAP) < 0
-	|| dlokack(&dc) < 0)
-	    efatal(1, dc.dc_ebuf);
-    /* And multicast too!?  To quote tcpdump,
-    ** "you would have thought promiscuous would be sufficient"
-    */
-    if (dlpromisconreq(&dc, DL_PROMISC_MULTI) < 0
-	|| dlokack(&dc) < 0)
-	    efatal(1, dc.dc_ebuf);
-#endif /* !OSN_USE_IPONLY */
-
-    /* Find the physical ethernet address of the interface we got.
-    ** Do it now, because it may be needed in order to set up the
-    ** correct packet filter (sigh).
-    */
-    if (dladdrreq(&dc, DL_CURR_PHYS_ADDR) < 0
-	|| dladdrack(&dc, (unsigned char *)curea) < 0)
-	    efatal(1, dc.dc_ebuf);
-
-    /* HACK HACK -- see if ethernet addr already given, and if so,
-    ** try to set it if different.
-    */
-    if (!ea_isclr(&osnpf->osnpf_ea)
-      && (ea_cmp(&osnpf->osnpf_ea, curea) != 0)) {
-	char old[OSN_EASTRSIZ];
-	char new[OSN_EASTRSIZ];
-
-	/* Attempt to set our EN addr */
-	eth_adrsprint(old, (unsigned char *)curea);
-	eth_adrsprint(new, (unsigned char *)&osnpf->osnpf_ea);
-
-	if (dlsetaddrreq(&dc, (unsigned char *)&osnpf->osnpf_ea) < 0
-	    || dlokack(&dc) < 0)
-		efatal(1, dc.dc_ebuf);
-
-	/* Double-check by fetching new addr again and using it */
-	if (dladdrreq(&dc, DL_CURR_PHYS_ADDR) < 0
-	    || dladdrack(&dc, (unsigned char *)curea) < 0)
-		efatal(1, dc.dc_ebuf);
-
-	if (ea_cmp(&osnpf->osnpf_ea, curea) == 0) {
-	    dbprintln("\"%s\" E/N addr changed: Old=%s New=%s",
-		      osnpf->osnpf_ifnam, old, new);
-	} else {
-	    dbprintln("\"%s\" E/N addr change failed, Old=%s New=%s",
-		      osnpf->osnpf_ifnam, old, new);
-	}
-    }
-    ea_set(&osnpf->osnpf_ea, curea);
-
-#if 0
-    /* Ensure that each read gives us one packet.
-    ** Shouldn't matter since we use getmsg(), but code left here in case.
-    */
-    if (ioctl(fd, I_SRDOPT, (char *)RMSGD) < 0)
-	esfatal(1, "I_SRDOPT failed");
-#endif
-
-    /* Set up packet filter for it - should only be needed if
-    ** sharing interface, but on Solaris we may be always in promiscuous
-    ** mode!
-    */
-#if !CENV_SYS_SOLARIS
-    if (!osnpf->osnpf_dedic)
-#endif
-    {
-	struct OSN_PFSTRUCT *pf;
-
-	if (ioctl(fd, I_PUSH, "pfmod") < 0)
-	    esfatal(1, "PUSH of pfmod failed");
-
-#if !OSN_USE_IPONLY
-	if (osnpf->osnpf_dedic)
-	    /* Filter on our ether addr */
-	    pf = pfeabuild(arg, (unsigned char *)&osnpf->osnpf_ea);
-	else
-#endif
-	    /* Filter on our IP addr */
-	    pf = pfbuild(arg, &osnpf->osnpf_ip.ia_addr);
-
-	if (strioctl(dc.dc_fd, PFIOCSETF, sizeof(*pf), (char *)pf) < 0)
-	    esfatal(1, "PFIOCSETF failed");
-    }
-
-    /* Needed?  Flush read side to ensure clear of anything accumulated */
-    if (ioctl(fd, I_FLUSH, (char *)FLUSHR) < 0)
-	esfatal(1, "I_FLUSH failed");
-
-    /* Ready to roll! */
-    return fd;
-}
 
 /* Handy auxiliary to pick up EA address given the PF FD, in case
    it's needed again after osn_pfinit is done.
@@ -2827,108 +2289,6 @@ dlsetaddrreq(struct dlpictx *dc, unsigned char *addr)
 
     return dl_sendreq(dc, (char *)req, sizeof(*req) + ETHER_ADRSIZ,
 			"dlsetaddr");
-}
-
-#endif /* KLH10_NET_DLPI */
-
-#if 0 /* KLH10_NET_DLPI */
-
-/* DLPI functions not currently used, but kept around in case
- */
-
-/* Turn off promiscuous mode
- */
-static int
-dlpromiscoff(struct dlpictx *dc)
-{
-    dl_promiscoff_req_t	req;
-
-    req.dl_primitive = DL_PROMISCOFF_REQ;
-    return dl_sendreq(dc, (char *)&req, sizeof(req), "dlpromiscoff");
-}
-
-
-static int
-dlinforeq(struct dlpictx *dc)
-{
-    dl_info_req_t req;
-
-    req.dl_primitive = DL_INFO_REQ;
-    return (dl_sendreq(dc, (char *)&req, sizeof(req), "info"));
-}
-
-static int
-dlinfoack(struct dlpictx *dc)
-{
-    union DL_primitives *dlp;
-
-    if (strgetmsg(dc, "dlinfoack", NULL, NULL) < 0)
-	return -1;
-
-    dlp = (union DL_primitives *) dc->dc_ctl.buf;
-    if (dlp->dl_primitive != DL_INFO_ACK) {
-	sprintf(dc->dc_ebuf, "dlinfoack unexpected primitive %ld",
-			(long)dlp->dl_primitive);
-	return -1;
-    }
-
-    /* Extra stuff like the broadcast address can be returned */
-    if (dc->dc_ctl.len < DL_INFO_ACK_SIZE) {
-	sprintf(dc->dc_ebuf, "dlinfoack: incorrect size %ld",
-		(long)dc->dc_ctl.len);
-	return -1;
-    }
-    return 0;
-}
-
-static int
-dlenabmulti(struct dlpictx *dc,
-	   char	*addrp,
-	   int	len)
-{
-    dl_enabmulti_req_t	*req;
-
-    req = (dl_enabmulti_req_t *) dc->dc_buf;
-    req->dl_primitive = DL_ENABMULTI_REQ;
-    req->dl_addr_length = len;
-    req->dl_addr_offset = sizeof (dl_enabmulti_req_t);
-    memcpy((dc->dc_buf + sizeof(dl_enabmulti_req_t)), addrp, len);
-
-    return (dl_sendreq(dc, (char *)req, sizeof(*req)+len, "dlenabmulti"));
-}
-
-static int
-dldisabmulti(struct dlpictx *dc,
-	   char	*addrp,
-	   int	len)
-{
-    dl_disabmulti_req_t	*req;
-
-    req = (dl_disabmulti_req_t *) dc->dc_buf;
-    req->dl_primitive = DL_DISABMULTI_REQ;
-    req->dl_addr_length = len;
-    req->dl_addr_offset = sizeof (dl_disabmulti_req_t);
-    memcpy((dc->dc_buf + sizeof(dl_disabmulti_req_t)), addrp, len);
-
-    return (dl_sendreq(dc, (char *)req, sizeof(*req)+len, "dldisabmulti"));
-}
-
-static int
-dldetachreq(struct dlpictx *dc)
-{
-    dl_detach_req_t req;
-
-    req.dl_primitive = DL_DETACH_REQ;
-    return (dl_sendreq(dc, (char *)&req, sizeof(req), "dldetach"));
-}
-
-static int
-dlunbindreq(struct dlpictx *dc)
-{
-    dl_unbind_req_t req;
-
-    req.dl_primitive = DL_UNBIND_REQ;
-    return (dl_sendreq(dc, (char *)&req, sizeof(req), "dlunbind"));
 }
 
 #endif /* KLH10_NET_DLPI */

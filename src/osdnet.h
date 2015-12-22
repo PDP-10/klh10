@@ -386,7 +386,7 @@ union ipaddr {
 
 /*
  * A structure that aggregates information about the packet filter variant
- * which is in use. 
+ * which is in use.
  */
 struct pfdata {
     int		 pf_fd;		/* most but not all have a file descriptor */
@@ -432,8 +432,8 @@ struct osnpf {	/* Arg struct for common initialization params */
 	int osnpf_dedic;	/* TRUE if dedicated ifc, else shared */
 	int osnpf_rdtmo;	/* Read timeout, if any */
 	int osnpf_backlog;	/* Allow # backlogged packets, if any */
-	union ipaddr osnpf_ip;		/* IP address to use */
-	union ipaddr osnpf_tun;		/* INOUT: IP address of tunnel */
+	union ipaddr osnpf_ip;	/* IP address to use */
+	union ipaddr osnpf_tun;	/* INOUT: IP address host side of tunnel */
 	struct ether_addr osnpf_ea;	/* OUT: ether address of ifc */
 };
 /* the void * is an argument to pass on to pfbuild() */
