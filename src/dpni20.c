@@ -518,7 +518,7 @@ void net_init(struct dpni20_s *dpni)
 
     /* Now set any return info values in shared struct.
     */
-    memcpy(dpni->dpni_eth, (char *)&ihost_ea, 6);	/* Copy ether addr */
+    ea_set(dpni->dpni_eth, (char *)&ihost_ea);	/* Copy ether addr */
 
     if (DBGFLG)
 	dbprint("PF inited");
