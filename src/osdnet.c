@@ -385,6 +385,8 @@ osn_ifcreate(char *ifnam)
     if (!ife && iftab_nifs < NETIFC_MAX) {
 	ife = &iftab[iftab_nifs];
 	iftab_nifs++;
+	strncpy(ife->ife_name, name, IFNAMSIZ);
+	ife->ife_name[IFNAMSIZ] = '\0';
     }
 
     return ife;
