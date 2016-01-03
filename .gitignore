@@ -13,3 +13,4 @@ bld/*/udlconv
 bld/*/vdkfmt
 bld/*/wfconv
 bld/*/wxtest
+src/tags
