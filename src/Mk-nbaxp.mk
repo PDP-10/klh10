@@ -27,7 +27,11 @@ CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wmissing-declarations -Wredundant-decls
 
 # Source definitions
-CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_NETBSD=1 -include netbsd-sucks.h
+CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_NETBSD=1 -include netbsd-sucks.h \
+	    -DKLH10_NET_PCAP=1 \
+	    -DKLH10_NET_TUN=1 \
+	    -DKLH10_NET_TAP=1 \
+	    -DKLH10_NET_BRIDGE=1
 
 # Any target with no customized rule here is simply passed on to the
 # standard Makefile.  If no target is specified, "usage" is passed on

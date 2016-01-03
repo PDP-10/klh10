@@ -59,43 +59,45 @@
 #ifndef  KLH10_NET_DLPI	/* Solaris Data Link Provider Interface */
 # define KLH10_NET_DLPI 0
 #endif
-#ifndef  KLH10_NET_TAP_BRIDGE	/* BSD Ethernet Tunnel device + a bridge */
-# define KLH10_NET_TAP_BRIDGE 0
-#endif
-#ifndef  KLH10_NET_TUN	/* BSD IP Tunnel device */
+#ifndef  KLH10_NET_TUN	/* IP Tunnel device */
 # define KLH10_NET_TUN 0
 #endif
-#ifndef  KLH10_NET_LNX	/* Linux PF_PACKET interface */
-# define KLH10_NET_LNX 0
+#ifndef  KLH10_NET_TAP /* Ethernet Tunnel device */
+# define KLH10_NET_TAP 0
+#endif
+#ifndef  KLH10_NET_BRIDGE /* Bridge (used with an Ethernet tunnel) */
+# define KLH10_NET_BRIDGE 0
 #endif
 #ifndef  KLH10_NET_PCAP	/* pretty generic libpcap interface */
 # define KLH10_NET_PCAP 0
 #endif
 
 #if !(KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_LNX || KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_TAP_BRIDGE)
+	KLH10_NET_LNX || KLH10_NET_PCAP || KLH10_NET_TUN || KLH10_NET_BRIDGE)
     /* None explicitly specified, pick a reasonable default */
-# if ((CENV_SYS_NETBSD || CENV_SYS_FREEBSD || CENV_SYS_LINUX) && OSN_USE_IPONLY)
+# undef KLH10_NET_PCAP
+# define KLH10_NET_PCAP 1
+
+# if (CENV_SYS_NETBSD || CENV_SYS_FREEBSD || CENV_SYS_LINUX)
 #  undef  KLH10_NET_TUN
 #  define KLH10_NET_TUN 1
-# elif 0
-#  undef KLH10_NET_PCAP
-#  define KLH10_NET_PCAP 1
-# elif (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
-#  undef  KLH10_NET_TAP_BRIDGE
-#  define KLH10_NET_TAP_BRIDGE 1
+#  undef  KLH10_NET_TAP
+#  define KLH10_NET_TAP 1
+#  undef  KLH10_NET_BRIDGE
+#  define KLH10_NET_BRIDGE 1
+
 # elif CENV_SYS_DECOSF
 #  undef  KLH10_NET_PFLT
 #  define KLH10_NET_PFLT 1
+
 # elif CENV_SYS_SUN
 #  undef  KLH10_NET_NIT
 #  define KLH10_NET_NIT 1
+
 # elif CENV_SYS_SOLARIS
 #  undef  KLH10_NET_DLPI
 #  define KLH10_NET_DLPI 1
-# elif CENV_SYS_LINUX
-#  undef  KLH10_NET_LNX
-#  define KLH10_NET_LNX 1
+
 # else
 #  error "Must specify a KLH10_NET_ configuration"
 # endif
@@ -384,16 +386,32 @@ union ipaddr {
     struct in_addr ia_addr;
 };
 
+struct pfdata;
+struct osnpf;
+
+typedef ssize_t (*osn_pfread_f)(struct pfdata *pfdata, void *buf, size_t nbytes);
+typedef int (*osn_pfwrite_f)(struct pfdata *pfdata, const void *buf, size_t nbytes);
+typedef void (*osn_pfdeinit_f)(struct pfdata *, struct osnpf *);
+
 /*
  * A structure that aggregates information about the packet filter variant
  * which is in use.
  */
 struct pfdata {
     int		 pf_fd;		/* most but not all have a file descriptor */
+    int		 pf_meth;	/* which packet "filter" is in use */
     void 	*pf_handle;	/* pcap has a handle */
     int 	 pf_can_filter;	/* has a packet filter built-in and enabled */
     int		 pf_ip4_only;	/* set TRUE for IP i/f; FALSE for ethernet i/f */
+    osn_pfread_f pf_read;	/* indirection to packet reading function */
+    osn_pfwrite_f pf_write;	/* indirection to packet writing function */
+    osn_pfdeinit_f pf_deinit;	/* indirection to closing function */
 };
+
+#define PF_METH_NONE		0
+#define PF_METH_PCAP		1
+#define PF_METH_TUN		2
+#define PF_METH_TAP		3
 
 int osn_iftab_init(void);
 int osn_nifents(void);		/* # of entries cached by osn_iftab_init */
@@ -437,9 +455,11 @@ struct osnpf {	/* Arg struct for common initialization params */
 	union ipaddr osnpf_tun;	/* INOUT: IP address host side of tunnel */
 	struct ether_addr osnpf_ea;	/* OUT: ether address of ifc */
 };
+
+
 /* the void * is an argument to pass on to pfbuild() */
 void osn_pfinit(struct pfdata *, struct osnpf *, void *);
-void osn_pfdeinit(void);
+void osn_pfdeinit(struct pfdata *, struct osnpf *);
 
 ssize_t osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes);
 int osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes);

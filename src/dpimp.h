@@ -95,6 +95,8 @@
 
 #define DPIMP_VERSION ((1<<10) | (1<<5) | (3))	/* 1.1.3 */
 
+#define IFNAM_LEN	16	/* at least IFNAMSIZ! */
+
 /* DPIMP-specific stuff */
 			/* C = controlling parent sets, D = Device proc sets */
 			/*       If both, 1st letter indicates inital setter */
@@ -102,7 +104,7 @@ struct dpimp_s {
     struct dpc_s dpimp_dpc;	/* CD Standard DPC portion */
     int dpimp_ver;		/* C  Version of shared struct */
     int dpimp_attrs;		/* C  Attribute flags */
-    char dpimp_ifnam[16];	/* CD Interface name if any */
+    char dpimp_ifnam[IFNAM_LEN];/* CD Interface name if any */
     char dpimp_ifmeth[16];	/* C  Interface access method */
     unsigned char dpimp_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpimp_ip[4];	/* C 10's IP address to filter on, if shared */

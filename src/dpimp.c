@@ -305,7 +305,6 @@ void hosttoimp(struct dpimp_s *);
 
 void net_init(struct dpimp_s *);
 
-#if !KLH10_NET_TUN
 void arp_init(struct dpimp_s *);
 struct arpent *arptab_look(struct in_addr);
 struct arpent *arp_look(struct in_addr, struct ether_addr *);
@@ -319,7 +318,6 @@ void arp_reply(unsigned char *eap, unsigned char *iap);
 int  hi_iproute(struct in_addr *ipa, unsigned char *lp, int cnt);
 void ip_write(struct in_addr *, unsigned char *, int);
 void ether_write(struct eth_header *, unsigned char *, int);
-#endif /* !KLH10_NET_TUN */
 
 void ihl_frag(int, unsigned char *);
 void ihl_hhsend(struct dpimp_s *, int, unsigned char *);
@@ -745,10 +743,6 @@ net_init(struct dpimp_s *dpimp)
       { 0x06, 0, 0, 0x00000000 },	/* (005) ret #0 */
 #endif
 
-#define OSN_PFSTRUCT bpf_program
-#define PF_FLEN  bf_len
-#define PF_FILT  bf_insns
-
 #define BPF_PFMAX 50		/* Max instructions in BPF filter */
 struct bpf_insn    bpf_pftab[BPF_PFMAX];
 struct bpf_program bpf_pfilter = { 0,
@@ -806,17 +800,17 @@ struct bpf_insn bpf_jump(unsigned short code, bpf_u_int32 k,
 #define BPFI_RETWIN()  BPFI_RET((u_int)-1)		/* Success return */
 
 
-static void pfshow(struct OSN_PFSTRUCT *);
+static void pfshow(struct bpf_program *);
 
-struct OSN_PFSTRUCT *
+struct bpf_program *
 pfbuild(void *arg, struct in_addr *ipa)
 {
     struct dpimp_s *dpimp = (struct dpimp_s *)arg;
     unsigned char *ucp = (unsigned char *)ipa;
-    struct OSN_PFSTRUCT *pfp = &bpf_pfilter;
+    struct bpf_program *pfp = &bpf_pfilter;
     struct bpf_insn *p;
 
-    p = pfp->PF_FILT;		/* Point to 1st instruction in BPF program  */
+    p = pfp->bf_insns;		/* Point to 1st instruction in BPF program  */
 
     /* We're interested in IP (and thus ARP as well) packets.
 	This is assumed to be the LAST part of the filter, thus
@@ -854,7 +848,7 @@ pfbuild(void *arg, struct in_addr *ipa)
 	*p++ = BPFI_RETFAIL();			/* Fail */
     }
 
-    pfp->PF_FLEN = p - pfp->PF_FILT;	/* Set # of items on list */
+    pfp->bf_len = p - pfp->bf_insns;	/* Set # of items on list */
 
     if (DBGFLG)			/* If debugging, print out resulting filter */
 	pfshow(pfp);
@@ -865,18 +859,18 @@ pfbuild(void *arg, struct in_addr *ipa)
 /* Debug auxiliary to print out packetfilter we composed.
 */
 static void
-pfshow(struct OSN_PFSTRUCT *pf)
+pfshow(struct bpf_program *pf)
 {
     int i;
 
     fprintf(stderr, "[dpimp: kernel packetfilter pri <>, len %d:\r\n",
-	    /* pf->PF_PRIO, */ pf->PF_FLEN);
-    for (i = 0; i < pf->PF_FLEN; ++i)
+	    /* pf->PF_PRIO, */ pf->bf_len);
+    for (i = 0; i < pf->bf_len; ++i)
 	fprintf(stderr, "%04X %2d %2d %0X\r\n",
-		pf->PF_FILT[i].code,
-		pf->PF_FILT[i].jt,
-		pf->PF_FILT[i].jf,
-		pf->PF_FILT[i].k);
+		pf->bf_insns[i].code,
+		pf->bf_insns[i].jt,
+		pf->bf_insns[i].jf,
+		pf->bf_insns[i].k);
     fprintf(stderr, "]\r\n");
 }
 #endif /* KLH10_NET_PCAP */
@@ -921,7 +915,6 @@ int lnx_filter(struct dpimp_s *dpimp,
 }
 
 
-#if !KLH10_NET_TUN
 
 /* ARP hacking code.  Originally modelled after old BSD ARP stuff. */
 
@@ -1373,7 +1366,6 @@ arp_reply(unsigned char *eap,	/* Requestor ether addr */
 
     ether_write(&eh, (unsigned char *)&arp.arp, sizeof(arp.arp));
 }
-#endif /* !KLH10_NET_TUN */
 
 /* IMPTOHOST - Child-process main loop for pumping packets from IMP to HOST.
 **	Reads packets from net, fragments if necessary, and feeds
@@ -1392,6 +1384,7 @@ imptohost(struct dpimp_s *dpimp)
     unsigned char *buffp;
     size_t max;
     int stoploop = 50;
+    int ether_hdr_offset;
 
     inibuf = dp_xsbuff(dpx, &max);	/* Get initial buffer ptr */
 
@@ -1402,11 +1395,11 @@ imptohost(struct dpimp_s *dpimp)
     if (DBGFLG)
 	fprintf(stderr, "[dpimp-R: sent INIT]\r\n");
 
-#if KLH10_NET_TUN
-# define ETHER_HDR_OFFSET	0	/* No ether headers on TUN */
-#else
-# define ETHER_HDR_OFFSET	ETHER_HDRSIZ
-#endif
+    if (pfdata.pf_ip4_only) {
+	ether_hdr_offset = 0;
+    } else {
+	ether_hdr_offset = ETHER_HDRSIZ;
+    }
 
     for (;;) {
 	/* Make sure that buffer is free before clobbering it */
@@ -1416,12 +1409,12 @@ imptohost(struct dpimp_s *dpimp)
 	    fprintf(stderr, "[dpimp-R: InWait]\r\n");
 
 	/* Set up buffer and initialize offsets */
-	buffp = inibuf + DPIMP_DATAOFFSET - ETHER_HDR_OFFSET;
+	buffp = inibuf + DPIMP_DATAOFFSET - ether_hdr_offset;
 
 	/* OK, now do a blocking read on packetfilter input! */
 	cnt = osn_pfread(&pfdata, buffp, MAXETHERLEN);
 
-	if (cnt <= ETHER_HDR_OFFSET) {
+	if (cnt <= ether_hdr_offset) {
 	    /* If call times out due to E/BIOCSRTIMEOUT, will return 0 */
 	    if (cnt == 0 && dpimp->dpimp_rdtmo)
 		continue;		/* Just try again */
@@ -1463,8 +1456,7 @@ imptohost(struct dpimp_s *dpimp)
 		continue;		/* Drop packet, continue reading */
 	}
 
-#if !KLH10_NET_TUN
-	/* if (!pfdata.pf_ip4_only) */ {
+	if (!pfdata.pf_ip4_only) {
 	    /* Verify that pf filtering is doing its job */
 	    switch (eh_tget((struct eth_header *)buffp)) {
 	    case ETHERTYPE_IP:
@@ -1478,13 +1470,12 @@ imptohost(struct dpimp_s *dpimp)
 		continue;
 	    }
 	}
-#endif
 
 	/* OK, it claims to be an IP packet, see if so long that we
 	** need to fragment it.  Yech!
 	*/
-	cnt -= ETHER_HDR_OFFSET;
-	buffp += ETHER_HDR_OFFSET;
+	cnt -= ether_hdr_offset;
+	buffp += ether_hdr_offset;
 
 	if (cnt > SI_MAXMSG) {
 	    ihl_frag(cnt, buffp);
@@ -1546,11 +1537,11 @@ ihl_hhsend(struct dpimp_s *dpimp,
     /* Hack to set host/imp value as properly as possible. */
     memcpy((char *)&haddr.ia_octet[0], pp + IPBOFF_SRC, 4);
     if ((haddr.ia_addr.s_addr & ihost_nm.s_addr) != ihost_net.s_addr) {
-#if !KLH10_NET_TUN
-	haddr.ia_addr = gwdef_ip;	/* Not local, use default GW */
-#else
-	haddr.ia_addr = tun_ip;		/* Not local, use tunnel end */
-#endif
+	if (pfdata.pf_ip4_only) {
+	    haddr.ia_addr = tun_ip;	/* Not local, use tunnel end */
+	} else {
+	    haddr.ia_addr = gwdef_ip;	/* Not local, use default GW */
+	}
     }
 
     ihobuf[SIH_HSIZ+SIL_HST]  = haddr.ia_octet[1];
@@ -1598,9 +1589,7 @@ hosttoimp(struct dpimp_s *dpimp)
     size_t max;
     int rcnt;
     unsigned char *inibuf;
-#if !KLH10_NET_TUN
     struct in_addr ipdest;
-#endif
 
     inibuf = dp_xrbuff(dpx, &max);	/* Get initial buffer ptr */
 
@@ -1724,8 +1713,6 @@ hosttoimp(struct dpimp_s *dpimp)
     }
 }
 
-#if !KLH10_NET_TUN
-
 /* HI_IPROUTE - Determine where to actually send Host-Host IP datagram.
 **	See discussion of routing in comments at start of file.
 	For now, let's build the IP address by slapping the 1st IP byte
@@ -1831,7 +1818,6 @@ ether_write(struct eth_header *hp,
 #endif
 }
 
-#endif /* !KLH10_NET_TUN */
 
 void
 dumppkt(unsigned char *ucp, int cnt)

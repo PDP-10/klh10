@@ -36,10 +36,31 @@
 # include "osdnet.h"	/* Insurance to make sure our defs are there */
 #endif
 
+#if KLH10_NET_TAP
+#include <net/if_tap.h>
+#endif
+
 /* Local predeclarations */
 
 struct ifent *osn_iflookup(char *ifnam);
+static struct ifent *osn_iftab_addaddress(char *name, struct sockaddr *addr);
 
+#if KLH10_NET_PCAP
+static void osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg);
+static ssize_t osn_pfread_pcap(struct pfdata *pfdata, void *buf, size_t nbytes);
+static int osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes);
+#endif /* KLH10_NET_PCAP */
+#if KLH10_NET_TUN || KLH10_NET_TAP
+static void osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg);
+static void osn_pfdeinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf);
+static ssize_t osn_pfread_fd(struct pfdata *pfdata, void *buf, size_t nbytes);
+static int osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes);
+#endif /* TUN || TAP */
+
+#if KLH10_NET_BRIDGE
+struct tuntap_context;
+void bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf);
+#endif
 
 /* Get a socket descriptor suitable for general net interface
    examination and manipulation; this is not necessarily suitable for
@@ -104,8 +125,6 @@ static int iftab_initf = 0;
 static int iftab_nifs = 0;
 static struct ifent iftab[NETIFC_MAX];
 
-static struct ifent *
-osn_iftab_addaddress(char *name, struct sockaddr *addr);
 
 /* Get table of all interfaces, using our own generic entry format.
  *
@@ -385,7 +404,7 @@ osn_ifcreate(char *ifnam)
     if (!ife && iftab_nifs < NETIFC_MAX) {
 	ife = &iftab[iftab_nifs];
 	iftab_nifs++;
-	strncpy(ife->ife_name, name, IFNAMSIZ);
+	strncpy(ife->ife_name, ifnam, IFNAMSIZ);
 	ife->ife_name[IFNAMSIZ] = '\0';
     }
 
@@ -789,7 +808,7 @@ osn_pfeaget(int pfs,		/* Packetfilter socket or FD */
     }
     ea_set(eap, endp.end_addr);
 
-#elif KLH10_NET_TAP_BRIDGE
+#elif KLH10_NET_TAP
     /* If we do tap(4) + bridge(4), the ether address of the tap is wholly
      * irrelevant, it is on the other side of the "wire".
      * Our own address is something we can make up completely.
@@ -987,7 +1006,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	    char *ifnam,	/* Interface name */
 	    unsigned char *newpa)	/* New ether address */
 {
-#if CENV_SYS_DECOSF || CENV_SYS_LINUX || KLH10_NET_TAP_BRIDGE \
+#if CENV_SYS_DECOSF || CENV_SYS_LINUX || KLH10_NET_TAP \
 		    || (CENV_SYS_FREEBSD && defined(SIOCSIFLLADDR))
 
     /* Common preamble code */
@@ -1046,7 +1065,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	if (ownsock) close(s);
 	return FALSE;
     }
-# elif KLH10_NET_TAP_BRIDGE
+# elif KLH10_NET_TAP
     ea_set(&emhost_ea, newpa);
 # else
 #  error "Unimplemented OS routine osn_ifeaset()"
@@ -1159,9 +1178,67 @@ osn_ifmcset(int s,
  *	very OSD.
  *	FD is always opened for both read/write.
  */
-#if KLH10_NET_PCAP
 void
 osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
+{
+    char *method = osnpf->osnpf_ifmeth;
+
+    if (!method)
+	method = "";
+
+    if (DP_DBGFLG)
+	dbprint("osn_pfinit: ifmeth=%s", method);
+
+    /*
+     * The order of tests here is the order of preference
+     * (most desired first), for when the user does not
+     * spefify ifmeth=xxx.
+     */
+#if KLH10_NET_TUN && OSN_USE_IPONLY
+    if (!method[0] || !strcmp(method, "tun")) {
+	pfdata->pf_meth = PF_METH_TUN;
+	return osn_pfinit_tuntap(pfdata, osnpf, pfarg);
+    }
+#endif /* KLH10_NET_TUN */
+#if KLH10_NET_TAP
+    /* Also match tap+bridge */
+    if (!method[0] || !strncmp(method, "tap", 3)) {
+	pfdata->pf_meth = PF_METH_TAP;
+	return osn_pfinit_tuntap(pfdata, osnpf, pfarg);
+    }
+#endif /* KLH10_NET_TAP */
+#if KLH10_NET_PCAP
+    if (!method[0] || !strcmp(method, "pcap")) {
+	pfdata->pf_meth = PF_METH_PCAP;
+	return osn_pfinit_pcap(pfdata, osnpf, pfarg);
+    }
+#endif /* KLH10_NET_PCAP */
+    
+}
+
+ssize_t
+osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes)
+{
+    return pfdata->pf_read(pfdata, buf, nbytes);
+}
+
+int
+osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
+{
+    return pfdata->pf_write(pfdata, buf, nbytes);
+}
+
+void
+osn_pfdeinit(struct pfdata *pfdata, struct osnpf *osnpf)
+{
+    if (pfdata->pf_deinit)
+	pfdata->pf_deinit(pfdata, osnpf);
+}
+
+#if KLH10_NET_PCAP
+static
+void
+osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     char *what = "";
@@ -1178,6 +1255,10 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 	ifnam = ife->ife_name;
     }
 
+    pfdata->pf_meth = PF_METH_PCAP;
+    pfdata->pf_read = osn_pfread_pcap;
+    pfdata->pf_write = osn_pfwrite_pcap;
+    pfdata->pf_deinit = NULL;
     pfdata->pf_handle = pc = pcap_create(ifnam, errbuf);
     pfdata->pf_ip4_only = FALSE;
 
@@ -1194,10 +1275,10 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 
        WARNING: NetBSD does not implement this correctly!  The code in
        src/sys/net/bpf.c:bpfread() treats the immediate flag in a way that
-       causes it to return EWOULDBLOCK [[ note: I see EAGAIN]] if no input is
-       available.  But this flag must still be set in order for bpfpoll() to
-       detect input as soon as it arrives!
-       See read loops in osn_pfread() below for workaround.
+       causes it to return EWOULDBLOCK if no input is available.  But this flag
+       must still be set in order for bpfpoll() to detect input as soon as it
+       arrives!
+       See read loops in osn_pfread_pcap() below for workaround.
      */
     if (pcap_set_immediate_mode(pc, 1) < 0) {
 	what = "pcap_set_immediate_mode";
@@ -1224,7 +1305,7 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
        to experiment.
      */
     if (!osnpf->osnpf_dedic) {
-	struct OSN_PFSTRUCT *pf;
+	struct bpf_program *pf;
 
 	/* Set the kernel packet filter */
 	pf = pfbuild(pfarg, &(osnpf->osnpf_ip.ia_addr));
@@ -1248,13 +1329,14 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 
     pfdata->pf_fd = pcap_get_selectable_fd(pc);
 
-    /* Now get our interface's ethernet address.
-    **	In general, this has to wait until after the packetfilter is opened,
-    **	since until then we don't have a handle on the specific interface
-    **	that will be used.
-    */
-    //(void) osn_pfeaget(pfdata->pf_fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
+    /* Now get our interface's ethernet address. */
     (void) osn_ifealookup(ifnam, (unsigned char *) &osnpf->osnpf_ea);
+    if (DP_DBGFLG) {
+	char eastr[OSN_EASTRSIZ];
+
+	dbprintln("EN addr for \"%s\" = %s",
+		ifnam, eth_adrsprint(eastr, (unsigned char *)&osnpf->osnpf_ea));
+    }
 
     return;
 
@@ -1280,7 +1362,7 @@ error:
  */
 inline
 ssize_t
-osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes)
+osn_pfread_pcap(struct pfdata *pfdata, void *buf, size_t nbytes)
 {
     struct pcap_pkthdr pkt_header;
     const u_char *pkt_data;
@@ -1295,7 +1377,7 @@ tryagain:
 	memcpy(buf, pkt_data, nbytes);
 
 	if (DP_DBGFLG)
-	    dbprint("osn_pfread: read %d bytes", nbytes);
+	    dbprint("osn_pfread_pcap: read %d bytes", nbytes);
 
 	return nbytes;
     }
@@ -1304,16 +1386,16 @@ tryagain:
 	    /* NetBSD bpf is broken.
 	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
 	       understand why this crock is necessary.
-	       Always block for at least 10 sec, will wake up sooner if
+	       Always block for at least 30 sec, will wake up sooner if
 	       input arrives.
 	     */
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-	int ptimeout = 10;
+	int ptimeout = 30;
 	struct pollfd myfd;
 	int err = errno;
 
 	if (DP_DBGFLG)
-	    dbprint("osn_pfread: polling after reading nothing (err=%d)", err);
+	    dbprint("osn_pfread_pcap: polling after reading nothing (err=%d)", err);
 	myfd.fd = pfdata->pf_fd;
 	myfd.events = POLLIN;
 	(void) poll(&myfd, 1, ptimeout * 1000);
@@ -1334,33 +1416,67 @@ tryagain:
  */
 inline
 int
-osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
+osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 {
     //if (DP_DBGFLG)
     //	dbprint("osn_pfwrite: writing %d bytes", nbytes);
     return pcap_inject(pfdata->pf_handle, buf, nbytes);
 }
-#endif
+#endif /* KLH10_NET_PCAP */
 
-#if KLH10_NET_BPF
+#if KLH10_NET_TUN || KLH10_NET_TAP
 
 /* Adapted from DEC's pfopen.c - doing it ourselves here because pfopen(3)
  * did not always exist, and this way we can report errors better.
  */
 
+struct tuntap_context {
+    int my_tap;
+    char saved_ifnam[IFNAM_LEN];
+#if KLH10_NET_BRIDGE
+    struct ifreq br_ifr;
+    struct ifreq tap_ifr;
+#endif
+};
+
+/*
+ * Since each emulated device runs in its own process,
+ * we need only one of these.
+ */
+static struct tuntap_context tt_ctx;
+
+#define BASENAMESIZE	32
+
 static int
-pfopen(void)
+pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 {
-# define PFDEVPREF "/dev/bpf"
-    char pfname[sizeof(PFDEVPREF)+10];
+    char pfname[BASENAMESIZE];
     int fd;
     int i = 0;
 
-    /* Find first free packetfilter device */
-    do {
-	(void) sprintf(pfname, "%s%d", PFDEVPREF, i++);
-	fd = open(pfname, O_RDWR, 0);
-    } while (fd < 0 && errno == EBUSY);	/* If device busy, keep looking */
+    if (DP_DBGFLG)
+	dbprint("pfopen: ifnam=%s", osnpf->osnpf_ifnam);
+
+#if CENV_SYS_NETBSD
+    /* See if an explicit tunnel unit number is given */
+    if (isdigit(osnpf->osnpf_ifnam[3])) {
+	fd = pfopen_create(basename, tt_ctx, osnpf);
+	if (fd >= 0) {
+	    return fd;
+	}
+    }
+#endif /* CENV_SYS_NETBSD */
+
+    /* See if the device is a cloning device */
+    fd = open(basename, O_RDWR, 0);
+
+    if (fd < 0) {
+	/* Not a cloner. Find first free tunnel device. */
+	do {
+	    (void) snprintf(pfname, BASENAMESIZE, "%s%d", basename, i++);
+	    fd = open(pfname, O_RDWR, 0);
+	} while (fd < 0 && errno == EBUSY);	/* If device busy, keep looking */
+    }
 
     if (fd < 0) {
 	/* Note possible error meanings:
@@ -1370,13 +1486,16 @@ pfopen(void)
 	esfatal(1, "Couldn't find or open packetfilter device, last tried %s",
 		pfname);
     }
+
+    tt_ctx->my_tap = TRUE;
+
     return fd;		/* Success! */
 }
 
-#endif /* KLH10_NET_BPF */
+#endif /* KLH10_NET_TUN || _TAP */
 
 
-#if KLH10_NET_TUN
+#if KLH10_NET_TUN || KLH10_NET_TAP
 /*
   In order to use the TUN interface we have to do the equivalent of
 	(1) "ifconfig tun0 <localaddr> <destaddr> up"
@@ -1432,31 +1551,27 @@ The ifra_mask field is ignored (left as-is or zeroed if new) unless
  */
 
 void
-osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
+osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 {
     int allowextern = TRUE;	/* For now, always try for external access */
     int fd;
-#if CENV_SYS_LINUX		/* [BV: tun support for Linux] */
     struct ifreq ifr;
     char ifnam[IFNAMSIZ];
-#else /* not CENV_SYS_LINUX */
-    char tunname[sizeof "/dev/tun000"];
-    char *ifnam = tunname + sizeof("/dev/")-1;
-    int i = -1;
-#endif /* CENV_SYS_LINUX */
     char ipb1[OSN_IPSTRSIZ];
     char ipb2[OSN_IPSTRSIZ];
     struct ifent *ife = NULL;	/* Native host's default IP interface if one */
     struct in_addr iplocal;	/* TUN ifc address at hardware OS end */
-    struct in_addr ipremote;	/* Address at remote (emulated host) end */
+    struct in_addr ipremote;	/* Address at remote (emulated guest) end */
     static unsigned char ipremset[4] = { 192, 168, 0, 44};
 
     /* Remote address is always that of emulated machine */
     ipremote = osnpf->osnpf_ip.ia_addr;
     iplocal = osnpf->osnpf_tun.ia_addr;
+    strncpy(tt_ctx.saved_ifnam, osnpf->osnpf_ifnam, IFNAM_LEN);
 
     if (DP_DBGFLG)
-	dbprint("Opening TUN device");
+	dbprint("Opening %s device",
+		pfdata->pf_ip4_only ? "TUN" : "TAP");
 
     /* Local address can be set explicitly if we plan to do full IP
        masquerading. */
@@ -1480,40 +1595,81 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
       osnpf->osnpf_tun.ia_addr = iplocal;
     }
 
-#if CENV_SYS_LINUX		/* [BV: Linux way] */
-    if ((fd = open("/dev/net/tun", O_RDWR)) < 0) /* get a fresh device */
-      esfatal(0, "Couldn't open tunnel device /dev/net/tun");
-    memset(&ifr, 0, sizeof(ifr));
-# if OSN_USE_IPONLY
-    ifr.ifr_flags = IFF_TUN | IFF_NO_PI; /* TUN (no Ethernet headers), no pkt info */
-    /* ip tuntap add mode tun */
-# else
-    ifr.ifr_flags = IFF_TAP | IFF_NO_PI; /* TAP (yes Ethernet headers), no pkt info */
-    /* ip tuntap add mode tap */
-# endif /* OSN_USE_IPONLY */
-    if (ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) /* turn it on */
-      esfatal(0, "Couldn't set tun device");
-    strcpy(ifnam, ifr.ifr_name); /* get device name (typically "tun0") */
-#else /* not CENV_SYS_LINUX */
-    do {
-# if OSN_USE_IPONLY
-	sprintf(tunname, "/dev/tun%d", ++i);
-# else
-	sprintf(tunname, "/dev/tap%d", ++i);
-# endif /* OSN_USE_IPONLY */
-    } while ((fd = open(tunname, O_RDWR)) < 0 && errno == EBUSY);
+    char *basename = "";
 
-    if (fd < 0)
-	esfatal(1, "Couldn't open tunnel device %s", tunname);
+    switch (pfdata->pf_meth) {
+    case PF_METH_TUN:
+	pfdata->pf_ip4_only = TRUE;
+#if CENV_SYS_LINUX
+	basename = "/dev/net/tun";
+#else
+	basename = "/dev/tun";
+#endif /* CENV_SYS_LINUX */
+	break;
+    case PF_METH_TAP:
+	pfdata->pf_ip4_only = FALSE;
+#if CENV_SYS_LINUX
+	basename = "/dev/net/tun";
+#else
+	basename = "/dev/tap";
+#endif /* CENV_SYS_LINUX */
+	break;
+    default:
+	esfatal(0, "pf_meth value %d invalid", pfdata->pf_meth);
+    }
+
+    fd = pfopen(basename, &tt_ctx, osnpf);
+    if (fd < 0) {
+	esfatal(0, "Couldn't open tunnel device %s", basename);
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+
+#if CENV_SYS_LINUX		/* [BV: Linux way] */
+    if (pfdata->pf_meth == PF_METH_TUN) {
+	ifr.ifr_flags = IFF_TUN | IFF_NO_PI; /* TUN (no Ethernet headers), no pkt info */
+	/* ip tuntap add mode tun */
+    } else {
+	ifr.ifr_flags = IFF_TAP | IFF_NO_PI; /* TAP (yes Ethernet headers), no pkt info */
+	/* ip tuntap add mode tap */
+    }
+    if (isdigit(ifnam[3])) {
+	/*
+	 * If a specific unit was requested, try to get it.
+	 * I don't know if it will be created if it does not exist yet.
+	 */
+	strcpy(ifr.ifr_name, ifnam);
+    }
+    if (ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) /* turn it on */
+	esfatal(0, "Couldn't set tun device");
+    strcpy(ifnam, ifr.ifr_name); /* get device name (typically "tun0") */
 #endif /* CENV_SYS_LINUX */
 
+    /*
+     * This is mostly on NetBSD.
+     * Copy back the actual interface we used, if the user specified
+     * a cloner device.
+     *
+     * This does require us to clean up the tunnel in all cases,
+     * since from now in the NI20 or IMP is stuck on *this* unit number.
+     * Even when it is restarted (which is possible at least in
+     * TOPS20 with the KNILDR command.
+     */
+#if defined(TAPGIFNAME)
+    if (ioctl(fd, TAPGIFNAME, (void *) &ifr) >= 0) { /* Ask which unit we got */
+	strncpy(ifnam, ifr.ifr_name, IFNAMSIZ); /* get device name (typically "tap0") */
+	if (DP_DBGFLG)
+	    dbprint("TAPGIFNAME returns %s", ifnam);
+    }
+#endif
+
     if (DP_DBGFLG)
-	dbprintln("Opened %s, configuring for local %s, remote %s",
+	dbprintln("Opened %s, configuring for local (host) %s, remote (guest) %s",
 	    ifnam,
 	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
 	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
 
-    strcpy(osnpf->osnpf_ifnam, ifnam);
+    strncpy(osnpf->osnpf_ifnam, ifnam, IFNAM_LEN);
 
     /* Activate TUN device.
        First address is "local" -- doesn't matter if all we care about is
@@ -1532,92 +1688,76 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
        This is only needed for TUNNEL devices, not TAP devices.
     */
-#if 0	/* Hacky method */
-  {
-    char cmdbuff[128];
-    int res;
-    sprintf(cmdbuff, "ifconfig %s %s %s up",
-	    ifnam,
-	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
-	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
-
-    if ((res = system(cmdbuff)) != 0) {
-	esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
-    }
-  }
-#elif CENV_SYS_LINUX		/* [BV: Linux tun device] */
+#if CENV_SYS_LINUX		/* [BV: Linux tun device] */
+    if (pfdata->pf_ip4_only) {
 				/* "Hacky" but simple method */
-# if OSN_USE_IPONLY
-  {
-    char cmdbuff[128];
-    int res;
+	char cmdbuff[128];
+	int res;
 
-    /* ifconfig DEV IPLOCAL pointopoint IPREMOTE */
-    sprintf(cmdbuff, "ifconfig %s %s pointopoint %s up",
-	    ifnam,
-	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
-	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
-    if (DP_DBGFLG)
-      dbprintln("running \"%s\"",cmdbuff);
-    if ((res = system(cmdbuff)) != 0) {
-	esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
-    }
-  }
-# endif /* OSN_USE_IPONLY */
-#else /* not CENV_SYS_LINUX */
-  {
-    /* Internal method */
-    int s;
-    struct ifaliasreq ifra;
-    struct ifreq ifr;
-
-    if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-	esfatal(1, "pf_init: tun socket() failed");
-    }
-
-    /* Delete first (only) IP address for this device, if any.
-       Ignore errors.
-     */
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
-    if (ioctl(s, SIOCDIFADDR, &ifr) < 0) {
+	/* ifconfig DEV IPLOCAL pointopoint IPREMOTE */
+	sprintf(cmdbuff, "ifconfig %s %s pointopoint %s up",
+		ifnam,
+		ip_adrsprint(ipb1, (unsigned char *)&iplocal),
+		ip_adrsprint(ipb2, (unsigned char *)&ipremote));
 	if (DP_DBGFLG)
-	    syserr(errno, "osn_pfinit tun SIOCDIFADDR failed");
-    }
-
-# if OSN_USE_IPONLY
-    /*
-     * Then set the point-to-point addresses for the tunnel.
-     */
-    memset(&ifra, 0, sizeof(ifra));
-    strncpy(ifra.ifra_name, ifnam, sizeof(ifra.ifra_name));
-    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_len = sizeof(struct sockaddr_in);
-    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_family = AF_INET;
-    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_addr   = iplocal;
-    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_len = sizeof(struct sockaddr_in);
-    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_family = AF_INET;
-    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_addr   = ipremote;
-    if (ioctl(s, SIOCAIFADDR, &ifra) < 0) {
-	esfatal(1, "osn_pfinit tun SIOCAIFADDR failed");
-    }
-# endif /* OSN_USE_IPONLY */
-
-
-    /* Finally, turn on IFF_UP just in case the above didn't do it.
-       Note interface name is still there from the SIOCDIFADDR.
-     */
-    if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
-	esfatal(1, "osn_pfinit tun SIOCGIFFLAGS failed");
-    }
-    if (!(ifr.ifr_flags & IFF_UP)) {
-	ifr.ifr_flags |= IFF_UP;
-	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
-	    esfatal(1, "osn_pfinit tun SIOCSIFFLAGS failed");
+	    dbprintln("running \"%s\"",cmdbuff);
+	if ((res = system(cmdbuff)) != 0) {
+	    esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
 	}
-	if (DP_DBGFLG)
-	    dbprint("osn_pfinit tun did SIOCSIFFLAGS");
     }
-  }
+#else /* not CENV_SYS_LINUX */
+    {
+	/* Internal method */
+	int s;
+	struct ifaliasreq ifra;
+	struct ifreq ifr;
+
+	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+	    esfatal(1, "pf_init: tun socket() failed");
+	}
+
+	/* Delete first (only) IP address for this device, if any.
+	   Ignore errors.
+	   */
+	memset(&ifr, 0, sizeof(ifr));
+	strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
+	if (ioctl(s, SIOCDIFADDR, &ifr) < 0) {
+	    if (DP_DBGFLG)
+		syserr(errno, "osn_pfinit tun SIOCDIFADDR failed");
+	}
+
+	if (pfdata->pf_ip4_only) {
+	    /*
+	     * Then set the point-to-point addresses for the tunnel.
+	     */
+	    memset(&ifra, 0, sizeof(ifra));
+	    strncpy(ifra.ifra_name, ifnam, sizeof(ifra.ifra_name));
+	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_len = sizeof(struct sockaddr_in);
+	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_family = AF_INET;
+	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_addr   = iplocal;
+	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_len = sizeof(struct sockaddr_in);
+	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_family = AF_INET;
+	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_addr   = ipremote;
+	    if (ioctl(s, SIOCAIFADDR, &ifra) < 0) {
+		esfatal(1, "osn_pfinit tun SIOCAIFADDR failed");
+	    }
+	}
+
+	/* Finally, turn on IFF_UP just in case the above didn't do it.
+	   Note interface name is still there from the SIOCDIFADDR.
+	   */
+	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
+	    esfatal(1, "osn_pfinit tun SIOCGIFFLAGS failed");
+	}
+	if (!(ifr.ifr_flags & IFF_UP)) {
+	    ifr.ifr_flags |= IFF_UP;
+	    if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
+		esfatal(1, "osn_pfinit tun SIOCSIFFLAGS failed");
+	    }
+	    if (DP_DBGFLG)
+		dbprint("osn_pfinit tun did SIOCSIFFLAGS");
+	}
+    }
 #endif /* CENV_SYS_LINUX */
 
     /* Now optionally determine ethernet address.
@@ -1639,15 +1779,51 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
        we're using TUN then we almost certainly also have the good stuff
        in ifconf.
     */
+
+    /*
+     * Now get our fresh new virtual interface's ethernet address.
+     * Basically, we can make it up.
+     */
+    if (!pfdata->pf_ip4_only) {
+	/* If we do tap(4) + bridge(4), the ether address of the tap is wholly
+	 * irrelevant, it is on the other side of the "wire".
+	 * Our own address is something we can make up completely.
+	 */
+	if (emhost_ea.ea_octets[5] == 0xFF) {
+	    time_t t = time(NULL);
+	    emhost_ea.ea_octets[5] =  t        & 0xFE;
+	    emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
+	    emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
+	}
+	ea_set(&osnpf->osnpf_ea, &emhost_ea);	/* Return the ether address */
+
+	struct ifent *tap_ife = osn_ifcreate(ifnam);
+	if (tap_ife) {
+	    tap_ife->ife_flags = IFF_UP;
+	    ea_set(tap_ife->ife_ea, (unsigned char *)&osnpf->osnpf_ea);
+	    tap_ife->ife_gotea = TRUE;
+
+	    if (DP_DBGFLG) {
+		dbprintln("Entered 10-side of TAP into table:");
+		osn_iftab_show(stdout, &iftab[0], iftab_nifs);
+	    }
+	}
+    }
+
     if (allowextern && ife) {
 	/* Need to determine ether addr of our default interface, then
 	   publish an ARP entry mapping the virtual host to the same
 	   ether addr.
 	 */
-	(void) osn_arp_stuff(ifnam, (unsigned char *)&ipremote, ife->ife_ea, TRUE);
+#if OSN_USE_IPONLY
+	/* dpni20 does this already; dpimp doesn't. */
+	if (!pfdata->pf_ip4_only) {
+	    (void) osn_arp_stuff(ifnam, (unsigned char *)&ipremote, &emhost_ea, TRUE);
+	}
+#endif
 
 	/* Return that as our ether address */
-	ea_set((char *)&osnpf->osnpf_ea, ife->ife_ea);
+	//ea_set((char *)&osnpf->osnpf_ea, ife->ife_ea); // no, use emhost_ea as set up above
     } else {
 	/* ARP hackery will be handled by IP masquerading and packet forwarding. */
 #if 1 /*OSN_USE_IPONLY*/ /* TOPS-20 does not like NI20 with made up address? */
@@ -1665,32 +1841,44 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     }
 
     pfdata->pf_fd = fd;
-    pfdata->pf_handle = 0;
+    pfdata->pf_handle = &tt_ctx;
     pfdata->pf_can_filter = FALSE;
-    pfdata->pf_ip4_only = OSN_USE_IPONLY;
+    pfdata->pf_read = osn_pfread_fd;
+    pfdata->pf_write = osn_pfwrite_fd;
+    pfdata->pf_deinit = osn_pfdeinit_tuntap;
+
+#if KLH10_NET_BRIDGE
+    if (!strcmp(osnpf->osnpf_ifmeth, "tap+bridge")) {
+	/* Create the bridge */
+	bridge_create(&tt_ctx, osnpf);
+    }
+#endif /* KLH10_NET_BRIDGE */
 
     if (DP_DBGFLG)
 	dbprintln("osn_pfinit tun completed");
 }
 
-#endif /* KLH10_NET_TUN */
 
 /*
  * Too bad that this is never called...
  */
 void
-osn_pfdeinit(void)
+osn_pfdeinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf)
 {
-#if KLH10_NET_TAP_BRIDGE
-    void tap_bridge_close();
-    tap_bridge_close();
-#endif
-}
+#if KLH10_NET_BRIDGE
+    void tap_bridge_close(struct tuntap_context *tt_ctx);
+    tap_bridge_close(&tt_ctx);
+#endif /* KLH10_NET_BRIDGE */
+    struct tuntap_context *tt_ctx = pfdata->pf_handle;
 
-#if KLH10_NET_TAP_BRIDGE
+    strncpy(osnpf->osnpf_ifnam, tt_ctx->saved_ifnam, IFNAM_LEN);
+}
+#endif /* KLH10_NET_TUN */
+
+#if KLH10_NET_TAP_BRIDGE /* This part does nto work any more */
 
 void
-osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
+osn_pfinittap_bridge(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 {
     int fd;
     char *ifnam = osnpf->osnpf_ifnam;
@@ -1704,8 +1892,9 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
     fd = tap_bridge_open(ifnam);
 
-    /* Now get our fresh new virtual interface's ethernet address.
-    */
+    /*
+     * Now get our fresh new virtual interface's ethernet address.
+     */
     (void) osn_pfeaget(fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
 
     struct ifent *ife = osn_ifcreate(ifnam);
@@ -1717,22 +1906,21 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
     pfdata->pf_fd = fd;
     pfdata->pf_handle = 0;
-    pfdata->pf_ip4_only = FALSE;
     pfdata->pf_can_filter = FALSE;
 }
 
 #endif /* KLH10_NET_TAP_BRIDGE */
 
-#if KLH10_NET_TAP_BRIDGE || KLH10_NET_TUN
+#if KLH10_NET_TAP || KLH10_NET_TUN
 
 /*
  * Like the standard read(2) call:
  * Receives a single packet and returns its size.
  * Include link-layer headers, but no BPF headers or anything like that.
  */
-inline
+static inline
 ssize_t
-osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes)
+osn_pfread_fd(struct pfdata *pfdata, void *buf, size_t nbytes)
 {
     return read(pfdata->pf_fd, buf, nbytes);
 }
@@ -1742,24 +1930,16 @@ osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes)
  * Expect a full ethernet frame including link-layer header.
  * returns the number of bytes written.
  */
-inline
+static inline
 int
-osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes)
+osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes)
 {
     return write(pfdata->pf_fd, buf, nbytes);
 }
 
-#endif /* KLH10_NET_TAP_BRIDGE || KLH10_NET_TUN */
+#endif /* KLH10_NET_TAP || KLH10_NET_TUN */
 
-#if KLH10_NET_TAP_BRIDGE
-
-#include <net/if_tap.h>
-#include <net/if_bridgevar.h>
-#include <stdint.h>
-
-static struct ifreq br_ifr;
-static struct ifreq tap_ifr;
-static int my_tap;
+#if CENV_SYS_NETBSD
 
 /*
  * A TAP is a virtual ethernet interface, much like TUN is a virtual IP
@@ -1774,37 +1954,59 @@ static int my_tap;
  * for instance.
  */
 int
-tap_bridge_open(char *ifnam)
+pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 {
     int tapfd;
     int res;
-    union ipaddr netmask;
     char cmdbuff[128];
     struct ifent *ife;
     int s;
     int i;
-    struct ifbreq br_req;
-    struct ifdrv br_ifd;
+    char *ifnam = osnpf->osnpf_ifnam;
+
+    if (DP_DBGFLG)
+	dbprint("pfopen_create: ifnam=%s", osnpf->osnpf_ifnam);
 
     if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-	esfatal(1, "tap_bridge_open: socket() failed");
+	esfatal(1, "pfopen_create: socket() failed");
     }
 
     /* try to create tapN as specified by the user */
-    memset(&tap_ifr, 0, sizeof(tap_ifr));
-    strcpy(tap_ifr.ifr_name, ifnam);
-    res = ioctl(s, SIOCIFCREATE, &tap_ifr);
+    memset(&tt_ctx->tap_ifr, 0, sizeof(tt_ctx->tap_ifr));
+    strcpy(tt_ctx->tap_ifr.ifr_name, ifnam);
+
+    res = ioctl(s, SIOCIFCREATE, &tt_ctx->tap_ifr);
+
     if (res == 0) {
-	my_tap = 1;
+	tt_ctx->my_tap = TRUE;
 	dbprintln("Created host-side tap \"%s\"", ifnam);
     } else {
 	if (errno != EEXIST)
-	    esfatal(1, "tap_bridge_open: can't create tap \"%s\"?", ifnam);
-	my_tap = 0;
+	    esfatal(1, "pfopen_create: can't create tap \"%s\"?", ifnam);
+	tt_ctx->my_tap = FALSE;
 	dbprintln("Host-side tap \"%s\" alread exists; use it as-is", ifnam);
     }
 
-    sprintf(cmdbuff, "/dev/%s", ifnam);
+    /* Finally, turn on IFF_UP just in case the above didn't do it.
+       Note interface name is still there from the SIOCIFCREATE.
+     */
+    if (ioctl(s, SIOCGIFFLAGS, &tt_ctx->tap_ifr) < 0) {
+	esfatal(1, "pfopen_create tap SIOCGIFFLAGS failed");
+    }
+    if (!(tt_ctx->tap_ifr.ifr_flags & IFF_UP)) {
+	tt_ctx->tap_ifr.ifr_flags |= IFF_UP;
+	if (ioctl(s, SIOCSIFFLAGS, &tt_ctx->tap_ifr) < 0) {
+	    esfatal(1, "pfopen_create tap SIOCSIFFLAGS failed");
+	}
+	if (DP_DBGFLG)
+	    dbprint("pfopen_create tap did SIOCSIFFLAGS");
+    }
+
+    /*
+     * Combine basename with the unit number from the ifnam.
+     * Both "tun" and "tap" have 3 letters.
+     */
+    sprintf(cmdbuff, "%s%s", basename, ifnam + 3);
     tapfd = open(cmdbuff, O_RDWR, 0);
 
     if (tapfd < 0) {
@@ -1817,33 +2019,41 @@ tap_bridge_open(char *ifnam)
 
     dbprintln("Opened 10-side tap \"%s\"", cmdbuff);
 
-    /* Finally, turn on IFF_UP just in case the above didn't do it.
-       Note interface name is still there from the SIOCIFCREATE.
-     */
-    if (ioctl(s, SIOCGIFFLAGS, &tap_ifr) < 0) {
-	esfatal(1, "tap_bridge_open tap SIOCGIFFLAGS failed");
-    }
-    if (!(tap_ifr.ifr_flags & IFF_UP)) {
-	tap_ifr.ifr_flags |= IFF_UP;
-	if (ioctl(s, SIOCSIFFLAGS, &tap_ifr) < 0) {
-	    esfatal(1, "tap_bridge_open tap SIOCSIFFLAGS failed");
-	}
-	if (DP_DBGFLG)
-	    dbprint("tap_bridge_open tap did SIOCSIFFLAGS");
-    }
+    close(s);
 
-    if (my_tap) {
+    return tapfd;
+}
+#endif /* CENV_SYS_NETBSD */
+
+#if KLH10_NET_BRIDGE
+
+#include <net/if_bridgevar.h>
+
+void
+bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
+{
+    int res;
+    char cmdbuff[128];
+    struct ifent *ife;
+    int s;
+    int i;
+
+    if (tt_ctx->my_tap) {
+	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+	    esfatal(1, "bridge_create: socket() failed");
+	}
+
 	for (i = 0; i < 1000; i++) {
 	    /* try to create bridge%d */
-	    memset(&br_ifr, 0, sizeof(br_ifr));
-	    sprintf(br_ifr.ifr_name, "bridge%d", i);
-	    res = ioctl(s, SIOCIFCREATE, &br_ifr);
+	    memset(&tt_ctx->br_ifr, 0, sizeof(tt_ctx->br_ifr));
+	    sprintf(tt_ctx->br_ifr.ifr_name, "bridge%d", i);
+	    res = ioctl(s, SIOCIFCREATE, &tt_ctx->br_ifr);
 	    if (res == 0)
 		break;
 	    if (errno != EEXIST)
-		esfatal(1, "tap_bridge_open: can't create bridge \"%s\"?", br_ifr.ifr_name);
+		esfatal(1, "bridge_create: can't create bridge \"%s\"?", tt_ctx->br_ifr.ifr_name);
 	}
-	dbprintln("Created bridge \"%s\"", br_ifr.ifr_name);
+	dbprintln("Created bridge \"%s\"", tt_ctx->br_ifr.ifr_name);
 
 	/*
 	 * Find default IP interface to bridge with.
@@ -1857,60 +2067,19 @@ tap_bridge_open(char *ifnam)
 	if (swstatus)
 	    dbprintln("Bridging with default interface \"%s\"", ife->ife_name);
 
-	if (1) {
-	    sprintf(cmdbuff, "/sbin/brconfig %s add %s add %s up",
-		    br_ifr.ifr_name, ife->ife_name, ifnam);
-	    res = system(cmdbuff);
-	    dbprintln("%s => %d", cmdbuff, res);
-	} else {
-	    /* do whatever brconfig bridge0 add intf0 does... */
-	    memset(&br_ifd, 0, sizeof(br_ifd));
-	    memset(&br_req, 0, sizeof(br_req));
+	sprintf(cmdbuff, "/sbin/brconfig %s add %s add %s up",
+		tt_ctx->br_ifr.ifr_name, ife->ife_name, osnpf->osnpf_ifnam);
+	res = system(cmdbuff);
+	dbprintln("%s => %d", cmdbuff, res);
 
-	    /* set name of the bridge */
-	    strcpy(br_ifd.ifd_name, br_ifr.ifr_name);
-	    br_ifd.ifd_cmd = BRDGADD;
-	    br_ifd.ifd_len = sizeof(br_req);
-	    br_ifd.ifd_data = &br_req;
-
-	    /* brconfig bridge0 add tap0 (the virtual interface) */
-	    strcpy(br_req.ifbr_ifsname, ifnam);
-	    res = ioctl(s, SIOCSDRVSPEC, &br_ifd);
-	    if (res == -1)
-		esfatal(1, "tap_bridge_open: can't add virtual intf to bridge?");
-
-	    /* brconfig bridge0 add vr0 (the hardware interface) */
-	    strcpy(br_req.ifbr_ifsname, ife->ife_name);
-	    res = ioctl(s, SIOCSDRVSPEC, &br_ifd);
-	    if (res == -1)
-		esfatal(1, "tap_bridge_open: can't add real intf to bridge?");
-
-	    /* Finally, turn on IFF_UP just in case the above didn't do it.
-	     * Note interface name is still there.
-	     */
-	    if (ioctl(s, SIOCGIFFLAGS, &br_ifr) < 0) {
-		esfatal(1, "tap_bridge_open bridge SIOCGIFFLAGS failed");
-	    }
-	    if (!(br_ifr.ifr_flags & IFF_UP)) {
-		br_ifr.ifr_flags |= IFF_UP;
-		if (ioctl(s, SIOCSIFFLAGS, &br_ifr) < 0) {
-		    esfatal(1, "tap_bridge_open bridge SIOCSIFFLAGS failed");
-		}
-		if (DP_DBGFLG)
-		    dbprint("tap_bridge_open bridge did SIOCSIFFLAGS");
-	    }
-
-	}
+	close(s);
     }
-    close(s);
-
-    return tapfd;		/* Success! */
 }
 
 void
-tap_bridge_close()
+tap_bridge_close(struct tuntap_context *tt_ctx)
 {
-    if (my_tap) {
+    if (tt_ctx->my_tap) {
 	int s, res;
 
 	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -1918,14 +2087,14 @@ tap_bridge_close()
 	}
 
 	/* Destroy bridge */
-	res = ioctl(s, SIOCIFDESTROY, &br_ifr);
-	res = ioctl(s, SIOCIFDESTROY, &tap_ifr);
+	res = ioctl(s, SIOCIFDESTROY, &tt_ctx->br_ifr);
+	res = ioctl(s, SIOCIFDESTROY, &tt_ctx->tap_ifr);
 
 	close(s);
     }
 }
 
-#endif /* KLH10_NET_TAP_BRIDGE */
+#endif /* KLH10_NET_TAP */
 
 #if KLH10_NET_DLPI
 

@@ -421,16 +421,18 @@ static int pareth(char *cp, unsigned char *adr)
 
 #define OSN_PFSTRUCT bpf_program
 
-struct OSN_PFSTRUCT *
+struct bpf_program *
 pfbuild(void *arg, struct in_addr *ipa)
 {
     return NULL;
 }
-struct OSN_PFSTRUCT *
+struct bpf_program *
 pfeabuild(void *arg, unsigned char *ea)
 {
     return NULL;
 }
+
+#define IFNAM_LEN	16	/* at least IFNAMSIZ! */
 
 #include "osdnet.c"
 
