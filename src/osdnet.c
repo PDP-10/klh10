@@ -1445,6 +1445,17 @@ struct tuntap_context {
  */
 static struct tuntap_context tt_ctx;
 
+static void
+basenamecpy(char *dest, char *src, int len)
+{
+    char *slash = strchr(src, '/');
+    if (slash) {
+	strncpy(dest, slash + 1, len);
+    } else {
+	strncpy(dest, src, len);
+    }
+}
+
 #define BASENAMESIZE	32
 
 static int
@@ -1488,6 +1499,7 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     }
 
     tt_ctx->my_tap = TRUE;
+    basenamecpy(osnpf->osnpf_ifnam, pfname, IFNAM_LEN);
 
     return fd;		/* Success! */
 }
@@ -1496,6 +1508,15 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 
 
 #if KLH10_NET_TUN || KLH10_NET_TAP
+
+# if CENV_SYS_LINUX
+#  define TUN_BASE	"/dev/net/tun"
+#  define TAP_BASE	"/dev/net/tun"
+# else
+#  define TUN_BASE	"/dev/tun"
+#  define TAP_BASE	"/dev/tap"
+# endif /* CENV_SYS_LINUX */
+
 /*
   In order to use the TUN interface we have to do the equivalent of
 	(1) "ifconfig tun0 <localaddr> <destaddr> up"
@@ -1556,7 +1577,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     int allowextern = TRUE;	/* For now, always try for external access */
     int fd;
     struct ifreq ifr;
-    char ifnam[IFNAMSIZ];
+    char *ifnam = osnpf->osnpf_ifnam; /* alias for the persisting copy */
     char ipb1[OSN_IPSTRSIZ];
     char ipb2[OSN_IPSTRSIZ];
     struct ifent *ife = NULL;	/* Native host's default IP interface if one */
@@ -1571,7 +1592,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
     if (DP_DBGFLG)
 	dbprint("Opening %s device",
-		pfdata->pf_ip4_only ? "TUN" : "TAP");
+		pfdata->pf_meth == PF_METH_TUN ? "TUN" : "TAP");
 
     /* Local address can be set explicitly if we plan to do full IP
        masquerading. */
@@ -1600,19 +1621,11 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     switch (pfdata->pf_meth) {
     case PF_METH_TUN:
 	pfdata->pf_ip4_only = TRUE;
-#if CENV_SYS_LINUX
-	basename = "/dev/net/tun";
-#else
-	basename = "/dev/tun";
-#endif /* CENV_SYS_LINUX */
+	basename = TUN_BASE;
 	break;
     case PF_METH_TAP:
 	pfdata->pf_ip4_only = FALSE;
-#if CENV_SYS_LINUX
-	basename = "/dev/net/tun";
-#else
-	basename = "/dev/tap";
-#endif /* CENV_SYS_LINUX */
+	basename = TAP_BASE;
 	break;
     default:
 	esfatal(0, "pf_meth value %d invalid", pfdata->pf_meth);
@@ -1663,13 +1676,12 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     }
 #endif
 
-    if (DP_DBGFLG)
+    if (DP_DBGFLG) {
 	dbprintln("Opened %s, configuring for local (host) %s, remote (guest) %s",
 	    ifnam,
 	    ip_adrsprint(ipb1, (unsigned char *)&iplocal),
 	    ip_adrsprint(ipb2, (unsigned char *)&ipremote));
-
-    strncpy(osnpf->osnpf_ifnam, ifnam, IFNAM_LEN);
+    }
 
     /* Activate TUN device.
        First address is "local" -- doesn't matter if all we care about is
@@ -1815,12 +1827,6 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	   publish an ARP entry mapping the virtual host to the same
 	   ether addr.
 	 */
-#if OSN_USE_IPONLY
-	/* dpni20 does this already; dpimp doesn't. */
-	if (!pfdata->pf_ip4_only) {
-	    (void) osn_arp_stuff(ifnam, (unsigned char *)&ipremote, &emhost_ea, TRUE);
-	}
-#endif
 
 	/* Return that as our ether address */
 	//ea_set((char *)&osnpf->osnpf_ea, ife->ife_ea); // no, use emhost_ea as set up above
@@ -1842,7 +1848,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
     pfdata->pf_fd = fd;
     pfdata->pf_handle = &tt_ctx;
-    pfdata->pf_can_filter = FALSE;
+    pfdata->pf_can_filter = pfdata->pf_ip4_only;
     pfdata->pf_read = osn_pfread_fd;
     pfdata->pf_write = osn_pfwrite_fd;
     pfdata->pf_deinit = osn_pfdeinit_tuntap;
@@ -1855,7 +1861,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 #endif /* KLH10_NET_BRIDGE */
 
     if (DP_DBGFLG)
-	dbprintln("osn_pfinit tun completed");
+	dbprintln("osn_pfinit_tuntap completed");
 }
 
 

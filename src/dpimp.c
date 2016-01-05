@@ -276,7 +276,7 @@ int othlockid;
 int swstatus = TRUE;
 struct pfdata pfdata;		/* Packet-Filter state */
 
-struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
+struct in_addr ehost_ip;	/* Emulated guest IP addr, net order */
 struct in_addr ihost_ip;	/* IMP/Native host IP addr, net order */
 struct in_addr ihost_nm;	/* IMP/Native host subnet netmask, net order */
 struct in_addr ihost_net;	/* IMP/Native host net #, net order */
@@ -522,59 +522,59 @@ main(int argc, char **argv)
     /* Initialize various network info */
     net_init(dpimp);
 
+    if (!pfdata.pf_ip4_only) {
+	/* TUN may not have an ethernet address associated with it;
+	    not sure what to do if DPIMP turns out to need one.
+	 */
 
-#if !KLH10_NET_TUN
-    /* TUN may not have an ethernet address associated with it;
-	not sure what to do if DPIMP turns out to need one.
-     */
+	/* See if ether address needs to be set */
+	if (memcmp((void *)&ihost_ea, "\0\0\0\0\0\0", 6) != 0)
+	    eaflags |= EAF_IHOST;
 
-    /* See if ether address needs to be set */
-    if (memcmp((void *)&ihost_ea, "\0\0\0\0\0\0", 6) != 0)
-	eaflags |= EAF_IHOST;
-    switch (eaflags & (EAF_IHOST|EAF_EHOST)) {
-    case 0:
-	efatal(1, "no ethernet address");
-    case EAF_IHOST:
-	break;			/* OK, don't need anything special */
-    case EAF_EHOST:
-	error("couldn't get native ether addr, using specified");
-	ea_set(&ihost_ea, &ehost_ea);
-	break;
-    case EAF_IHOST|EAF_EHOST:
-	if (memcmp((void *)&ihost_ea, (void *)&ehost_ea, 6) == 0)
-	    break;		/* OK, addresses are same */
-	/* Ugh, specified an EA address different from one actually
-	** in use by interface!  For now, don't allow clobberage.
-	*/
-	efatal(1, "changing ethernet addr is disallowed");
-	break;
+	switch (eaflags & (EAF_IHOST|EAF_EHOST)) {
+	case 0:
+	    efatal(1, "no ethernet address");
+	case EAF_IHOST:
+	    break;			/* OK, don't need anything special */
+	case EAF_EHOST:
+	    error("couldn't get native ether addr, using specified");
+	    ea_set(&ihost_ea, &ehost_ea);
+	    break;
+	case EAF_IHOST|EAF_EHOST:
+	    if (memcmp((void *)&ihost_ea, (void *)&ehost_ea, 6) == 0)
+		break;		/* OK, addresses are same */
+	    /* Ugh, specified an EA address different from one actually
+	    ** in use by interface!  For now, don't allow clobberage.
+	    */
+	    efatal(1, "changing ethernet addr is disallowed");
+	    break;
+	}
     }
-#endif /* !KLH10_NET_TUN */
 
     /* Make this a status (rather than debug) printout? */
     if (swstatus) {
 	char ipbuf[OSN_IPSTRSIZ];
 	char eabuf[OSN_EASTRSIZ];
 
-#if !KLH10_NET_TUN
-	dbprintln("ifc \"%s\" => ether %s",
-		  dpimp->dpimp_ifnam,
-		  eth_adrsprint(eabuf, (unsigned char *)&ihost_ea));
-	dbprintln("  inet %s",
-		  ip_adrsprint(ipbuf, (unsigned char *)&ihost_ip));
-	dbprintln("  netmask %s",
-		  ip_adrsprint(ipbuf, (unsigned char *)&ihost_nm));
-	dbprintln("  net %s",
-		  ip_adrsprint(ipbuf, (unsigned char *)&ihost_net));
-	dbprintln("  gwdef %s",
-		  ip_adrsprint(ipbuf, (unsigned char *)&gwdef_ip));
-#else
-	dbprintln("ifc \"%s\"",
-		  dpimp->dpimp_ifnam);
-	dbprintln("  tun %s",
-		  ip_adrsprint(ipbuf, (unsigned char *)&tun_ip));
-#endif
-	dbprintln("  HOST %s",
+	if (pfdata.pf_ip4_only)  {
+	    dbprintln("ifc \"%s\"",
+		      dpimp->dpimp_ifnam);
+	    dbprintln("  tun %s",
+		      ip_adrsprint(ipbuf, (unsigned char *)&tun_ip));
+	} else {
+	    dbprintln("ifc \"%s\" => ether %s",
+		      dpimp->dpimp_ifnam,
+		      eth_adrsprint(eabuf, (unsigned char *)&ihost_ea));
+	    dbprintln("  inet %s",
+		      ip_adrsprint(ipbuf, (unsigned char *)&ihost_ip));
+	    dbprintln("  netmask %s",
+		      ip_adrsprint(ipbuf, (unsigned char *)&ihost_nm));
+	    dbprintln("  net %s",
+		      ip_adrsprint(ipbuf, (unsigned char *)&ihost_net));
+	    dbprintln("  gwdef %s",
+		      ip_adrsprint(ipbuf, (unsigned char *)&gwdef_ip));
+	}
+	dbprintln("  GUEST %s",
 		  ip_adrsprint(ipbuf, (unsigned char *)&ehost_ip));
     }
 
@@ -582,13 +582,13 @@ main(int argc, char **argv)
     ** Set up ARP entry so hardware host knows about our IP address and
     ** can respond to ARP requests for it.
     */
-#if !KLH10_NET_TUN	/* If TUN, already done by osn_pfinit */
-    arp_init(dpimp);
-    if (!osn_arp_stuff(dpimp->dpimp_ifnam,
-		       (unsigned char *)&ehost_ip,
-		       (unsigned char *)&ihost_ea, TRUE))	/* Set us up */
-	esfatal(1, "OSN_ARP_STUFF failed");
-#endif
+    if (!pfdata.pf_ip4_only) {
+	arp_init(dpimp);
+	if (!osn_arp_stuff(dpimp->dpimp_ifnam,
+			   (unsigned char *)&ehost_ip,
+			   (unsigned char *)&ihost_ea, TRUE))	/* Set us up */
+	    esfatal(1, "OSN_ARP_STUFF failed");
+    }
 
     /* Now start up a child process to handle input */
     if (DBGFLG)
@@ -630,89 +630,104 @@ void
 net_init(struct dpimp_s *dpimp)
 {
     struct ifreq ifr;
+    char *ifnam_for_ipaddr;	/* which interface to ask IP addr/netmask */
 
-#if !KLH10_NET_TUN
+    if (osn_iftab_init() <= 0)
+	esfatal(0, "Couldn't find interface information");
 
-#if 1 /* This code is identical to dpni20 - merge in osdnet? */
+    if (strcmp(dpimp->dpimp_ifmeth, "pcap") != 0) {
+	/*
+	 * TUN or TAP or TAP+BRIDGE method.
+	 * It is horrible to look at ifmeth; we would really like to
+	 * look at something that tells us if the given interface name
+	 * is one that the host uses for external communications.
+	 */
+	struct ifent *ife = osn_ipdefault();
+	if (!ife)
+	    esfatal(0, "Couldn't find default interface");
+	ifnam_for_ipaddr = ife->ife_name;
+    } else {
+	/* PCAP method */
+#if 1	/* This code is identical to dpni20 - merge in osdnet? */
 
-    /* Ensure network device name, if specified, isn't too long */
-    if (dpimp->dpimp_ifnam[0] && (strlen(dpimp->dpimp_ifnam)
-		>= sizeof(ifr.ifr_name))) {
-	esfatal(0, "interface name \"%s\" too long - max %d",
-		dpimp->dpimp_ifnam, (int)sizeof(ifr.ifr_name));
-    }
-
-    /* Determine network device to use, if none was specified (this only
-    ** works for shared devices, as dedicated ones will be "down" and
-    ** cannot be found by iftab_init).
-    ** Also grab native IP and ethernet addresses, if ARP might need them.
-    */
-    if ((!dpimp->dpimp_ifnam[0] && !dpimp->dpimp_dedic)
-      || (dpimp->dpimp_doarp & DPIMP_ARPF_OCHK)) {
-	if (osn_iftab_init() <= 0)
-	    esfatal(0, "Couldn't find interface information");
-
-	/* Found at least one!  Pick first one, if a default is needed. */
-	if (!dpimp->dpimp_ifnam[0]) {
-	    struct ifent *ife = osn_ipdefault();
-	    if (!ife)
-		esfatal(0, "Couldn't find default interface");
-	    if (strlen(ife->ife_name) >= sizeof(dpimp->dpimp_ifnam))
-		esfatal(0, "Default interface name \"%s\" too long, max %d",
-		    ife->ife_name, (int)sizeof(dpimp->dpimp_ifnam));
-
-	    strcpy(dpimp->dpimp_ifnam, ife->ife_name);
-	    if (swstatus)
-		dbprintln("Using default interface \"%s\"", dpimp->dpimp_ifnam);
+	/* Ensure network device name, if specified, isn't too long */
+	if (dpimp->dpimp_ifnam[0] && (strlen(dpimp->dpimp_ifnam)
+		    >= sizeof(ifr.ifr_name))) {
+	    esfatal(0, "interface name \"%s\" too long - max %d",
+		    dpimp->dpimp_ifnam, (int)sizeof(ifr.ifr_name));
 	}
+
+	/* Determine network device to use, if none was specified (this only
+	** works for shared devices, as dedicated ones will be "down" and
+	** cannot be found by iftab_init).
+	** Also grab native IP and ethernet addresses, if ARP might need them.
+	*/
+	if ((!dpimp->dpimp_ifnam[0] && !dpimp->dpimp_dedic)
+	  || (dpimp->dpimp_doarp & DPIMP_ARPF_OCHK)) {
+	    /* Found at least one!  Pick first one, if a default is needed. */
+	    if (!dpimp->dpimp_ifnam[0]) {
+		struct ifent *ife = osn_ipdefault();
+		if (!ife)
+		    esfatal(0, "Couldn't find default interface");
+		if (strlen(ife->ife_name) >= sizeof(dpimp->dpimp_ifnam))
+		    esfatal(0, "Default interface name \"%s\" too long, max %d",
+			ife->ife_name, (int)sizeof(dpimp->dpimp_ifnam));
+
+		strcpy(dpimp->dpimp_ifnam, ife->ife_name);
+		if (swstatus)
+		    dbprintln("Using default interface \"%s\"", dpimp->dpimp_ifnam);
+	    }
+
+	    ifnam_for_ipaddr = dpimp->dpimp_ifnam;
+	}
+#endif /* 1 */
     }
-#endif
-
-    /* Now set remaining stuff */
-
-    /* Find IMP host's IP address for this interface */
-    if (!osn_ifipget(-1, dpimp->dpimp_ifnam, (unsigned char *)&ihost_ip)) {
-	efatal(1,"osn_ifipget failed for \"%s\"", dpimp->dpimp_ifnam);
-    }
-
-    /* Ditto for its network mask */
-    if (!osn_ifnmget(-1, dpimp->dpimp_ifnam, (unsigned char *)&ihost_nm)) {
-	efatal(1,"osn_ifnmget failed for \"%s\"", dpimp->dpimp_ifnam);
-    }
-
-    /* Now set remaining stuff */
-    ihost_net.s_addr = ihost_nm.s_addr & ihost_ip.s_addr;	/* Local net */
-
-    /* Either move this check up much earlier, or find a way to
-    ** query OS for a default gateway.
-    */
-    if (gwdef_ip.s_addr == -1 || gwdef_ip.s_addr == 0)
-	efatal(1, "No default prime gateway specified");
-
-#endif /* !KLH10_NET_TUN */
 
     /* Set up appropriate net fd and packet filter.
     ** Should also determine interface's ethernet addr, if possible,
     ** and set ihost_ea.
     */
-  {
-    struct osnpf npf;
+    {
+	struct osnpf npf;		/* Configuration data */
 
-    npf.osnpf_ifnam = dpimp->dpimp_ifnam;
-    npf.osnpf_ifmeth = dpimp->dpimp_ifmeth;
-    npf.osnpf_dedic = FALSE;			/* Force filtering always! */
-    npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
-    npf.osnpf_backlog = dpimp->dpimp_backlog;
-    npf.osnpf_ip.ia_addr = ehost_ip;
-    npf.osnpf_tun.ia_addr = tun_ip;
-    /* Ether addr is both a potential arg and a returned value;
-       the packetfilter open may use and/or change it.
-    */
-    ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);	/* Set requested ea if any */
-    osn_pfinit(&pfdata, &npf, (void *)dpimp);	/* Will abort if fails */
-    ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea if one */
-    tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
-  }
+	npf.osnpf_ifnam = dpimp->dpimp_ifnam;
+	npf.osnpf_ifmeth = dpimp->dpimp_ifmeth;
+	npf.osnpf_dedic = FALSE;		/* Force filtering always! */
+	npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
+	npf.osnpf_backlog = dpimp->dpimp_backlog;
+	npf.osnpf_ip.ia_addr = ehost_ip;
+	npf.osnpf_tun.ia_addr = tun_ip;
+	/* Ether addr is both a potential arg and a returned value;
+	   the packetfilter open may use and/or change it.
+	   */
+	ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);/* Set requested ea if any */
+	osn_pfinit(&pfdata, &npf, (void *)dpimp);/* Will abort if fails */
+	ea_set(&ihost_ea, &npf.osnpf_ea);	/* Copy actual ea if one */
+	tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
+    }
+
+    if (!pfdata.pf_ip4_only) {
+	/* Now set remaining stuff */
+
+	/* Find IMP host's IP address for this interface */
+	if (!osn_ifipget(-1, ifnam_for_ipaddr, (unsigned char *)&ihost_ip)) {
+	    efatal(1,"osn_ifipget failed for \"%s\"", dpimp->dpimp_ifnam);
+	}
+
+	/* Ditto for its network mask */
+	if (!osn_ifnmget(-1, ifnam_for_ipaddr, (unsigned char *)&ihost_nm)) {
+	    efatal(1,"osn_ifnmget failed for \"%s\"", dpimp->dpimp_ifnam);
+	}
+
+	/* Now set remaining stuff */
+	ihost_net.s_addr = ihost_nm.s_addr & ihost_ip.s_addr;	/* Local net */
+
+	/* Either move this check up much earlier, or find a way to
+	** query OS for a default gateway.
+	*/
+	if (gwdef_ip.s_addr == -1 || gwdef_ip.s_addr == 0)
+	    efatal(1, "No default prime gateway specified");
+    }
 }
 
 /* The DPIMP packet filter must implement the following test:
@@ -1452,8 +1467,11 @@ imptohost(struct dpimp_s *dpimp)
 	 * manual check to each and every packet read, even if dedicated.
 	 */
 	if (!pfdata.pf_can_filter) {
-	    if (!lnx_filter(dpimp, buffp, cnt))
+	    if (!lnx_filter(dpimp, buffp, cnt)) {
+		if (DBGFLG)
+		    dbprint("Dropped");
 		continue;		/* Drop packet, continue reading */
+	    }
 	}
 
 	if (!pfdata.pf_ip4_only) {
@@ -1652,22 +1670,27 @@ hosttoimp(struct dpimp_s *dpimp)
 				buff[SIH_HSIZ+SIL_LNK]);
 		continue;
 	    }
-#if KLH10_NET_TUN
-	    if (DBGFLG)
-		dbprintln("net out = %d", rcnt - (SIH_HSIZ+SI_LDRSIZ));
-	    if (osn_pfwrite(&pfdata, &buff[SIH_HSIZ+SI_LDRSIZ],
-		      rcnt - (SIH_HSIZ+SI_LDRSIZ)) < 0)
-		syserr(errno, "tun write() failed");
-	    else {
-#else
-	    if (hi_iproute(&ipdest, &buff[SIH_HSIZ], rcnt - SIH_HSIZ)) {
-		ip_write(&ipdest, &buff[SIH_HSIZ+SI_LDRSIZ],
-					rcnt - (SIH_HSIZ+SI_LDRSIZ));
-#endif
+	    int res = -1;	/* Assume error */
+	    if (pfdata.pf_ip4_only) {
+		if (DBGFLG)
+		    dbprintln("net out = %d", rcnt - (SIH_HSIZ+SI_LDRSIZ));
+		if (osn_pfwrite(&pfdata, &buff[SIH_HSIZ+SI_LDRSIZ],
+			  rcnt - (SIH_HSIZ+SI_LDRSIZ)) < 0) {
+		    syserr(errno, "tun write() failed");
+		} else {
+		    res = 0;
+		}
+	    } else {
+		if (hi_iproute(&ipdest, &buff[SIH_HSIZ], rcnt - SIH_HSIZ)) {
+		    ip_write(&ipdest, &buff[SIH_HSIZ+SI_LDRSIZ],
+					    rcnt - (SIH_HSIZ+SI_LDRSIZ));
+		    res = 0;
+		}
+	    }
 #if !SICONF_SIMP
 # error	"Too hard to implement non-Simple IMP model!"
 # if 0
-	    {	int res;
+	    if (res == 0) {
 		/* IP packet sent out to net, now send RFNM to host */
 		buff[SIH_HSIZ+SIL_TYP] = SIMT_RFNM;
 		buff[2] = 0;		/* High byte of count */
@@ -1680,7 +1703,6 @@ hosttoimp(struct dpimp_s *dpimp)
 	    }
 # endif
 #endif
-	    }
 	    break;
 
 	case SIMT_LERR:	/* Error in leader: err in previous IMP-to-Host ldr */
@@ -1798,7 +1820,6 @@ ether_write(struct eth_header *hp,
 	    unsigned char *pp,
 	    int cnt)
 {
-#if KLH10_NET_PCAP || KLH10_NET_TAP_BRIDGE
     char *buf = (char *)(pp - ETHER_HDRSIZ);
 
     if (DP_DBGFLG)
@@ -1810,12 +1831,6 @@ ether_write(struct eth_header *hp,
 	/* What to do here?  For debugging, complain but return. */
 	error("write failed - %s", dp_strerror(errno));
     }
-
-#elif KLH10_NET_TUN
-    /* No code needed here -- routine never used */
-#else
-# error "No implementation for ether_write()"
-#endif
 }
 
 

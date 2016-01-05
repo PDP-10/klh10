@@ -497,7 +497,6 @@ void net_init(struct dpni20_s *dpni)
     /* Set up packet filter.  This also returns in "ihost_ea"
        the ethernet address for the selected interface.
     */
-  {
 
     npf.osnpf_ifnam = dpni->dpni_ifnam;
     npf.osnpf_ifmeth = dpni->dpni_ifmeth;
@@ -513,7 +512,6 @@ void net_init(struct dpni20_s *dpni)
     osn_pfinit(&pfdata, &npf, (void *)dpni);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea */
     tun_ip = npf.osnpf_tun.ia_addr;		/* Get actual tunnel addr */
-  }
 
 
     /* Now set any return info values in shared struct.

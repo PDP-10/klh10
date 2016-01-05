@@ -276,7 +276,7 @@
 #endif
 
 #if !HAVE_LIBPCAP && !HAVE_GETIFADDRS
-#error "Sorry, can't lookup ethernet interfaces without libpcap or getifaddrs(3)"
+#error "Sorry, can't lookup ethernet interfaces without getifaddrs(3) or libpcap"
 #endif
 
 /* Interface table entry.
