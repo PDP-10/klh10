@@ -973,7 +973,7 @@ void eth_mcatset(struct dpni20_s *dpni)
 	n = DPNI_MCAT_SIZ;
     for (i = 0; i < nmcats; ++i) {
 	for (j = 0; j < n; ++j) {
-	    if (memcmp(ethmcat[i], dpni->dpni_mcat[j], 6) == 0)
+	    if (ea_cmp(ethmcat[i], dpni->dpni_mcat[j]) == 0)
 		break;
 	}
 	if (j < n)
@@ -996,7 +996,7 @@ void eth_mcatset(struct dpni20_s *dpni)
     */
     for (j = 0; j < n; ++j) {
 	for (i = 0; i < nmcats; ++i) {
-	    if (memcmp(ethmcat[i], dpni->dpni_mcat[j], 6) == 0)
+	    if (ea_cmp(ethmcat[i], dpni->dpni_mcat[j]) == 0)
 		break;
 	}
 	if (j < n)
@@ -1144,7 +1144,9 @@ int arp_myreply(unsigned char *buf, int cnt)
      */
     (void)osn_pfwrite(&pfdata, pktbuf, sizeof(pktbuf));
 #else
-    /* ARP reply packet, pass to 10 via DPC */
+    /* ARP reply packet, pass to 10 via DPC.
+     * Can we do that? We're not the process which normally does that...
+     */
     struct dpx_s *dpx;
     unsigned char *buff;
     size_t max;
@@ -1307,7 +1309,7 @@ void tentoeth(struct dpni20_s *dpni)
 		    fprintf(stderr, "]");
 		}
 		else
-		    dbprint("SPKT %d", progname, rcnt);
+		    dbprint("SPKT %d", rcnt);
 	    }
 	    if (doarpchk			/* If must check ARPs */
 	      && arp_reqcheck(buff, rcnt)	/* and this is an ARP req */

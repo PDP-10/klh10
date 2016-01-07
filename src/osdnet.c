@@ -1714,7 +1714,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	if (DP_DBGFLG)
 	    dbprintln("running \"%s\"",cmdbuff);
 	if ((res = system(cmdbuff)) != 0) {
-	    esfatal(1, "osn_pfinit: ifconfig failed to initialize tunnel device?");
+	    esfatal(1, "osn_pfinit_tuntap: ifconfig failed to initialize tunnel device?");
 	}
     }
 #else /* not CENV_SYS_LINUX */
@@ -1735,7 +1735,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
 	if (ioctl(s, SIOCDIFADDR, &ifr) < 0) {
 	    if (DP_DBGFLG)
-		syserr(errno, "osn_pfinit tun SIOCDIFADDR failed");
+		syserr(errno, "osn_pfinit_tuntap SIOCDIFADDR failed; usual for new interfaces.");
 	}
 
 	if (pfdata->pf_ip4_only) {
@@ -1751,7 +1751,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_family = AF_INET;
 	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_addr   = ipremote;
 	    if (ioctl(s, SIOCAIFADDR, &ifra) < 0) {
-		esfatal(1, "osn_pfinit tun SIOCAIFADDR failed");
+		esfatal(1, "osn_pfinit_tuntap SIOCAIFADDR failed");
 	    }
 	}
 
@@ -1759,15 +1759,13 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	   Note interface name is still there from the SIOCDIFADDR.
 	   */
 	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
-	    esfatal(1, "osn_pfinit tun SIOCGIFFLAGS failed");
+	    esfatal(1, "osn_pfinit_tuntap SIOCGIFFLAGS failed");
 	}
 	if (!(ifr.ifr_flags & IFF_UP)) {
 	    ifr.ifr_flags |= IFF_UP;
 	    if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
-		esfatal(1, "osn_pfinit tun SIOCSIFFLAGS failed");
+		esfatal(1, "osn_pfinit_tuntap SIOCSIFFLAGS failed");
 	    }
-	    if (DP_DBGFLG)
-		dbprint("osn_pfinit tun did SIOCSIFFLAGS");
 	}
     }
 #endif /* CENV_SYS_LINUX */
