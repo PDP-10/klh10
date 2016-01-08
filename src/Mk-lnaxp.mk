@@ -28,7 +28,6 @@ CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 
 # Source definitions
 CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_LINUX=1 -DKLH10_DEV_LITES=1 \
-		-DKLH10_NET_TUN=1 \
 		-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 
 # Any target with no customized rule here is simply passed on to the

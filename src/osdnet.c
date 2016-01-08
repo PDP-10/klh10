@@ -17,7 +17,7 @@
 */
 
 /*	This file, like DPSUP.C, is intended to be included directly
-    into source code rather than compiled separately and then linked 
+    into source code rather than compiled separately and then linked
     together.  The reason for this is that the actual configuration
     of code will vary depending on its intended use, so a single .o
     file cannot satisfy all programs.
@@ -25,6 +25,8 @@
 
 #include <unistd.h>	/* For basic Unix syscalls */
 #include <stdlib.h>
+#include <ctype.h>
+#include <time.h>
 
 /* The possible configuration macro definitions, with defaults:
  */
@@ -36,14 +38,14 @@
 # include "osdnet.h"	/* Insurance to make sure our defs are there */
 #endif
 
-#if KLH10_NET_TAP
+#if KLH10_NET_TAP && (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
 #include <net/if_tap.h>
 #endif
 
 /* Local predeclarations */
 
 struct ifent *osn_iflookup(char *ifnam);
-static struct ifent *osn_iftab_addaddress(char *name, struct sockaddr *addr);
+static struct ifent *osn_iftab_addaddress(char *name, struct sockaddr *addr, struct sockaddr *mask);
 
 #if KLH10_NET_PCAP
 static void osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg);
@@ -60,7 +62,10 @@ static int osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes)
 #if KLH10_NET_BRIDGE
 struct tuntap_context;
 void bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf);
+void tap_bridge_close(struct tuntap_context *tt_ctx);
 #endif
+static void osn_iff_up(int s, char *ifname);
+static void osn_iff_down(int s, char *ifname);
 
 /* Get a socket descriptor suitable for general net interface
    examination and manipulation; this is not necessarily suitable for
@@ -101,7 +106,7 @@ ip_adrsprint(char *cp, unsigned char *ia)
 **	Gets info about all net interfaces known to the native system.
 **	Used for several purposes, hence fairly general.
 **	This table is used as much as possible, instead of using
-**	system specific lookup 
+**	system specific lookup
 **	A sticky point remains the ethernet addresses. They may or may
 **	not be reported, and if they are it is in a system specific way.
 **	Therefore we need to keep the system-specific functions for that.
@@ -154,7 +159,8 @@ osn_iftab_init(void)
     while (ifp) {
 	if (!ifp->ifa_name)
 	    continue;
-	ife = osn_iftab_addaddress(ifp->ifa_name, ifp->ifa_addr);
+	ife = osn_iftab_addaddress(ifp->ifa_name,
+				   ifp->ifa_addr, ifp->ifa_netmask);
 
 	if (ife) {
 	    ife->ife_flags = ifp->ifa_flags;
@@ -199,7 +205,8 @@ osn_iftab_init(void)
 	addr = alldevs->addresses;
 
 	while (addr) {
-	    ife = osn_iftab_addaddress(alldevs->name, addr->addr);
+	    ife = osn_iftab_addaddress(alldevs->name,
+				       addr->addr, addr->netmask);
 	    addr = addr->next;
 	}
 
@@ -243,7 +250,7 @@ osn_nifents(void)
  */
 
 static struct ifent *
-osn_iftab_addaddress(char *name, struct sockaddr *addr)
+osn_iftab_addaddress(char *name, struct sockaddr *addr, struct sockaddr *mask)
 {
     struct ifent *ife;
     int i;
@@ -279,6 +286,9 @@ osn_iftab_addaddress(char *name, struct sockaddr *addr)
 	    struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 	    ife->ife_ipia = sin->sin_addr;
 	    ife->ife_gotip4 = TRUE;
+	    if (mask) {
+		ife->ife_nmia = ((struct sockaddr_in *)mask)->sin_addr;
+	    }
 	    break;
 		      }
 #if defined(AF_LINK)
@@ -318,6 +328,9 @@ osn_iftab_show(FILE *f, struct ifent *ifents, int nents)
 	if (ife->ife_gotip4) {
 	    unsigned char *ucp = ife->ife_ipchr;
 	    fprintf(f, " (IP %d.%d.%d.%d)",
+		    ucp[0], ucp[1], ucp[2], ucp[3]);
+	    ucp = ife->ife_nmchr;
+	    fprintf(f, " (Netmask %d.%d.%d.%d)",
 		    ucp[0], ucp[1], ucp[2], ucp[3]);
 	}
 	if (ife->ife_gotea) {
@@ -431,6 +444,51 @@ osn_ifealookup(char *ifnam,		/* Interface name */
     }
     return FALSE;
 }
+
+/* OSN_IFNMLOOKUP - Find IPv4 address, barf if not in our table.
+ */
+int
+osn_ifiplookup(char *ifnam,		/* Interface name */
+	       unsigned char *ipa)	/* Where to write netmask */
+{
+    struct ifent *ife;
+
+    if (ife = osn_iflookup(ifnam)) {
+	if (ife->ife_gotip4) {
+	    char ipstr[OSN_IPSTRSIZ];
+
+	    memcpy(ipa, ife->ife_ipchr, IP_ADRSIZ);
+	    if (DP_DBGFLG)
+		dbprintln("IP addr for \"%s\" = %s",
+			  ifnam, ip_adrsprint(ipstr, ipa));
+	    return TRUE;
+	}
+    }
+    return FALSE;
+}
+
+/* OSN_IFNMLOOKUP - Find netmask, barf if not in our table.
+ *	Only needed for IMP, not NI20.
+ */
+int
+osn_ifnmlookup(char *ifnam,		/* Interface name */
+	       unsigned char *ipa)	/* Where to write netmask */
+{
+    struct ifent *ife;
+
+    if (ife = osn_iflookup(ifnam)) {
+	if (ife->ife_gotip4) {
+	    char ipstr[OSN_IPSTRSIZ];
+
+	    memcpy(ipa, ife->ife_nmchr, IP_ADRSIZ);
+	    if (DP_DBGFLG)
+		dbprintln("IP netmask for \"%s\" = %s",
+			  ifnam, ip_adrsprint(ipstr, ipa));
+	    return TRUE;
+	}
+    }
+    return FALSE;
+}
 
 /* OSN_ARP_STUFF - stuff emulated-host ARP entry into kernel.
 **	Note it isn't necessary to specify an interface!
@@ -445,7 +503,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
     char eabuf[OSN_EASTRSIZ];
 
     if (DP_DBGFLG) {
-	dbprintln("Set up ARP: %s %s %s", 
+	dbprintln("Set up ARP: %s %s %s",
 			ip_adrsprint(ipbuf, ipa),
 			eth_adrsprint(eabuf, eap),
 			(pubf ? "pub" : ""));
@@ -465,7 +523,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
      * that interface, then we reply only if it asks who has an IP address
      * assigned to that interface.  In that case we reply that this IP
      * address is at the MAC address of the receiving interface.
-     * 
+     *
      * If, however, proxy_arp is ON at that interface, then we check the
      * routing table (here things get a little fuzzy, since in reality the
      * routing can depend on all sorts of things other than the destination
@@ -519,7 +577,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
     arq.arp_pa.sa_family = AF_INET;		/* Protocol addr is IP type */
     memcpy(					/* Copy IP addr */
 	(char *) &((struct sockaddr_in *)&arq.arp_pa)->sin_addr,
-	ipa, sizeof(struct in_addr)); 
+	ipa, sizeof(struct in_addr));
     arq.arp_ha.sa_family = AF_UNSPEC;		/* Hardware addr is Ether */
     ea_set(arq.arp_ha.sa_data, eap);		/* Copy Ether addr */
 
@@ -528,7 +586,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
     if (pubf)
 	arq.arp_flags |= ATF_PUBL;		/* Publish it for us too! */
 
-#if CENV_SYS_LINUX
+#if 0 && CENV_SYS_LINUX
     /*
      * Fill in the name of the interface from which we expect the
      * requests.
@@ -604,6 +662,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
 #endif /* NETIF_HAS_ARPIOCTL, CENV_SYS_XBSD, or else */
 }
 
+#if 0
 /* OSN_IFIPGET - get IP address for a given interface name.
  *	This is separate from osn_ifiplook() in case iftab_init
  *	screws up for some ports.
@@ -644,7 +703,9 @@ osn_ifipget(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 		  ifnam, ip_adrsprint(ipstr, ipa));
     return TRUE;
 }
+#endif /* 0 */
 
+#if 0
 /* OSN_IFNMGET - get IP netmask for a given interface name.
  *	Only needed for IMP, not NI20.
 */
@@ -684,6 +745,7 @@ osn_ifnmget(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 		  ifnam, ip_adrsprint(ipstr, ipa));
     return TRUE;
 }
+#endif /* 0 */
 
 
 /* OSN_IFEAGET2 - get physical ethernet address for a given interface name.
@@ -739,8 +801,8 @@ osn_ifeaget2(char *ifnam,	/* Interface name */
 	char ipstr[OSN_IPSTRSIZ];
 
 	/* Get IP address for this interface, as an argument for ARP lookup */
-	if (!osn_ifipget(-1, ifnam, ipchr)) {
-	    error("Can't get EN addr for \"%s\": osn_ifipget failed", ifnam);
+	if (!osn_ifiplookup(ifnam, ipchr)) {
+	    error("Can't get EN addr for \"%s\": osn_ifiplookup failed", ifnam);
 	    return FALSE;
 	}
 
@@ -1077,7 +1139,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 
 #else
 # ifdef __GNUC__
-#  if CENV_SYS_NETBSD	/* As of 1.6 NetBSD STILL has no way to do this */ 
+#  if CENV_SYS_NETBSD	/* As of 1.6 NetBSD STILL has no way to do this */
 #   warning "NetBSD still sucks - Unimplemented OS routine osn_ifeaset()"
 #  else
 #   warning "Unimplemented OS routine osn_ifeaset()"
@@ -1213,7 +1275,7 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 	return osn_pfinit_pcap(pfdata, osnpf, pfarg);
     }
 #endif /* KLH10_NET_PCAP */
-    
+
 }
 
 ssize_t
@@ -1433,9 +1495,12 @@ osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 struct tuntap_context {
     int my_tap;
     char saved_ifnam[IFNAM_LEN];
-#if KLH10_NET_BRIDGE
+#if KLH10_NET_BRIDGE && CENV_SYS_NETBSD
     struct ifreq br_ifr;
     struct ifreq tap_ifr;
+#endif
+#if KLH10_NET_BRIDGE && CENV_SYS_LINUX
+    char br_name[IFNAM_LEN];
 #endif
 };
 
@@ -1602,7 +1667,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	 exist, if there is no hardware interface)
       */
       if (allowextern) {
-	  if (osn_iftab_init() && (ife = osn_ipdefault())) {
+	  if ((ife = osn_ipdefault())) {
 	      iplocal = ife->ife_ipia;
 	  } else {
 	      error("Cannot find default IP interface for host");
@@ -1756,17 +1821,8 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	}
 
 	/* Finally, turn on IFF_UP just in case the above didn't do it.
-	   Note interface name is still there from the SIOCDIFADDR.
-	   */
-	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
-	    esfatal(1, "osn_pfinit_tuntap SIOCGIFFLAGS failed");
-	}
-	if (!(ifr.ifr_flags & IFF_UP)) {
-	    ifr.ifr_flags |= IFF_UP;
-	    if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
-		esfatal(1, "osn_pfinit_tuntap SIOCSIFFLAGS failed");
-	    }
-	}
+	 */
+	osn_iff_up(s, ifnam);
     }
 #endif /* CENV_SYS_LINUX */
 
@@ -1826,8 +1882,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	   ether addr.
 	 */
 
-	/* Return that as our ether address */
-	//ea_set((char *)&osnpf->osnpf_ea, ife->ife_ea); // no, use emhost_ea as set up above
+	/* Use emhost_ea as set up above */
     } else {
 	/* ARP hackery will be handled by IP masquerading and packet forwarding. */
 #if 1 /*OSN_USE_IPONLY*/ /* TOPS-20 does not like NI20 with made up address? */
@@ -1870,52 +1925,12 @@ void
 osn_pfdeinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf)
 {
 #if KLH10_NET_BRIDGE
-    void tap_bridge_close(struct tuntap_context *tt_ctx);
     tap_bridge_close(&tt_ctx);
 #endif /* KLH10_NET_BRIDGE */
     struct tuntap_context *tt_ctx = pfdata->pf_handle;
 
     strncpy(osnpf->osnpf_ifnam, tt_ctx->saved_ifnam, IFNAM_LEN);
 }
-#endif /* KLH10_NET_TUN */
-
-#if KLH10_NET_TAP_BRIDGE /* This part does nto work any more */
-
-void
-osn_pfinittap_bridge(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
-{
-    int fd;
-    char *ifnam = osnpf->osnpf_ifnam;
-
-    if (DP_DBGFLG)
-	dbprint("Opening TAP+BRIDGE device");
-
-    /* No "default interface" concept here */
-    if (!ifnam || !ifnam[0])
-	esfatal(1, "Packetfilter interface must be specified");
-
-    fd = tap_bridge_open(ifnam);
-
-    /*
-     * Now get our fresh new virtual interface's ethernet address.
-     */
-    (void) osn_pfeaget(fd, ifnam, (unsigned char *)&(osnpf->osnpf_ea));
-
-    struct ifent *ife = osn_ifcreate(ifnam);
-    if (ife) {
-	ife->ife_flags = IFF_UP;
-	ea_set(ife->ife_ea, (unsigned char *)&osnpf->osnpf_ea);
-	ife->ife_gotea = TRUE;
-    }
-
-    pfdata->pf_fd = fd;
-    pfdata->pf_handle = 0;
-    pfdata->pf_can_filter = FALSE;
-}
-
-#endif /* KLH10_NET_TAP_BRIDGE */
-
-#if KLH10_NET_TAP || KLH10_NET_TUN
 
 /*
  * Like the standard read(2) call:
@@ -1992,19 +2007,8 @@ pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf
     }
 
     /* Finally, turn on IFF_UP just in case the above didn't do it.
-       Note interface name is still there from the SIOCIFCREATE.
      */
-    if (ioctl(s, SIOCGIFFLAGS, &tt_ctx->tap_ifr) < 0) {
-	esfatal(1, "pfopen_create tap SIOCGIFFLAGS failed");
-    }
-    if (!(tt_ctx->tap_ifr.ifr_flags & IFF_UP)) {
-	tt_ctx->tap_ifr.ifr_flags |= IFF_UP;
-	if (ioctl(s, SIOCSIFFLAGS, &tt_ctx->tap_ifr) < 0) {
-	    esfatal(1, "pfopen_create tap SIOCSIFFLAGS failed");
-	}
-	if (DP_DBGFLG)
-	    dbprint("pfopen_create tap did SIOCSIFFLAGS");
-    }
+    osn_iff_up(s, ifnam);
 
     /*
      * Combine basename with the unit number from the ifnam.
@@ -2030,6 +2034,7 @@ pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf
 #endif /* CENV_SYS_NETBSD */
 
 #if KLH10_NET_BRIDGE
+#if (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
 
 #include <net/if_bridgevar.h>
 
@@ -2048,7 +2053,10 @@ bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 	}
 
 	for (i = 0; i < 1000; i++) {
-	    /* try to create bridge%d */
+	    /*
+	     * Try to create bridge%d. The name is fixed since
+	     * the type is derived from the name.
+	     */
 	    memset(&tt_ctx->br_ifr, 0, sizeof(tt_ctx->br_ifr));
 	    sprintf(tt_ctx->br_ifr.ifr_name, "bridge%d", i);
 	    res = ioctl(s, SIOCIFCREATE, &tt_ctx->br_ifr);
@@ -2092,13 +2100,139 @@ tap_bridge_close(struct tuntap_context *tt_ctx)
 
 	/* Destroy bridge */
 	res = ioctl(s, SIOCIFDESTROY, &tt_ctx->br_ifr);
+	/* Destroy tap */
 	res = ioctl(s, SIOCIFDESTROY, &tt_ctx->tap_ifr);
 
 	close(s);
     }
 }
 
-#endif /* KLH10_NET_TAP */
+#elif CENV_SYS_LINUX
+
+#include <linux/sockios.h>
+
+void
+bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
+{
+    int res;
+    char cmdbuff[128];
+    struct ifreq ifr;
+    struct ifent *ife;
+    int s;
+    int i;
+
+    if (tt_ctx->my_tap) {
+	if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
+	    esfatal(1, "bridge_create: socket() failed");
+	}
+
+	for (i = 0; i < 1000; i++) {
+	    /* try to create kn10br%d. Linux has free choice in names. */
+	    memset(tt_ctx->br_name, 0, sizeof(tt_ctx->br_name));
+	    snprintf(tt_ctx->br_name, IFNAM_LEN, "kn10br%d", i);
+	    res = ioctl(s, SIOCBRADDBR, tt_ctx->br_name);
+	    if (res == 0)
+		break;
+	    if (errno != EEXIST)
+		esfatal(1, "bridge_create: can't create bridge \"%s\"?", tt_ctx->br_name);
+	}
+
+	/* Finally, turn on IFF_UP just in case the above didn't do it.
+	 * We MUST do this, otherwise the network traffic to/from
+	 * the other interface is blocked!
+	 */
+	osn_iff_up(s, tt_ctx->br_name);
+	dbprintln("Created bridge \"%s\"", tt_ctx->br_name);
+
+	/*
+	 * Find default IP interface to bridge with.
+	 * It might find the wrong one if there is more than one.
+	 */
+
+	ife = osn_ipdefault();
+	if (!ife)
+	    esfatal(0, "Couldn't find default interface");
+
+	if (swstatus)
+	    dbprintln("Bridging with default interface \"%s\"", ife->ife_name);
+
+	sprintf(cmdbuff, "/sbin/brctl addif %s %s",
+		tt_ctx->br_name, ife->ife_name);
+	res = system(cmdbuff);
+	dbprintln("%s => %d", cmdbuff, res);
+
+	sprintf(cmdbuff, "/sbin/brctl addif %s %s",
+		tt_ctx->br_name, osnpf->osnpf_ifnam);
+	res = system(cmdbuff);
+	dbprintln("%s => %d", cmdbuff, res);
+
+	close(s);
+    }
+}
+
+void
+tap_bridge_close(struct tuntap_context *tt_ctx)
+{
+    if (tt_ctx->my_tap) {
+	int s, res;
+
+	if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
+	    esfatal(1, "tap_bridge_close: socket() failed");
+	}
+
+	/* Bridge must be down to be destroyed */
+	osn_iff_down(s, tt_ctx->br_name);
+
+	/* Destroy bridge */
+	res = ioctl(s, SIOCBRDELBR, tt_ctx->br_name);
+
+	close(s);
+    }
+}
+
+#endif /* CENV_SYS_* */
+#endif /* KLH10_NET_BRIDGE */
+
+/*
+ * Bring some interface UP, if it is not already.
+ */
+static void osn_iff_up(int s, char *ifname)
+{
+    struct ifreq ifr;
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+    if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
+	esfatal(1, "osn_iff_up SIOCGIFFLAGS %S failed", ifname);
+    }
+
+    if (!(ifr.ifr_flags & IFF_UP)) {
+	ifr.ifr_flags |= IFF_UP;
+	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
+	    esfatal(1, "osn_iff_up SIOCSIFFLAGS %S failed", ifname);
+	}
+    }
+}
+
+static void osn_iff_down(int s, char *ifname)
+{
+    struct ifreq ifr;
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+    if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
+	esfatal(1, "osn_iff_up SIOCGIFFLAGS %S failed", ifname);
+    }
+
+    if (ifr.ifr_flags & IFF_UP) {
+	ifr.ifr_flags ^= IFF_UP;
+	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
+	    esfatal(1, "osn_iff_up SIOCSIFFLAGS %S failed", ifname);
+	}
+    }
+}
 
 #if KLH10_NET_DLPI
 

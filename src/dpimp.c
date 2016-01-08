@@ -710,13 +710,13 @@ net_init(struct dpimp_s *dpimp)
 	/* Now set remaining stuff */
 
 	/* Find IMP host's IP address for this interface */
-	if (!osn_ifipget(-1, ifnam_for_ipaddr, (unsigned char *)&ihost_ip)) {
+	if (!osn_ifiplookup(ifnam_for_ipaddr, (unsigned char *)&ihost_ip)) {
 	    efatal(1,"osn_ifipget failed for \"%s\"", dpimp->dpimp_ifnam);
 	}
 
 	/* Ditto for its network mask */
-	if (!osn_ifnmget(-1, ifnam_for_ipaddr, (unsigned char *)&ihost_nm)) {
-	    efatal(1,"osn_ifnmget failed for \"%s\"", dpimp->dpimp_ifnam);
+	if (!osn_ifnmlookup(ifnam_for_ipaddr, (unsigned char *)&ihost_nm)) {
+	    efatal(1,"osn_ifnmlookup failed for \"%s\"", dpimp->dpimp_ifnam);
 	}
 
 	/* Now set remaining stuff */

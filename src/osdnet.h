@@ -296,7 +296,11 @@ struct ifent {
 	union {
 	    struct in_addr ifeu_ia;
 	    unsigned char ifeu_chr[4];
-	} ife_uip;
+	} ife_uip;			/* IPv4 address */
+	union {
+	    struct in_addr ifeu_ia;
+	    unsigned char ifeu_chr[4];
+	} ife_nm;			/* netmask */
 	int ife_gotea;			/* TRUE if E/N addr set */
 	unsigned char ife_ea[6];	/* E/N address */
 };
@@ -304,6 +308,9 @@ struct ifent {
 #define ife_ipint ife_uip.ifeu_ia.s_addr	/* IP address as integer */
 #define ife_ipchr ife_uip.ifeu_chr		/* IP address as bytes */
 
+#define ife_nmia  ife_nm.ifeu_ia		/* netmask as in_addr */
+#define ife_nmint ife_nm.ifeu_ia.s_addr		/* netmask as integer */
+#define ife_nmchr ife_nm.ifeu_chr		/* netmask as bytes */
 
 /* Option arguments to iftab_init */
 #define IFTAB_IPS	0x1	/* Accept IP-bound interface */
@@ -435,6 +442,8 @@ int osn_iftab_arpget(struct in_addr ia, unsigned char *eap);
 
 struct ifent *osn_ifcreate(char *ifnam);
 int osn_ifealookup(char *ifnam, unsigned char *eap);
+int osn_ifiplookup(char *ifnam, unsigned char *ipa);
+int osn_ifnmlookup(char *ifnam, unsigned char *ipa);
 
 #define OSN_EASTRSIZ sizeof("xx:xx:xx:xx:xx:xxZZ")
 char *eth_adrsprint(char *cp, unsigned char *ea);
