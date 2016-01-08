@@ -132,6 +132,8 @@ showdefs:
 #	this can be empty, but hang on to last binary anyway.
 .PRECIOUS: kn10-ks kn10-ks-its kn10-kl
 
+depend:
+	mkdep  $(CFLAGS) $(CFLAGS_AUX) $(CENVFLAGS) *.c
 
 #######################################################################	
 ##
@@ -521,7 +523,9 @@ kl0i-rtmopt:
 
 # --------- RPXX disk drive subprocess
 #
-dprpxx.o: $(SRC)/dprpxx.c $(SRC)/dprpxx.h $(SRC)/dpsup.h $(SRC)/vdisk.c
+dprpxx.o: $(SRC)/dprpxx.c $(SRC)/dprpxx.h $(SRC)/dpsup.h $(SRC)/vdisk.c \
+	    $(SRC)/klh10.h $(SRC)/rcsid.h $(SRC)/cenv.h $(SRC)/word10.h  \
+	    $(SRC)/osdsup.h $(SRC)/vdisk.h
 	$(BUILDMOD) $(SRC)/dprpxx.c
 
 dprpxx: dprpxx.o dpsup.o
@@ -530,7 +534,10 @@ dprpxx: dprpxx.o dpsup.o
 
 # --------- TM03 tape drive subprocess
 #
-dptm03.o: $(SRC)/dptm03.c $(SRC)/dptm03.h $(SRC)/dpsup.h $(SRC)/vmtape.c
+dptm03.o: $(SRC)/dptm03.c $(SRC)/dptm03.h $(SRC)/dpsup.h $(SRC)/vmtape.c \
+	    $(SRC)/klh10.h $(SRC)/rcsid.h $(SRC)/cenv.h \
+	    $(SRC)/osdsup.h $(SRC)/word10.h $(SRC)/prmstr.h \
+	    $(SRC)/dptm03.h $(SRC)/vmtape.h $(SRC)/wfio.h
 	$(BUILDMOD) $(SRC)/dptm03.c
 
 OFILES_DPTM03=dptm03.o dpsup.o wfio.o prmstr.o
@@ -541,7 +548,10 @@ dptm03: $(OFILES_DPTM03)
 
 # --------- NI20 Network Interface subprocess (KL only)
 #
-dpni20.o: $(SRC)/dpni20.c $(SRC)/dpni20.h $(SRC)/dpsup.h
+dpni20.o: $(SRC)/dpni20.c $(SRC)/dpni20.h $(SRC)/dpsup.h \
+	    $(SRC)/klh10.h $(SRC)/rcsid.h $(SRC)/cenv.h \
+	    $(SRC)/osdnet.h $(SRC)/osdsup.h $(SRC)/word10.h \
+	    $(SRC)/osdnet.c
 	$(BUILDMOD) $(SRC)/dpni20.c
 
 dpni20: dpni20.o dpsup.o
@@ -550,7 +560,9 @@ dpni20: dpni20.o dpsup.o
 
 # --------- IMP subprocess (ITS KS only; counterpart for dvlhdh)
 #
-dpimp.o: $(SRC)/dpimp.c $(SRC)/dpimp.h $(SRC)/dpsup.h
+dpimp.o: $(SRC)/dpimp.c $(SRC)/dpimp.h $(SRC)/dpsup.h \
+	    $(SRC)/klh10.h $(SRC)/rcsid.h $(SRC)/cenv.h $(SRC)/osdnet.h \
+	    $(SRC)/dpsup.h $(SRC)/osdsup.h $(SRC)/word10.h  $(SRC)/osdnet.c
 	$(BUILDMOD) $(SRC)/dpimp.c
 
 dpimp: dpimp.o dpsup.o
@@ -637,7 +649,9 @@ enaddr: enaddr.o
 ## Sorted alphabetically.
 ##
 
-dpsup.o: $(SRC)/dpsup.c $(SRC)/dpsup.h
+dpsup.o: $(SRC)/dpsup.c $(SRC)/dpsup.h \
+	    $(SRC)/klh10.h $(SRC)/rcsid.h $(SRC)/cenv.h  \
+	    $(SRC)/osdsup.h $(SRC)/word10.h
 	$(BUILDMOD) $(SRC)/dpsup.c
 
 dvch11.o: $(SRC)/dvch11.c $(SRC)/dvch11.h
