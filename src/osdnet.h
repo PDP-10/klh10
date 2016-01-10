@@ -265,7 +265,7 @@
 
 #define HAVE_GETIFADDRS	1	/* assume this for now */
 #define HAVE_LIBPCAP	1	/* assume this for now */
-#define HAVE_LIBPCAP_SET_IMMEDIATE_MODE 1
+#define HAVE_LIBPCAP_SET_IMMEDIATE_MODE (!CENV_SYS_FREEBSD)
 
 #if HAVE_LIBPCAP
 # undef BPF_MAJOR_VERSION	/* some stupid linux header defines this:

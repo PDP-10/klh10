@@ -440,7 +440,7 @@ osn_ifealookup(char *ifnam,		/* Interface name */
 {
     struct ifent *ife;
 
-    if (ife = osn_iflookup(ifnam)) {
+    if ((ife = osn_iflookup(ifnam))) {
 	if (!ife->ife_gotea) {
 	    ife->ife_gotea = osn_ifeaget2(ifnam, ife->ife_ea);
 	}
@@ -460,7 +460,7 @@ osn_ifiplookup(char *ifnam,		/* Interface name */
 {
     struct ifent *ife;
 
-    if (ife = osn_iflookup(ifnam)) {
+    if ((ife = osn_iflookup(ifnam))) {
 	if (ife->ife_gotip4) {
 	    char ipstr[OSN_IPSTRSIZ];
 
@@ -483,7 +483,7 @@ osn_ifnmlookup(char *ifnam,		/* Interface name */
 {
     struct ifent *ife;
 
-    if (ife = osn_iflookup(ifnam)) {
+    if ((ife = osn_iflookup(ifnam))) {
 	if (ife->ife_gotip4) {
 	    char ipstr[OSN_IPSTRSIZ];
 
@@ -1506,7 +1506,7 @@ osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 struct tuntap_context {
     int my_tap;
     char saved_ifnam[IFNAM_LEN];
-#if KLH10_NET_BRIDGE && CENV_SYS_NETBSD
+#if KLH10_NET_BRIDGE && (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
     struct ifreq br_ifr;
     struct ifreq tap_ifr;
 #endif
