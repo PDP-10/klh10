@@ -394,7 +394,7 @@ main(int argc, char **argv)
     dvo.d_vmt.mt_errhan = errhan;
     dvo.d_vmt.mt_errarg = &dvo.d_vmt;
 
-    if (ret = cmdsget(argc, argv))	/* Parse and handle command line */
+    if ((ret = cmdsget(argc, argv)))	/* Parse and handle command line */
 	exit(ret);
 
 
@@ -673,7 +673,7 @@ cmdsget(int ac, char **av)
     dvi.d_istape = dvo.d_istape = MTYP_NULL;
 
     while (--ac > 0 && (cp = *++av)) {
-	if (arg = strchr(cp, '='))	/* If arg furnished for param, */
+	if ((arg = strchr(cp, '=')))	/* If arg furnished for param, */
 	    *arg++ = '\0';		/* split arg off */
 	if ((plen = strlen(cp)) <= 0)
 	    break;			/* Bad param */
@@ -992,7 +992,7 @@ int devopen(register struct dev *d, int wrtf)
 
 
     /* Set default buffer length */
-    if (d->d_blen = d->d_vmt.mt_tdr.tdmaxrsiz) {
+    if ((d->d_blen = d->d_vmt.mt_tdr.tdmaxrsiz)) {
 	if (d->d_recsiz) {		/* Explicit record size spec? */
 	    if (d->d_blen <= d->d_recsiz)	/* If it's bigger, */
 		d->d_blen = d->d_recsiz;	/* adjust quietly */
@@ -1096,7 +1096,7 @@ int devread(struct dev *d)
 	    return ret;
 	}
 
-	if (d->d_vmt.mt_frames = d->mta_frms) {		/* Read any data? */
+	if ((d->d_vmt.mt_frames = d->mta_frms)) {	/* Read any data? */
 	    d->d_buse = d->mta_frms;	/* Say this much of buffer used */
 	    d->d_iop = d->d_buff;
 	}
@@ -1131,7 +1131,7 @@ int devwrite(struct dev *d, unsigned char *buff, rsiz_t len)
 
     if (len) {
 	if (d->d_istape == MTYP_VIRT) {
-	    if (ret = vmt_rput(&(d->d_vmt), buff, (size_t)len)) {
+	    if ((ret = vmt_rput(&(d->d_vmt), buff, (size_t)len))) {
 		d->d_tloc += len;
 		d->d_recs++;
 		d->d_frecs++;

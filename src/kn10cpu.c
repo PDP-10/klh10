@@ -188,7 +188,7 @@ apr_run(void)
     register int haltval;
 
     /* Save return point for APR halt */
-    if (haltval = _setjmp(aprhaltbuf)) {	/* If longjmp back, */
+    if ((haltval = _setjmp(aprhaltbuf))) {	/* If longjmp back, */
 	clk_suspend();				/* stop internal clock */
 	return haltval;				/* return from running APR */
     }
@@ -314,7 +314,7 @@ apr_fly(void)
 	    vp = vm_xeamap(PC_VADDR, VMF_FETCH);  /* Do mapping, may fault */
 	    /* Remember start of page or ac block */
 	    cpu.mr_cachevp = vp - (pc & PAG_MASK);
-	    if (cachelo = (pc & (H10MASK & ~PAG_MASK))) {
+	    if ((cachelo = (pc & (H10MASK & ~PAG_MASK)))) {
 		/* Normal page reference */
 		cachehi = cachelo | PAG_MASK;
 	    } else if (pc > AC_17) {	/* Page 0, special handling */
@@ -493,7 +493,7 @@ apr_check(void)
 	/* Check for PI requests */
 	{
 	    register int pilev;
-	    if (pilev = pi_check())	/* If PI interrupt requested, */
+	    if ((pilev = pi_check()))	/* If PI interrupt requested, */
 		pi_xct(pilev);		/* handle it! */
 	}
 
@@ -1814,7 +1814,7 @@ tim_klupdate(void *ignored)		/* Arg is unused */
 	cpu.tim.tim_intcnt = 0;			/* Reset countup */
 
 	cpu.tim.tim_flgs |= TIM_RDONE;		/* "Timer Interval Done" */
-	if (cpu.pi.pilev_timreq |= cpu.tim.tim_lev)	/* Add PI if any */
+	if ((cpu.pi.pilev_timreq |= cpu.tim.tim_lev))	/* Add PI if any */
 	    pi_devupd();			/* Check to trigger intrupt */
     }
 }
@@ -2364,7 +2364,7 @@ ioinsdef(io_wrpi)
 void
 pi_devupd(void)
 {
-    if (cpu.pi.pilev_dreq = (cpu.pi.pilev_aprreq
+    if ((cpu.pi.pilev_dreq = (cpu.pi.pilev_aprreq
 #if KLH10_CPU_KS
 	| cpu.pi.pilev_ub1req | cpu.pi.pilev_ub3req
 #elif KLH10_CPU_KL
@@ -2373,7 +2373,7 @@ pi_devupd(void)
 	| cpu.pi.pilev_dtereq
 	| cpu.pi.pilev_diareq
 #endif
-						)) {
+						))) {
 	INSBRKSET();
     }
 }

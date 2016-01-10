@@ -849,7 +849,7 @@ lh_io(register struct lhdh *lh, int wrtf)
 	return 1;
     }
 
-    for (; wcnt = (wrtf ? REG(lh, LHR_OWC) : REG(lh, LHR_IWC)); ++loopcnt) {
+    for (; (wcnt = (wrtf ? REG(lh, LHR_OWC) : REG(lh, LHR_IWC))); ++loopcnt) {
 
 	wcnt = (-(wcnt | ~MASK16))>>1;		/* Find # of PDP10 words */
 	if (wcnt > 01000)		/* One DEC page per pass */

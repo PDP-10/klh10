@@ -1489,7 +1489,7 @@ os_tmget(register struct tm *tm, int *zone)
      *   -1  local time is 1 day behind UTC, offset -24 hours
      * -36x  local time is January 1, UTC is December 31, offset +24 hours
      */
-    if (julian = (tm->tm_yday - julian))
+    if ((julian = (tm->tm_yday - julian)))
 	zn += ((julian < 0) == (abs(julian) == 1)) ? -24*60 : 24*60;
 
     /* At this point zn contains the numer of minutes east of UTC in local

@@ -985,7 +985,7 @@ arp_init(struct dpimp_s *dpimp)
 	    / sizeof(struct arpent)));
     arptab_lim = &dsh->dpimpsh_arptab[dsh->dpimpsh_arpsiz];
 
-    if (at = arp_look(ihost_ip, &ea)) {
+    if ((at = arp_look(ihost_ip, &ea))) {
 	/* It's now there, ensure it stays there */
 	at->at_flags |= ARPF_PERM;
 	return;

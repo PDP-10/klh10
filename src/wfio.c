@@ -503,6 +503,9 @@ wf_get(register struct wfile *wf, w10_t *wp)
 		( ((uint18)cbuf[3] << 12) | (cbuf[4] << 6) | cbuf[5] )
 		);
 	break;
+
+    case WFT_U36:		/* Can't happen; handled above */
+	break;
     }
 
     if (feof(f)) {

@@ -2255,7 +2255,7 @@ fc_exa(struct cmd_s *cm)
     putchar('/');
     putchar(' ');
 
-    if (vp = fevm_xmap(ddt_cloc, ddt_clmode)) {
+    if ((vp = fevm_xmap(ddt_cloc, ddt_clmode))) {
 	ddt_val = vm_pget(vp);
 	wd1print(stdout, ddt_val);
 	if (LHGET(ddt_val) & 0777000) {	/* Opcode exists? */
@@ -2297,7 +2297,7 @@ fc_dep(struct cmd_s *cm)
     }
     ddt_val = wd;
     
-    if (vp = fevm_xmap(ddt_cloc, ddt_clmode))
+    if ((vp = fevm_xmap(ddt_cloc, ddt_clmode)))
 	vm_pset(vp, ddt_val);
     else {
 	printf("?Cannot map address ");
@@ -2929,7 +2929,7 @@ pinstr(FILE *f,
 		    wd1print(f, w);	/* Do first word */
 		    fprintf(f, " ? ");
 		    va_inc(e);		/* Point to next word */
-		    if (vp = fevm_xmap(e, FEVM_CUR))
+		    if ((vp = fevm_xmap(e, FEVM_CUR)))
 			wd1print(f, vm_pget(vp));
 		    else fprintf(f, "-\?\?-");
 		    break;

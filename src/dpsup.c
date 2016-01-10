@@ -95,11 +95,11 @@ int dp_init(register struct dp_s *dp, size_t dpcsiz,
     dp->dp_chpid = 0;
 
     /* Ensure all sizes are aligned to satisfy maximum restrictions */
-    if (adj = (dpcsiz % sizeof(double)))
+    if ((adj = (dpcsiz % sizeof(double))))
 	dpcsiz += sizeof(double) - adj;
-    if (adj = (insiz % sizeof(double)))
+    if ((adj = (insiz % sizeof(double))))
 	insiz += sizeof(double) - adj;
-    if (adj = (outsiz % sizeof(double)))
+    if ((adj = (outsiz % sizeof(double))))
 	outsiz += sizeof(double) - adj;
 
     totsiz = dpcsiz + insiz + outsiz;
@@ -306,7 +306,7 @@ int dp_stop(register struct dp_s *dp, int timeout)
 
     switch (dp->dp_type) {
     case DP_XT_MSIG:
-	if (pid = dp->dp_chpid) {
+	if ((pid = dp->dp_chpid)) {
 	    (void) dp_killchild(pid, timeout);
 
 	    /* For now, flush pid even if didn't find it when waited. */

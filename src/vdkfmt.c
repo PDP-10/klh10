@@ -267,7 +267,7 @@ main(int argc, char **argv)
 
     dvi.d_fmt = dvo.d_fmt = -1;
 
-    if (ret = cmdsget(argc, argv))	/* Parse and handle command line */
+    if ((ret = cmdsget(argc, argv)))	/* Parse and handle command line */
 	exit(ret);
 
 
@@ -315,7 +315,7 @@ main(int argc, char **argv)
     /* Do it! */
     fprintf(logfile, "; Copying from \"%s\" to \"%s\"...\n", dvi.d_path,
 		dvo.d_path ? dvo.d_path : NULLDEV);
-    if (ret = docopy())
+    if ((ret = docopy()))
 	ret = devclose(&dvo);
     else (void) devclose(&dvo);
 
@@ -421,7 +421,7 @@ cmdsget(int ac, char **av)
     dvi.d_isdisk = dvo.d_isdisk = MTYP_NULL;
 
     while (--ac > 0 && (cp = *++av)) {
-	if (arg = strchr(cp, '='))	/* If arg furnished for param, */
+	if ((arg = strchr(cp, '=')))	/* If arg furnished for param, */
 	    *arg++ = '\0';		/* split arg off */
 	if ((plen = strlen(cp)) <= 0)
 	    break;			/* Bad param */

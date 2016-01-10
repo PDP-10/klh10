@@ -364,7 +364,7 @@ uba_read(register struct ubctl *ub,
 {
     register struct device *d;
 
-    if (d = ub_devfind(ub, addr))
+    if ((d = ub_devfind(ub, addr)))
 	return (uint32) (*(d->dv_read))(d, addr);
 
     switch (addr) {
@@ -389,7 +389,7 @@ uba_write(register struct ubctl *ub,
 {
     register struct device *d;
 
-    if (d = ub_devfind(ub, addr)) {
+    if ((d = ub_devfind(ub, addr))) {
 	(*(d->dv_write))(d, addr, (dvureg_t)val);
 	return;
     }

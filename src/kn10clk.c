@@ -318,12 +318,12 @@ clk_usec2tick(int32 usec)
 
 /* Remove from any doubly-linked queue */
 #define clk_2ldelete(e) \
-	if ((e)->cke_prev->cke_next = (e)->cke_next) \
+	if (((e)->cke_prev->cke_next = (e)->cke_next)) \
 	    (e)->cke_next->cke_prev = (e)->cke_prev
 
 /* Remove from a clock queue, updating relative ticks */
 #define clk_qdelete(e) \
-	if ((e)->cke_prev->cke_next = (e)->cke_next)		\
+	if (((e)->cke_prev->cke_next = (e)->cke_next))		\
 	    ((e)->cke_next->cke_ticks += (e)->cke_ticks),	\
 	    (e)->cke_next->cke_prev = (e)->cke_prev
 
@@ -366,7 +366,7 @@ clk_init(void)
     ** Someday try to make this dynamic by determining whether we're
     ** running on a fast or slow machine??
     */
-    if (cpu.clk.clk_ithzfix = KLH10_CLK_ITHZFIX) {
+    if ((cpu.clk.clk_ithzfix = KLH10_CLK_ITHZFIX)) {
 	cpu.clk.clk_ithzcmreq = cpu.clk.clk_ithzfix;
 	cpu.clk.clk_itusfix = CLK_USECS_PER_SEC / cpu.clk.clk_ithzfix;
     } else {
@@ -559,7 +559,7 @@ clk_synctimeout(void)
 # endif
 
     /* Now check for special ITICK callouts */
-    if (ce = cpu.clk.clk_itickl) {
+    if ((ce = cpu.clk.clk_itickl)) {
 	do {
 	    /* ITICK callouts don't return values and are actually of type void
 	    ** instead of int, hence funct pointer must be cast.
@@ -569,7 +569,7 @@ clk_synctimeout(void)
 	    */
 	    nce = ce->cke_next;
 	    (*(void (*)(void *))(ce->cke_rtn)) (ce->cke_arg);
-	} while (ce = nce);
+	} while ((ce = nce));
     }
 #endif /* KLH10_CLKRES_ITICK */
 
@@ -586,7 +586,7 @@ clk_synctimeout(void)
 		break;
 
 	    case CLKEVH_RET_KILL:	/* Kill, put on freelist */
-		if (ce->cke_prev->cke_next = nce)	/* Take off queue */
+		if ((ce->cke_prev->cke_next = nce))	/* Take off queue */
 		    nce->cke_prev = ce->cke_prev;
 		ce->cke_state = CLKENT_ST_FREE;		/* Add to freelist */
 		ce->cke_next = cpu.clk.clk_free;
@@ -594,18 +594,18 @@ clk_synctimeout(void)
 		break;
 
 	    case CLKEVH_RET_QUIET:	/* Go quiescent */
-		if (ce->cke_prev->cke_next = nce)	/* Take off queue */
+		if ((ce->cke_prev->cke_next = nce))	/* Take off queue */
 		    nce->cke_prev = ce->cke_prev;
 		ce->cke_state = CLKENT_ST_MQUIET;	/* Add to quiet list */
 		ce->cke_prev = (struct clkent *)&cpu.clk.clk_quiet;
-		if (ce->cke_next = cpu.clk.clk_quiet)
+		if ((ce->cke_next = cpu.clk.clk_quiet))
 		    ce->cke_next->cke_prev = ce;
 		cpu.clk.clk_quiet = ce;
 		break;
 
 	    case CLKEVH_RET_REPEAT:	/* Put back on queue */
 		if (nce) {		/* If other entries exist, */
-		    if (ce->cke_prev->cke_next = nce)	/* Take off queue */
+		    if ((ce->cke_prev->cke_next = nce))	/* Take off queue */
 			nce->cke_prev = ce->cke_prev;
 		    clk_qinsert(ce, &cpu.clk.clk_itickq); /* Put back */
 		} else {
@@ -652,7 +652,7 @@ clk_tmrget(int (*rtn)(void *), void *arg, int32 usec)
 {
     register struct clkent *ce;
 
-    if (ce = cpu.clk.clk_free) {
+    if ((ce = cpu.clk.clk_free)) {
 	cpu.clk.clk_free = ce->cke_next;
 	ce->cke_state = CLKENT_ST_MTICK;
 	ce->cke_rtn = rtn;
@@ -692,7 +692,7 @@ clk_itmrget(void (*rtn)(void *), void *arg)
 {
     register struct clkent *ce;
 
-    if (ce = cpu.clk.clk_free) {		/* Get a free entry */
+    if ((ce = cpu.clk.clk_free)) {		/* Get a free entry */
 	cpu.clk.clk_free = ce->cke_next;
 	ce->cke_rtn = (int (*)(void *)) rtn;	/* Set up its value */
 	ce->cke_arg = arg;
@@ -700,7 +700,7 @@ clk_itmrget(void (*rtn)(void *), void *arg)
 	/* Now add to the itick list */
 	ce->cke_state = CLKENT_ST_ITICK;
 	ce->cke_prev = (struct clkent *)&cpu.clk.clk_itickl;
-	if (ce->cke_next = cpu.clk.clk_itickl)
+	if ((ce->cke_next = cpu.clk.clk_itickl))
 	    ce->cke_next->cke_prev = ce;
 	cpu.clk.clk_itickl = ce;
     }
@@ -781,7 +781,7 @@ clk_tmrquiet(register struct clkent *ce)
 
     /* Add to quiet list */
     ce->cke_prev = (struct clkent *)&cpu.clk.clk_quiet;
-    if (ce->cke_next = cpu.clk.clk_quiet)
+    if ((ce->cke_next = cpu.clk.clk_quiet))
 	ce->cke_next->cke_prev = ce;
     cpu.clk.clk_quiet = ce;
 }
@@ -803,7 +803,7 @@ clk_tmractiv(register struct clkent *ce)
 
 	/* Add onto ITICK list */
 	ce->cke_prev = (struct clkent *)&cpu.clk.clk_itickl;
-	if (ce->cke_next = cpu.clk.clk_itickl)
+	if ((ce->cke_next = cpu.clk.clk_itickl))
 	    ce->cke_next->cke_prev = ce;
 	cpu.clk.clk_itickl = ce;
 	break;
@@ -878,7 +878,7 @@ clk_qinsert(register struct clkent *ce,
     register struct clkent *nce;
     register clkval_t tim = ce->cke_oticks;
 
-    for (nce = pce; nce = nce->cke_next; pce = nce) {
+    for (nce = pce; (nce = nce->cke_next); pce = nce) {
 	if ((tim -= nce->cke_ticks) < 0) {
 	    /* Win, must put entry ahead of this one */
 	    tim += nce->cke_ticks;	/* Restore time */
@@ -891,7 +891,7 @@ clk_qinsert(register struct clkent *ce,
     ce->cke_ticks = tim;
     ce->cke_prev = pce;
     pce->cke_next = ce;
-    if (ce->cke_next = nce)
+    if ((ce->cke_next = nce))
 	nce->cke_prev = ce;
 }
 

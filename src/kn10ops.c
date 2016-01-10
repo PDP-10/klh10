@@ -367,8 +367,8 @@ int op10ffo(register w10_t w)
     register int i;
     register uint18 reg;		/* Need unsigned for shifting */
 
-    if (reg = LHGET(w)) i = 17;		/* Find right halfword and set up */
-    else if (reg = RHGET(w)) i = 17+18;
+    if ((reg = LHGET(w))) i = 17;	/* Find right halfword and set up */
+    else if ((reg = RHGET(w))) i = 17+18;
     else return 36;
 
     while (reg >>= 1) --i;
@@ -397,10 +397,10 @@ static int adffo(register dw10_t d)
     register int i;
     register uint18 reg;		/* Need unsigned for shifting */
 
-    if (reg = LHGET(d.HI)) i = 17;	/* Find right halfword and set up */
-    else if (reg = RHGET(d.HI)) i = 17+18;
-    else if (reg = (LHGET(d.LO)&H10MAGS)) i = 17+36-1;
-    else if (reg = RHGET(d.LO)) i = 17+36+18-1;
+    if ((reg = LHGET(d.HI))) i = 17;	/* Find right halfword and set up */
+    else if ((reg = RHGET(d.HI))) i = 17+18;
+    else if ((reg = (LHGET(d.LO)&H10MAGS))) i = 17+36-1;
+    else if ((reg = RHGET(d.LO))) i = 17+36+18-1;
     else return 36+36-1;
 
     while (reg >>= 1) --i;
@@ -1105,7 +1105,7 @@ w10_t op10imul(register w10_t a, register w10_t b)
     register dw10_t d;
     register int sign;
 
-    if (sign = wskipl(a))	/* Make args positive, remember signs */
+    if ((sign = wskipl(a)))	/* Make args positive, remember signs */
 	op10m_movn(a);
     if (wskipl(b)) {
 	sign = !sign;
@@ -1141,7 +1141,7 @@ dw10_t op10mul(register w10_t a, register w10_t b)
     register dw10_t d;
     register int sign;
 
-    if (sign = wskipl(a))
+    if ((sign = wskipl(a)))
 	op10m_movn(a);
     if (wskipl(b)) {
 	sign = !sign;
@@ -1275,7 +1275,7 @@ int op10xidiv(dw10_t *ad,
 
     ad->LO = a;
     ad->HI = wskipl(a) ? w10mask : w10zero;
-    if (r = x_div(ad, b))
+    if ((r = x_div(ad, b)))
 	return r;	/* Success */
 
     /* Failure is only possible if A is 1<<35 and B is 1, 0, or -1.
@@ -1347,9 +1347,9 @@ static int x_div(
     ** the result will be that same number.  Don't bother checking here
     ** as the initial dividend/divisor comparison test should catch them.
     */
-    if (numsign = wskipl(d.HI))
+    if ((numsign = wskipl(d.HI)))
 	op10m_dmovn(d);		/* Make positive (unless 1<<35) */
-    if (densign = wskipl(w))
+    if ((densign = wskipl(w)))
 	op10m_movn(w);		/* Get absolute value, ignore max neg */
 
     /* Check for zero divisor, otherwise initial test could pass if
@@ -1587,7 +1587,7 @@ qw10_t op10dmul(register dw10_t da, register dw10_t db)
 {
     register int sign;
 
-    if (sign = wskipl(da.HI))
+    if ((sign = wskipl(da.HI)))
 	op10m_dneg(da);
     if (wskipl(db.HI)) {
 	sign = !sign;
@@ -1695,9 +1695,9 @@ qw10_t op10ddiv(
     ** the result will be that same number.  Don't bother checking here
     ** as the initial dividend/divisor comparison test should catch them.
     */
-    if (numsign = wskipl(qw.D0.HI))
+    if ((numsign = wskipl(qw.D0.HI)))
 	qw = x_qneg(qw);
-    if (densign = wskipl(d.HI))
+    if ((densign = wskipl(d.HI)))
 	op10m_dmovn(d);
 
     /* Check for zero divisor */
@@ -1793,7 +1793,7 @@ qw10_t op10ddiv(
 
 #define SF_POSSETUP(sign, exp, w) \
     exp = SFEGET(w);		/* Get sign and exponent */\
-    if (sign = (exp & SFESIGN)) {	/* Negative? */\
+    if ((sign = (exp & SFESIGN))) {	/* Negative? */\
 	exp = exp ^ SFEMASK;	/* If so, get ones-complement, and */\
 	op10m_tlo(w, SFELHF);	/* propagate sign thru exp */\
 	op10m_movn(w);		/* and make positive */\
@@ -1811,7 +1811,7 @@ qw10_t op10ddiv(
 
 #define SF_DPOSSETUP(sign, exp, d) \
     exp = SFEGET((d).HI);		/* Get sign and exponent */\
-    if (sign = (exp & SFESIGN)) {	/* Negative? */\
+    if ((sign = (exp & SFESIGN))) {	/* Negative? */\
 	exp = exp ^ SFEMASK;		/* If so, get ones-complement, and */\
 	op10m_tlo((d).HI, SFELHF);	/* propagate sign thru exp */\
 	op10m_dmovn(d);			/* and make positive */\
@@ -1876,7 +1876,7 @@ qw10_t op10ddiv(
 
 #define GF_DPOSSETUP(sign, exp, d) \
     exp = GFEGET((d).HI);		/* Get sign and exponent */\
-    if (sign = (exp & GFESIGN)) {	/* Negative? */\
+    if ((sign = (exp & GFESIGN))) {	/* Negative? */\
 	exp = exp ^ GFEMASK;		/* If so, get ones-complement, and */\
 	op10m_tlo((d).HI, GFELHF);	/* propagate sign thru exp */\
 	op10m_dmovn(d);			/* and make positive */\
@@ -2194,7 +2194,7 @@ int op10xfdv(w10_t *aw,
 
     /* Make operands positive and remember sign of result */
 
-    if (sign = wskipl(a)) {	/* Negative? */
+    if ((sign = wskipl(a))) {	/* Negative? */
 	op10m_movn(a);		/* Then make positive */
 	if (wskipl(a)) {		/* If numerator is max neg value, */
 	    OP10_PCFSET(PCF_ARO+PCF_TR1+PCF_FOV+PCF_DIV);
@@ -2526,7 +2526,7 @@ static w10_t sfnorm(register int exp,
     */
     register int sign;
 
-    if (sign = wskipl(w))
+    if ((sign = wskipl(w)))
 	op10m_movn(w);		/* Negate the fraction, max neg is OK. */
     i = op10ffo(w);
 
@@ -3858,7 +3858,7 @@ static dw10_t gfnorm(register int exp,
     ** shift.  This won't work here because ASHC looks at the sign bit,
     ** hence the trickery here to ensure the sign is always 0.
     */
-    if (sign = wskipl(d.HI)) {
+    if ((sign = wskipl(d.HI))) {
 	op10m_dmovn(d);		/* Negate the fraction. */
 	if (wskipl(d.HI)) {		/* If still negative, */
 	    ++exp;			/* adjust exponent and value */

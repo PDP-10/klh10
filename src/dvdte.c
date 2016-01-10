@@ -2099,7 +2099,7 @@ static int dte_10qpkt(register struct dte *dt,
     q->q_sdev = sdev;
     q->q_swd1 = swd1;
     q->q_bbcnt = bbcnt;
-    if (q->q_wbcnt = (bbcnt ? 0 : wbcnt))	/* If sending words, */
+    if ((q->q_wbcnt = (bbcnt ? 0 : wbcnt)))	/* If sending words, */
 	q->q_sfn |= SFN_INDBIT;		/* Force msg to use indirect data */
     if (bbcnt || wbcnt)
 	q->q_dcp = dcp;

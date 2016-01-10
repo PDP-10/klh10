@@ -1070,7 +1070,7 @@ insdef(i_map)
 	return i_muuo(op, ac, e);
 #endif
 
-    if (vmp = pag_refill(cpu.vmap.xrw, e, VMF_NOTRAP)) {
+    if ((vmp = pag_refill(cpu.vmap.xrw, e, VMF_NOTRAP))) {
 	pa = vmp - cpu.physmem;		/* Recover physical addr */
 	pfent = cpu.pag.pr_flh;		/* And fetch access bits for page */
 
@@ -1547,7 +1547,7 @@ pag_refill(register pment_t *p,	/* Page map pointer */
 	    /* Read-modify-write cycles request VMF_WRITE only, so
 	    ** assume ABK_READ hits whether or not VMF_READ is on
 	    */
-	    && ((f & VMF_WRITE) && (cpu.mr_abk_cond & ABK_WRITE)
+	    && (((f & VMF_WRITE) && (cpu.mr_abk_cond & ABK_WRITE))
 		|| ((f & VMF_IFETCH) ? (cpu.mr_abk_cond & ABK_IFETCH)
 				     : (cpu.mr_abk_cond & ABK_READ)))) {
 	    cpu.pag.pr_flh = PMF_ADRERR;	/* report address break */
@@ -1565,7 +1565,7 @@ pag_refill(register pment_t *p,	/* Page map pointer */
      /* Note page number passed to pag_t20map is the FULL XA page, which on
      ** a KL is 12+9=21 bits, not the supported 5+9=14 virtual.
      */
-    if (vmp = pag_t20map(p, vpag, (f & VMF_ACC))) /* Try mapping */
+    if ((vmp = pag_t20map(p, vpag, (f & VMF_ACC)))) /* Try mapping */
 	return vmp + va_pagoff(e);		/* Won, return mapped ptr! */
 
     /* Ugh, analyze error far enough to build page fail word LH bits,

@@ -262,7 +262,7 @@ tmasks(void)
     register int i, j;
     int nerrs = 0;
 
-    for (i = 0; j = masktab[i].me_bits; ++i) {
+    for (i = 0; (j = masktab[i].me_bits); ++i) {
 	UINTMAX mask = 1;
 	/* Generate mask in a particularly stupid way to ensure that the
 	   clever ways worked.

@@ -781,7 +781,7 @@ void dptmstat(register struct devmt *d)
 	break;
 
     default:
-	if (dptm->dptm_mol = d->mta_mol) {
+	if ((dptm->dptm_mol = d->mta_mol)) {
 	    if (d->d_state == DPTM03_STA_HARDOFF) {
 		if (1 /*DBGFLG*/)
 		    dbprintln("Tape came online: \"%s\" %s", d->d_path,

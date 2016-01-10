@@ -1806,9 +1806,9 @@ rp_updxfr(register struct rpdev *rp)
 
     /* Check to see if last write completed successfully */
 #if KLH10_DEV_DPRPXX
-    if (i = rp->rp_sdprp->dprp_err) {
+    if ((i = rp->rp_sdprp->dprp_err)) {
 #else
-    if (i = rp->rp_reserr) {
+    if ((i = rp->rp_reserr)) {
 #endif
 	/* Ugh, what error bit to use?? */
 	if (i < 0) {				/* If -1 assume addr ovfl */
