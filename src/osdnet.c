@@ -378,18 +378,25 @@ osn_iftab_arpget(struct in_addr ia, unsigned char *eap)
 }
 
 
-/* OSN_IPDEFAULT - Find a default IP interface entry; take the first one
- *	that's up and isn't a loopback.
+/* OSN_IPDEFAULT - Find a default IP interface entry;
+ * if the environment variable KLH_NET_DEFAULT_IF is set and an interface
+ * by that name can be found, return ir,
+ * otherwise take the first one that's up and isn't a loopback.
  */
 struct ifent *
 osn_ipdefault(void)
 {
     int i = 0;
-    struct ifent *ife = iftab;
+    struct ifent *ife;
+    char *envif = getenv("KLH_NET_DEFAULT_IF");
 
-    for (; i < iftab_nifs; ++i, ++ife)
+    if (envif && (ife = osn_iflookup(envif)))
+	return ife;
+
+    for (ife = iftab; i < iftab_nifs; ++i, ++ife)
 	if ((ife->ife_flags & IFF_UP) && !(ife->ife_flags & IFF_LOOPBACK))
 	    return ife;
+
     return NULL;
 }
 
@@ -445,7 +452,7 @@ osn_ifealookup(char *ifnam,		/* Interface name */
     return FALSE;
 }
 
-/* OSN_IFNMLOOKUP - Find IPv4 address, barf if not in our table.
+/* OSN_IFIPLOOKUP - Find IPv4 address, barf if not in our table.
  */
 int
 osn_ifiplookup(char *ifnam,		/* Interface name */
@@ -1255,6 +1262,8 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
      * The order of tests here is the order of preference
      * (most desired first), for when the user does not
      * spefify ifmeth=xxx.
+     *
+     * tun is only available when OSN_USE_IPONLY.
      */
 #if KLH10_NET_TUN && OSN_USE_IPONLY
     if (!method[0] || !strcmp(method, "tun")) {
@@ -1342,10 +1351,12 @@ osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
        arrives!
        See read loops in osn_pfread_pcap() below for workaround.
      */
+#if HAVE_LIBPCAP_SET_IMMEDIATE_MODE
     if (pcap_set_immediate_mode(pc, 1) < 0) {
 	what = "pcap_set_immediate_mode";
 	goto error;
     }
+#endif
 
     /* Set read timeout.
        Safety check in order to avoid infinite hangs if something
@@ -1498,9 +1509,6 @@ struct tuntap_context {
 #if KLH10_NET_BRIDGE && CENV_SYS_NETBSD
     struct ifreq br_ifr;
     struct ifreq tap_ifr;
-#endif
-#if KLH10_NET_BRIDGE && CENV_SYS_LINUX
-    char br_name[IFNAM_LEN];
 #endif
 };
 
@@ -1662,23 +1670,23 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     /* Local address can be set explicitly if we plan to do full IP
        masquerading. */
     if (memcmp((char *)&iplocal, "\0\0\0\0", IP_ADRSIZ) == 0) {
-      /* Local address is that of hardware machine if we want to permit
-	 external access.  If not, it doesn't matter (and may not even
-	 exist, if there is no hardware interface)
-      */
-      if (allowextern) {
-	  if ((ife = osn_ipdefault())) {
-	      iplocal = ife->ife_ipia;
-	  } else {
-	      error("Cannot find default IP interface for host");
-	      allowextern = FALSE;
-	  }
-      }
-      if (!allowextern) {
-	  /* Make up bogus IP address for internal use */
-	  memcpy((char *)&iplocal, ipremset, 4);
-      }
-      osnpf->osnpf_tun.ia_addr = iplocal;
+	/* Local address is that of hardware machine if we want to permit
+	   external access.  If not, it doesn't matter (and may not even
+	   exist, if there is no hardware interface)
+	   */
+	if (allowextern) {
+	    if ((ife = osn_ipdefault())) {
+		iplocal = ife->ife_ipia;
+	    } else {
+		error("Cannot find default IP interface for host");
+		allowextern = FALSE;
+	    }
+	}
+	if (!allowextern) {
+	    /* Make up bogus IP address for internal use */
+	    memcpy((char *)&iplocal, ipremset, 4);
+	}
+	osnpf->osnpf_tun.ia_addr = iplocal;
     }
 
     char *basename = "";
@@ -2109,84 +2117,81 @@ tap_bridge_close(struct tuntap_context *tt_ctx)
 
 #elif CENV_SYS_LINUX
 
+/*
+ * On Linux, bridges are useless for temporary connections of VMs to
+ * the world. They upset the networking too much.
+ *
+ * Therefore, we do connect to a bridge if wanted, but we're not creating
+ * one at all.
+ *
+ * The bridge name is given in environment variable KLH_NET_BRIDGE.
+ *
+ * See:  http://www.microhowto.info/troubleshooting/troubleshooting_ethernet_bridging_on_linux.html#idp86992
+ *
+ *     "As noted above, adding an interface to a bridge causes it to stop
+ *     acting as an Internet Protocol endpoint. This could result in the
+ *     machine appearing to freeze."
+ *
+ *     "The underlying issue is that when an interface is attached to a bridge
+ *     then any network addresses need to be bound to the bridge, not to the
+ *     interface."
+ */
+
 #include <linux/sockios.h>
 
 void
 bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 {
-    int res;
-    char cmdbuff[128];
     struct ifreq ifr;
-    struct ifent *ife;
+    char *br_name;
+    int ifindex;
+    int res;
     int s;
-    int i;
 
-    if (tt_ctx->my_tap) {
-	if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
-	    esfatal(1, "bridge_create: socket() failed");
-	}
+    if (!tt_ctx->my_tap)
+	return;
 
-	for (i = 0; i < 1000; i++) {
-	    /* try to create kn10br%d. Linux has free choice in names. */
-	    memset(tt_ctx->br_name, 0, sizeof(tt_ctx->br_name));
-	    snprintf(tt_ctx->br_name, IFNAM_LEN, "kn10br%d", i);
-	    res = ioctl(s, SIOCBRADDBR, tt_ctx->br_name);
-	    if (res == 0)
-		break;
-	    if (errno != EEXIST)
-		esfatal(1, "bridge_create: can't create bridge \"%s\"?", tt_ctx->br_name);
-	}
+    br_name = getenv("KLH_NET_BRIDGE");
+    if (!br_name)
+	return;
 
-	/* Finally, turn on IFF_UP just in case the above didn't do it.
-	 * We MUST do this, otherwise the network traffic to/from
-	 * the other interface is blocked!
-	 */
-	osn_iff_up(s, tt_ctx->br_name);
-	dbprintln("Created bridge \"%s\"", tt_ctx->br_name);
-
-	/*
-	 * Find default IP interface to bridge with.
-	 * It might find the wrong one if there is more than one.
-	 */
-
-	ife = osn_ipdefault();
-	if (!ife)
-	    esfatal(0, "Couldn't find default interface");
-
-	if (swstatus)
-	    dbprintln("Bridging with default interface \"%s\"", ife->ife_name);
-
-	sprintf(cmdbuff, "/sbin/brctl addif %s %s",
-		tt_ctx->br_name, ife->ife_name);
-	res = system(cmdbuff);
-	dbprintln("%s => %d", cmdbuff, res);
-
-	sprintf(cmdbuff, "/sbin/brctl addif %s %s",
-		tt_ctx->br_name, osnpf->osnpf_ifnam);
-	res = system(cmdbuff);
-	dbprintln("%s => %d", cmdbuff, res);
-
-	close(s);
+    if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
+	esfatal(1, "bridge_create: socket() failed");
     }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, br_name, IFNAMSIZ);
+    ifindex = if_nametoindex(osnpf->osnpf_ifnam);
+#ifdef SIOCBRADDIF
+    /* preferred method */
+    ifr.ifr_ifindex = ifindex;
+    res = ioctl(s, SIOCBRADDIF, &ifr);
+#else
+    unsigned long ifargs[4];
+
+    ifargs[0] = BRCTL_ADD_IF;
+    ifargs[1] = ifindex;
+    ifargs[2] = 0;
+    ifargs[3] = 0;
+    ifr.ifr_data = (void *)ifargs;
+    res = ioctl(s, SIOCDEVPRIVATE, &ifr);
+#endif
+    if (res == -1) {
+	esfatal(1, "bridge_create: can't add interface \"%s\" to bridge \"%s\"?", osnpf->osnpf_ifnam, br_name);
+    }
+
+    if (swstatus) {
+	dbprintln("Attached \"%s\" to  bridge \"%s\"",
+		osnpf->osnpf_ifnam, br_name);
+    }
+
+    close(s);
 }
 
 void
 tap_bridge_close(struct tuntap_context *tt_ctx)
 {
     if (tt_ctx->my_tap) {
-	int s, res;
-
-	if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
-	    esfatal(1, "tap_bridge_close: socket() failed");
-	}
-
-	/* Bridge must be down to be destroyed */
-	osn_iff_down(s, tt_ctx->br_name);
-
-	/* Destroy bridge */
-	res = ioctl(s, SIOCBRDELBR, tt_ctx->br_name);
-
-	close(s);
     }
 }
 

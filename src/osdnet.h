@@ -265,8 +265,13 @@
 
 #define HAVE_GETIFADDRS	1	/* assume this for now */
 #define HAVE_LIBPCAP	1	/* assume this for now */
+#define HAVE_LIBPCAP_SET_IMMEDIATE_MODE 1
 
 #if HAVE_LIBPCAP
+# undef BPF_MAJOR_VERSION	/* some stupid linux header defines this:
+				 * <linux_filter.h> included from
+				 * <linux/if_tun,h>; only in SOME versions.
+				 */
 # define  USE_LIBPCAP	1
 # include <pcap/pcap.h>
 # include <pcap/bpf.h>
