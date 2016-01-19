@@ -399,6 +399,9 @@ the possibility of multiprocess or even multiprocessor operation.
 **	The default is not to try bitfields even though they might provide
 **	more efficiency, since the way they are used is non-portable
 **	and needs to be verified for each platform.
+**	This has to be thoroughly checked by running the wxtest program;
+**	the code hasn't even been test-compiled recently, since there were
+**	compile errors in it.
 */
 #ifndef WORD10_BITF		/* Unless explicitly requested, */
 #  define WORD10_BITF 0		/* portable default does without bitfields */
@@ -509,7 +512,7 @@ typedef unsigned WORD10_INT32 uint32;
 #    define WORD10_OVBITS (((sizeof(w10uint_t)/sizeof(char))*CHAR_BIT) - 36)
 #    define WORD10_OVDEF int ovfl : WORD10_OVBITS;
 #  endif
-	struct {
+	typedef struct {
 #  if WORD10_BITFBIGEND		/* Left-to-right order? */
 		WORD10_OVDEF
 		signed int lh : H10BITS;
@@ -520,7 +523,7 @@ typedef unsigned WORD10_INT32 uint32;
 		WORD10_OVDEF
 #  endif
 	} w10sbitf_t;
-	struct {
+	typedef struct {
 #  if WORD10_BITFBIGEND		/* Left-to-right order? */
 		WORD10_OVDEF
 		unsigned int lh : H10BITS;

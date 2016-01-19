@@ -202,7 +202,7 @@ void net_init(struct dpni20_s *dpni);
 void eth_mcatset(struct dpni20_s *dpni);
 void eth_adrset(struct dpni20_s *dpni);
 void dumppkt(unsigned char *ucp, int cnt);
-int arp_myreply(unsigned char *buf, int cnt);
+int arp_myreply(unsigned char *buf, int cnt, struct dpx_s *dpx);
 
 /* Error and diagnostic output */
 
@@ -1054,7 +1054,7 @@ void eth_mcatset(struct dpni20_s *dpni)
 
 #define ARP_PKTSIZ (sizeof(struct ether_header)	+ sizeof(struct ether_arp))
 
-int arp_myreply(unsigned char *buf, int cnt)
+int arp_myreply(unsigned char *buf, int cnt, struct dpx_s *dpx)
 {
     struct ifent *ife;
     unsigned char *ucp;
@@ -1138,32 +1138,38 @@ int arp_myreply(unsigned char *buf, int cnt)
 			eth_adrsprint(ethstr, ife->ife_ea));
     }
 
-#if 0
+#if 1
     /* XXX
      * Why is this sent to the packet filter (= host) and not to the -10?????
      */
     (void)osn_pfwrite(&pfdata, pktbuf, sizeof(pktbuf));
+
+    return FALSE;
 #else
     /* ARP reply packet, pass to 10 via DPC.
      * Can we do that? We're not the process which normally does that...
      */
-    struct dpx_s *dpx;
     unsigned char *buff;
     size_t max;
 
-    dpx = dp_dpxfr(&dp);		/* Get ptr to from-DP comm rgn */
+    dp_xrdone(dpx);			/* First reply to the send command */
+
     buff = dp_xsbuff(dpx, &max);	/* Set up buffer ptr & max count */
 
     if (sizeof(pktbuf) <= max &&
-	    dp_xswait(dpx)) {		/* Wait until buff free, in case */
+	    dp_xswait(dpx)) {		/* Wait until buff free, in case...
+				         * but we can't do that, since we are
+					 * not the process receiving that
+					 * signal...
+					 */
 	memcpy(buff, pktbuf, ARP_PKTSIZ);
 	dp_xsend(dpx, DPNI_RPKT, ARP_PKTSIZ);
 	if (DP_DBGFLG)
 	    dbprint("sent ARP reply to -10");
     }
-#endif
 
     return TRUE;
+#endif
 }
 
 /* ETHTOTEN - Main loop for thread pumping packets from Ethernet to 10.
@@ -1280,7 +1286,8 @@ void tentoeth(struct dpni20_s *dpni)
     /* Must check for outbound ARP requests if asked to and have
     ** at least one entry in our table of host's IP interfaces.
     */
-    doarpchk = (dpni->dpni_doarp & DPNI_ARPF_OCHK) && (osn_nifents() > 0);
+    /*doarpchk = (dpni->dpni_doarp & DPNI_ARPF_OCHK) && (osn_nifents() > 0);*/
+    doarpchk = FALSE; /* arp_myreply() is broken anyway... */
 
     dpx = dp_dpxto(&dp);		/* Get ptr to "To-DP" xfer stuff */
     buff = dp_xrbuff(dpx, &max);
@@ -1313,7 +1320,7 @@ void tentoeth(struct dpni20_s *dpni)
 	    }
 	    if (doarpchk			/* If must check ARPs */
 	      && arp_reqcheck(buff, rcnt)	/* and this is an ARP req */
-	      && arp_myreply(buff, rcnt)) {	/* and it fits, & is hacked */
+	      && arp_myreply(buff, rcnt, dpx)) {/* and it fits, & is hacked */
 		break;				/* then drop this req pkt */
 	    }
 

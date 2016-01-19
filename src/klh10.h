@@ -46,6 +46,11 @@
 #ifndef KLH10_INCLUDED
 #define KLH10_INCLUDED 1
 
+/* C environment setup definitions.
+*/
+
+#include "cenv.h"	/* Get CENV_CPU_ and CENV_SYS_ */
+
 #ifndef  KLH10_USE_RCSID	/* For now, default to always on */
 # define KLH10_USE_RCSID 1
 #endif
@@ -66,17 +71,16 @@
 # define KLH10_WARRANTY "This program comes \"AS IS\" with ABSOLUTELY NO WARRANTY."
 #endif
 #ifndef  KLH10_VERSION
-# define KLH10_VERSION "V2.0H"
+# ifdef PACKAGE_VERSION
+#  define KLH10_VERSION PACKAGE_VERSION
+# else
+#  define KLH10_VERSION "V2.0i"
+# endif
 #endif
 #ifndef  KLH10_CLIENT
 # define KLH10_CLIENT "Generic"
 #endif
 
-
-/* C environment setup definitions.
-*/
-
-#include "cenv.h"	/* Get CENV_CPU_ and CENV_SYS_ */
 
 /* Canonical C true/false values */
 #define TRUE 1

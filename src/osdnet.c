@@ -38,8 +38,8 @@
 # include "osdnet.h"	/* Insurance to make sure our defs are there */
 #endif
 
-#if KLH10_NET_TAP && (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
-#include <net/if_tap.h>
+#if KLH10_NET_BRIDGE && !KLH10_NET_TAP
+# error "A bridge is useless without a TAP device... configuration error!"
 #endif
 
 /* Local predeclarations */
@@ -59,13 +59,13 @@ static ssize_t osn_pfread_fd(struct pfdata *pfdata, void *buf, size_t nbytes);
 static int osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes);
 #endif /* TUN || TAP */
 
-#if KLH10_NET_BRIDGE
 struct tuntap_context;
+#if KLH10_NET_BRIDGE
 void bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf);
 void tap_bridge_close(struct tuntap_context *tt_ctx);
-#endif
+#endif /* KLH10_NET_BRIDGE */
 static void osn_iff_up(int s, char *ifname);
-static void osn_iff_down(int s, char *ifname);
+static int pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf);
 
 /* Get a socket descriptor suitable for general net interface
    examination and manipulation; this is not necessarily suitable for
@@ -380,22 +380,26 @@ osn_iftab_arpget(struct in_addr ia, unsigned char *eap)
 
 /* OSN_IPDEFAULT - Find a default IP interface entry;
  * if the environment variable KLH_NET_DEFAULT_IF is set and an interface
- * by that name can be found, return ir,
- * otherwise take the first one that's up and isn't a loopback.
+ * by that name can be found, return it,
+ * otherwise take the first one that has an IPv4 address,
+ * is up and isn't a loopback.
  */
 struct ifent *
 osn_ipdefault(void)
 {
     int i = 0;
     struct ifent *ife;
-    char *envif = getenv("KLH_NET_DEFAULT_IF");
+    char *envif = getenv("KLH10_NET_DEFAULT_IF");
 
     if (envif && (ife = osn_iflookup(envif)))
 	return ife;
 
-    for (ife = iftab; i < iftab_nifs; ++i, ++ife)
-	if ((ife->ife_flags & IFF_UP) && !(ife->ife_flags & IFF_LOOPBACK))
+    for (ife = iftab; i < iftab_nifs; ++i, ++ife) {
+	if (  ife->ife_gotip4 &&
+	     (ife->ife_flags & IFF_UP) &&
+	    !(ife->ife_flags & IFF_LOOPBACK))
 	    return ife;
+    }
 
     return NULL;
 }
@@ -497,6 +501,27 @@ osn_ifnmlookup(char *ifnam,		/* Interface name */
     return FALSE;
 }
 
+#if CENV_SYS_LINUX
+int
+set_proc_variable(char *template, char *ifname, char *value)
+{
+    int fd;
+    char devproc[128];
+
+    snprintf(devproc, sizeof(devproc)-1, template, ifname);
+
+    fd = open(devproc, O_WRONLY|O_TRUNC);
+
+    if (fd >= 0) {
+	(void)write(fd, value, strlen(value));
+	close(fd);
+	return TRUE;
+    }
+
+    return FALSE;
+}
+
+#endif /* CENV_SYS_LINUX */
 /* OSN_ARP_STUFF - stuff emulated-host ARP entry into kernel.
 **	Note it isn't necessary to specify an interface!
 **	Also, the code assumes that if an ARP entry already exists in the
@@ -516,7 +541,8 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
 			(pubf ? "pub" : ""));
     }
 
-#if CENV_SYS_LINUX && OSN_USE_IPONLY
+#if CENV_SYS_LINUX
+# if OSN_USE_IPONLY
     /**
      * Linux won't do proxy ARP by default. It needs to be turned on.
      * This is needed when we use an Ethernet device, not an IP tunnel.
@@ -544,17 +570,10 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
      * So, that helps with a tunnel device, not with a tap device.
      * Why then does linux have ATF_PUBL flags in its ARP table?
      */
-    int fd;
-    char devproc[64];
-
-    snprintf(devproc, sizeof(devproc)-1, "/proc/sys/net/ipv4/conf/%s/proxy_arp", ifname);
     /*
      * or sysctl -w net.ipv4.conf.%s.proxy_arp=1
      */
-    fd = open(devproc, O_WRONLY|O_TRUNC);
-    if (fd >= 0) {
-	(void)write(fd, "1\n", 2);
-	close(fd);
+    if (set_proc_variable("/proc/sys/net/ipv4/conf/%s/proxy_arp", ifname, "1\n")) {
 	dbprintln("Enabled net.ipv4.conf.%s.proxy_arp", ifname);
     }
     /*
@@ -568,13 +587,20 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
      *
      * Or sysctl -w net.ipv4.ip_forward=1
      */
-    fd = open("/proc/sys/net/ipv4/ip_forward", O_WRONLY|O_TRUNC);
-    if (fd >= 0) {
-	(void)write(fd, "1\n", 2);
-	close(fd);
+    if (set_proc_variable("/proc/sys/net/ipv4/ip_forward", "", "1\n")) {
 	dbprintln("Enabled net.ipv4.ip_forward");
     }
-#endif /* CENV_SYS_LINUX  && OSN_USE_IPONLY */
+#endif /* OSN_USE_IPONLY */
+    /*
+     * It seems that if arp_accept=0, then ARP packets that are received
+     * are not only ignored by the kernel, but also not passed to
+     * the packet filter. That is bad: they may be for us!
+     * Disable this lossage.
+     */
+    if (set_proc_variable("/proc/sys/net/ipv4/conf/%s/arp_accept", ifname, "1\n")) {
+	dbprintln("Enabled net.ipv4.conf.%s.arp_accept", ifname);
+    }
+#endif /* CENV_SYS_LINUX */
 
 #if NETIF_HAS_ARPIOCTL
     struct arpreq arq;
@@ -1351,7 +1377,7 @@ osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
        arrives!
        See read loops in osn_pfread_pcap() below for workaround.
      */
-#if HAVE_LIBPCAP_SET_IMMEDIATE_MODE
+#if HAVE_PCAP_SET_IMMEDIATE_MODE
     if (pcap_set_immediate_mode(pc, 1) < 0) {
 	what = "pcap_set_immediate_mode";
 	goto error;
@@ -1506,10 +1532,12 @@ osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 struct tuntap_context {
     int my_tap;
     char saved_ifnam[IFNAM_LEN];
-#if KLH10_NET_BRIDGE && (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
-    struct ifreq br_ifr;
+#if CENV_SYS_XBSD
     struct ifreq tap_ifr;
-#endif
+# if KLH10_NET_BRIDGE
+    struct ifreq br_ifr;
+# endif /* KLH10_NET_BRIDGE */
+#endif /* CENV_SYS_XBSD */
 };
 
 /*
@@ -1577,10 +1605,7 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     return fd;		/* Success! */
 }
 
-#endif /* KLH10_NET_TUN || _TAP */
-
 
-#if KLH10_NET_TUN || KLH10_NET_TAP
 
 # if CENV_SYS_LINUX
 #  define TUN_BASE	"/dev/net/tun"
@@ -1657,6 +1682,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     struct in_addr iplocal;	/* TUN ifc address at hardware OS end */
     struct in_addr ipremote;	/* Address at remote (emulated guest) end */
     static unsigned char ipremset[4] = { 192, 168, 0, 44};
+    int s;
 
     /* Remote address is always that of emulated machine */
     ipremote = osnpf->osnpf_ip.ia_addr;
@@ -1710,6 +1736,10 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     }
 
     memset(&ifr, 0, sizeof(ifr));
+
+    if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+	esfatal(1, "pf_init: tun socket() failed");
+    }
 
 #if CENV_SYS_LINUX		/* [BV: Linux way] */
     if (pfdata->pf_meth == PF_METH_TUN) {
@@ -1775,8 +1805,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     */
 #if CENV_SYS_LINUX		/* [BV: Linux tun device] */
     if (pfdata->pf_ip4_only) {
-				/* "Hacky" but simple method */
-	char cmdbuff[128];
+	char cmdbuff[128];	/* "Hacky" but simple method */
 	int res;
 
 	/* ifconfig DEV IPLOCAL pointopoint IPREMOTE */
@@ -1793,13 +1822,8 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 #else /* not CENV_SYS_LINUX */
     {
 	/* Internal method */
-	int s;
 	struct ifaliasreq ifra;
 	struct ifreq ifr;
-
-	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-	    esfatal(1, "pf_init: tun socket() failed");
-	}
 
 	/* Delete first (only) IP address for this device, if any.
 	   Ignore errors.
@@ -1828,11 +1852,13 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 	    }
 	}
 
-	/* Finally, turn on IFF_UP just in case the above didn't do it.
-	 */
-	osn_iff_up(s, ifnam);
     }
 #endif /* CENV_SYS_LINUX */
+
+    /* Finally, turn on IFF_UP just in case the above didn't do it.
+     */
+    osn_iff_up(s, ifnam);
+    close(s);
 
     /* Now optionally determine ethernet address.
        This amounts to what if anything we should put in the native
@@ -1964,7 +1990,6 @@ osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes)
     return write(pfdata->pf_fd, buf, nbytes);
 }
 
-#endif /* KLH10_NET_TAP || KLH10_NET_TUN */
 
 #if CENV_SYS_NETBSD
 
@@ -1980,6 +2005,7 @@ osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes)
  * and we'll just use it as it is. This is useful for a routed approach,
  * for instance.
  */
+static
 int
 pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 {
@@ -2040,6 +2066,7 @@ pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf
     return tapfd;
 }
 #endif /* CENV_SYS_NETBSD */
+#endif /* KLH10_NET_TAP || KLH10_NET_TUN */
 
 #if KLH10_NET_BRIDGE
 #if (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
@@ -2124,7 +2151,7 @@ tap_bridge_close(struct tuntap_context *tt_ctx)
  * Therefore, we do connect to a bridge if wanted, but we're not creating
  * one at all.
  *
- * The bridge name is given in environment variable KLH_NET_BRIDGE.
+ * The bridge name is given in environment variable KLH10_NET_BRIDGE.
  *
  * See:  http://www.microhowto.info/troubleshooting/troubleshooting_ethernet_bridging_on_linux.html#idp86992
  *
@@ -2151,9 +2178,11 @@ bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     if (!tt_ctx->my_tap)
 	return;
 
-    br_name = getenv("KLH_NET_BRIDGE");
-    if (!br_name)
-	return;
+    br_name = getenv("KLH10_NET_BRIDGE");
+    if (!br_name) {
+	br_name = "bridge0";
+	error("Can't find name of bridge: $KLH10_NET_BRIDGE is unset. Trying with \"%s\"", br_name);
+    }
 
     if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
 	esfatal(1, "bridge_create: socket() failed");
@@ -2176,12 +2205,13 @@ bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     ifr.ifr_data = (void *)ifargs;
     res = ioctl(s, SIOCDEVPRIVATE, &ifr);
 #endif
+    dbprintln("linux bridge_create: ioctl res=%d", res);
     if (res == -1) {
 	esfatal(1, "bridge_create: can't add interface \"%s\" to bridge \"%s\"?", osnpf->osnpf_ifnam, br_name);
     }
 
     if (swstatus) {
-	dbprintln("Attached \"%s\" to  bridge \"%s\"",
+	dbprintln("Attached \"%s\" to bridge \"%s\"",
 		osnpf->osnpf_ifnam, br_name);
     }
 
@@ -2220,24 +2250,6 @@ static void osn_iff_up(int s, char *ifname)
     }
 }
 
-static void osn_iff_down(int s, char *ifname)
-{
-    struct ifreq ifr;
-
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-
-    if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
-	esfatal(1, "osn_iff_up SIOCGIFFLAGS %S failed", ifname);
-    }
-
-    if (ifr.ifr_flags & IFF_UP) {
-	ifr.ifr_flags ^= IFF_UP;
-	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
-	    esfatal(1, "osn_iff_up SIOCSIFFLAGS %S failed", ifname);
-	}
-    }
-}
 
 #if KLH10_NET_DLPI
 

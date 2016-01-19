@@ -42,51 +42,55 @@
 **	CENV_CPU_x = host CPU architecture
 **	CENV_SYS_x = host OS
 */
-#if CENV_SYS_V7			/* Basic vanilla Unix */
-# define KLH10S_CENV_SYS_ "V7"
-#elif CENV_SYS_SUN		/* SunOS 4.x */
-# define KLH10S_CENV_SYS_ "SUN"
-#elif CENV_SYS_SOLARIS		/* SunOS 5.x */
-# define KLH10S_CENV_SYS_ "SOLARIS"
-#elif CENV_SYS_NEXT		/* NeXT */
-# define KLH10S_CENV_SYS_ "NEXT"
-#elif CENV_SYS_MAC		/* Apple Mac */
-# define KLH10S_CENV_SYS_ "MAC"
-#elif CENV_SYS_BSDI		/* 386 BSDI */
-# define KLH10S_CENV_SYS_ "BSDI"
-#elif CENV_SYS_NETBSD		/* NetBSD */
-# define KLH10S_CENV_SYS_ "NETBSD"
-#elif CENV_SYS_FREEBSD		/* FreeBSD */
-# define KLH10S_CENV_SYS_ "FREEBSD"
-#elif CENV_SYS_OPENBSD		/* FreeBSD */
-# define KLH10S_CENV_SYS_ "OPENBSD"
-#elif CENV_SYS_LINUX		/* Linux */
-# define KLH10S_CENV_SYS_ "LINUX"
-#elif CENV_SYS_DECOSF		/* DEC OSF/1 */
-# define KLH10S_CENV_SYS_ "DECOSF"
-#elif CENV_SYS_MOONMAC		/* Special stuff saved for Dave Moon */
-# define KLH10S_CENV_SYS_ "MOONMAC"
-#elif CENV_SYS_BSD		/* Generic BSD */
-# define KLH10S_CENV_SYS_ "BSD"
-#endif
+#ifndef KLH10S_CENV_SYS_
+# if CENV_SYS_V7			/* Basic vanilla Unix */
+#  define KLH10S_CENV_SYS_ "V7"
+# elif CENV_SYS_SUN		/* SunOS 4.x */
+#  define KLH10S_CENV_SYS_ "SUN"
+# elif CENV_SYS_SOLARIS		/* SunOS 5.x */
+#  define KLH10S_CENV_SYS_ "SOLARIS"
+# elif CENV_SYS_NEXT		/* NeXT */
+#  define KLH10S_CENV_SYS_ "NEXT"
+# elif CENV_SYS_MAC		/* Apple Mac */
+#  define KLH10S_CENV_SYS_ "MAC"
+# elif CENV_SYS_BSDI		/* 386 BSDI */
+#  define KLH10S_CENV_SYS_ "BSDI"
+# elif CENV_SYS_NETBSD		/* NetBSD */
+#  define KLH10S_CENV_SYS_ "NETBSD"
+# elif CENV_SYS_FREEBSD		/* FreeBSD */
+#  define KLH10S_CENV_SYS_ "FREEBSD"
+# elif CENV_SYS_OPENBSD		/* FreeBSD */
+#  define KLH10S_CENV_SYS_ "OPENBSD"
+# elif CENV_SYS_LINUX		/* Linux */
+#  define KLH10S_CENV_SYS_ "LINUX"
+# elif CENV_SYS_DECOSF		/* DEC OSF/1 */
+#  define KLH10S_CENV_SYS_ "DECOSF"
+# elif CENV_SYS_MOONMAC		/* Special stuff saved for Dave Moon */
+#  define KLH10S_CENV_SYS_ "MOONMAC"
+# elif CENV_SYS_BSD		/* Generic BSD */
+#  define KLH10S_CENV_SYS_ "BSD"
+# endif /* CENV_SYS_* */
+#endif /* KLH10S_CENV_SYS_ */
 
-#if CENV_CPU_ALPHA		/* DEC Alpha AXP series */
-# define KLH10S_CENV_CPU_ "ALPHA"
-#elif CENV_CPU_ARM		/* DEC/Intel ARM series */
-# define KLH10S_CENV_CPU_ "ARM"
-#elif CENV_CPU_I386		/* Intel 386/486 */
-# define KLH10S_CENV_CPU_ "I386"
-#elif CENV_CPU_M68		/* MC680x0 series */
-# define KLH10S_CENV_CPU_ "M68"
-#elif CENV_CPU_PDP10		/* DEC PDP10 series */
-# define KLH10S_CENV_CPU_ "PDP10"
-#elif CENV_CPU_PPC		/* IBM/Motorola PowerPC series */
-# define KLH10S_CENV_CPU_ "PPC"
-#elif CENV_CPU_SPARC		/* SUN SPARC series */
-# define KLH10S_CENV_CPU_ "SPARC"
-#else
-# define KLH10S_CENV_CPU_ "unknown"
-#endif
+#ifndef KLH10S_CENV_CPU_
+# if CENV_CPU_ALPHA		/* DEC Alpha AXP series */
+#  define KLH10S_CENV_CPU_ "ALPHA"
+# elif CENV_CPU_ARM		/* DEC/Intel ARM series */
+#  define KLH10S_CENV_CPU_ "ARM"
+# elif CENV_CPU_I386		/* Intel 386/486 */
+#  define KLH10S_CENV_CPU_ "I386"
+# elif CENV_CPU_M68		/* MC680x0 series */
+#  define KLH10S_CENV_CPU_ "M68"
+# elif CENV_CPU_PDP10		/* DEC PDP10 series */
+#  define KLH10S_CENV_CPU_ "PDP10"
+# elif CENV_CPU_PPC		/* IBM/Motorola PowerPC series */
+#  define KLH10S_CENV_CPU_ "PPC"
+# elif CENV_CPU_SPARC		/* SUN SPARC series */
+#  define KLH10S_CENV_CPU_ "SPARC"
+# else
+#  define KLH10S_CENV_CPU_ "unknown"
+# endif /* CENV_CPU_* */
+#endif /* KLH10S_CENV_CPU_ */
 
 /* Compilation switches defining desired emulation target */
 

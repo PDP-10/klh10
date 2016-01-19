@@ -1,4 +1,3 @@
-new
 bld/*/*.h
 bld/*/*.o
 bld/*/dpimp
@@ -13,4 +12,8 @@ bld/*/udlconv
 bld/*/vdkfmt
 bld/*/wfconv
 bld/*/wxtest
+config.status
+autom4te.cache
+new
 src/tags
+tmp*/*

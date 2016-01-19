@@ -50,6 +50,9 @@
  RCSID(cenv_h,"$Id: cenv.h,v 2.6 2002/03/28 16:48:50 klh Exp $")
 #endif
 
+/* Include the configure-generated definitions */
+#include "config.h"
+
 /* Machine architecture - alpha order */
 
 #ifndef  CENV_CPU_ALPHA		/* DEC Alpha AXP series */
@@ -79,7 +82,7 @@
  */
 #if !(CENV_CPU_M68|CENV_CPU_SPARC|CENV_CPU_PDP10|CENV_CPU_I386 \
      |CENV_CPU_ALPHA|CENV_CPU_PPC)
-# if defined(__alpha) || defined(__alpha__)
+# if defined(__alpha) || defined(__alpha__) || defined(__x86_64__) || defined(__amd64__)
 #  undef  CENV_CPU_ALPHA
 #  define CENV_CPU_ALPHA 1
 # elif defined(__arm) || defined(__arm__)
@@ -267,7 +270,7 @@
 #  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
 #  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
 #  ifndef _FILE_OFFSET_BITS
-#   define _FILE_OFFSET_BITS=64	/* Use 64-bit file ops */
+#   define _FILE_OFFSET_BITS 64	/* Use 64-bit file ops */
 #  endif
 #  ifndef _LARGEFILE_SOURCE
 #   define _LARGEFILE_SOURCE		/* Include fseeko, ftello, etc */

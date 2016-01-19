@@ -188,6 +188,10 @@ how to recompile a kernel. You need at least these options (as of 3.0):
 	pseudo-device	tap		# cloning device for NI20
 	pseudo-device	bridge		# cloning device for NI20
 
+Later versions of NetBSD make SHMMAXPGS configurable at runtime, via
+sysctl -w kern.ipc.shmmaxpgs=value. The default value may be large enough
+already.
+
 Linux
 -----
 
@@ -930,9 +934,48 @@ The parameters for the NI20 driver are:
 	However, for a shared interface this will default to whatever the host
 	system uses for its IP datagrams, normally "ln0" or "tu0" for
 	OSF/1.
+	If really needed, you can force the choice with the environment
+	variable KLH10_NET_DEFAULT_IF.
 	The shell commands "ifconfig -a" or "netstat -i" will show the
 	known interfaces.
 	See also the ENADDR parameter.
+
+[IFMETH=<pcap|tap|tap+bridge>] Default: system dependent
+	Different host operating systems have different methods to allow
+	access to an ethernet interface. Some may have more than one.
+	The desired option can be chosen at runtime from the ones that are
+	compiled in.
+
+	pcap uses the libpcap library and therefore is the most portable.
+	However, on some systems this uses a backing method that does not
+	allow 2-way communication between the host and the guest system.
+	(BPF may on some cases not allow packets sent by the guest to be
+	seen by the host).
+	pcap is essentially always available, since the library is also used
+	to enumerate the real ethernet interfaces.
+
+	tun uses the IP tunnel device. Implemented for *BSD and Linux. This
+	option is only available for dpimp, i.e. for ks-its.
+
+	tap uses the Ethernet  tunnel device. Implemented for *BSD and Linux.
+	For the ethernet packets to be received anywhere outside the
+	host, they need to be bridged (tap+bridge) to a real interface,
+	or routing needs to be set up on the host (this is not built into klh).
+
+	With both tun and tap you can specify with ifc=tun33 which of the tun/
+	tap devices you want to use, for instance if you have one pre-set-up.
+	Otherwise, one will be created for you.
+
+	tap+bridge networking is a mix between DEDIC=TRUE and DEDIC=FALSE.
+	It is dedicated in the sense that the interface is virtual and can
+	be manipulated at will (ethernet address, multicast, etc) but it
+	is shared in the sense that it receives packets promiscuously,
+	i.e. unfiltered.
+
+	On Linux, the bridge must be pre-created by the user and connected
+	to an ethernet interface. The name of this bridge can be passed in
+	the environment variable KLH10_NET_BRIDGE. Note that the sudo command
+	by default cleans the environment so use sudo -E.
 
 [ENADDR=<x:x:x:x:x:x>]	Default: <none>
 	Normally unnecessary.
@@ -1181,7 +1224,8 @@ I/O possible is in terms of IP datagrams rather than ethernet packets.
 	devdef imp ub3 lhdh \
 		addr=767600 br=6 vec=250 \	; Generic Unibus params
 		ipaddr=10.2.0.6 \		; ITS IP address 
-		gwaddr=199.34.53.50		; Host platform's IP address
+		gwaddr=199.34.53.50 \		; Host platform's IP address
+		ifmeth=tun			; networking method
 
 The parameters for the LHDH driver are:
 
@@ -1213,6 +1257,9 @@ The parameters for the LHDH driver are:
 	(as defined by the IPADDR parameter).
 	Normally the host platform can be specified, but a real gateway
 	is OK too.
+
+[IFMETH=<tun|tap|tap+bridge|pcap>] Required
+	As with the NI20.
 
 [DEBUG=<boolean>]	Default: FALSE
 [DEBUG]			Same as DEBUG=TRUE
