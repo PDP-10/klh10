@@ -52,7 +52,6 @@
 # include <unistd.h>		/* Basic Unix syscalls */
 # include <sys/types.h>
 # include <sys/ioctl.h>
-# include <sys/mtio.h>
 # define NULLDEV "/dev/null"
 # define FD_STDIN 0
 # define FD_STDOUT 1

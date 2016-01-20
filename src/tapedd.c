@@ -72,7 +72,9 @@
 # include <unistd.h>		/* Basic Unix syscalls */ 
 # include <sys/types.h>
 # include <sys/ioctl.h>
-# include <sys/mtio.h>
+# if HAVE_SYS_MTIO_H
+#  include <sys/mtio.h>
+# endif /* HAVE_SYS_MTIO_H */
 # define char8 unsigned char
 # define O_BSIZE_8 0
 # define NULLDEV "/dev/null"
@@ -1466,6 +1468,8 @@ int os_mtweof(struct dev *dp)		/* Write a tapemark */
     acs[1] = dp->d_fd;
     acs[2] = monsym(".MOCLE");
     jsys(MTOPR, acs);
+#elif CENV_SYS_UNIX && !HAVE_SYS_MTIO_H
+    return FALSE;
 #else
     struct mtop mtcmd;
     mtcmd.mt_op = MTWEOF;
@@ -1486,6 +1490,8 @@ int os_mtfsr(struct dev *dp)	/* Forward Space Record (to inter-record gap)*/
     acs[2] = monsym(".MOCLE");
     jsys(MTOPR, acs);
 */
+#elif CENV_SYS_UNIX && !HAVE_SYS_MTIO_H
+    return FALSE;
 #else
     struct mtop mtcmd;
     mtcmd.mt_op = MTFSR;
@@ -1537,7 +1543,7 @@ t20status(register struct dev *d, register FILE *f, int swd, int cnt)
 void os_mtstatus(struct dev *dp, FILE *f)
 {
 #if CENV_SYS_T20
-#elif CENV_SYS_UNIX
+#elif CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     struct mtget mtstatb;
 
     if (ioctl(dp->d_fd, MTIOCGET, (char *)&mtstatb) < 0) {

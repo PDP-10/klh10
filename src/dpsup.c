@@ -53,11 +53,11 @@ static int decosfcclossage;
 # include <sys/mman.h>
 # include <unistd.h>
 # include <signal.h>
-# if CENV_SYS_SUN || CENV_SYS_SOLARIS
+# if defined(MAXSIG)
 #  define SIGMAX MAXSIG		/* Different wording on Sun */
-# elif CENV_SYS_FREEBSD
+# elif defined(NSIG)
 #  define SIGMAX NSIG
-# elif CENV_SYS_NETBSD || CENV_SYS_LINUX
+# elif defined(_NSIG)
 #  define SIGMAX _NSIG
 # endif
 #endif /* CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_XBSD || CENV_SYS_LINUX */

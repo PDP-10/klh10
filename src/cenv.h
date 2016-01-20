@@ -172,22 +172,25 @@
 #  define CENV_SYS_DECOSF 1
 # elif defined(__FreeBSD__)
 #  undef  CENV_SYS_FREEBSD
-#  define CENV_SYS_FREEBSD 1 
+#  define CENV_SYS_FREEBSD 1
 # elif defined(__linux__)
 #  undef  CENV_SYS_LINUX
 #  define CENV_SYS_LINUX 1
-# elif defined(__APPLE__)
+# elif defined(__APPLE__) && !defined(__MACH__)
 #  undef  CENV_SYS_MAC
-#  define CENV_SYS_MAC 1 
+#  define CENV_SYS_MAC 1
+# elif defined(__APPLE__) && defined(__MACH__)
+#  define CENV_SYS_BSD 1
+#  define CENV_SYS_XBSD 1
 # elif defined(__NetBSD__)
 #  undef  CENV_SYS_NETBSD
-#  define CENV_SYS_NETBSD 1 
+#  define CENV_SYS_NETBSD 1
 # elif defined(__OpenBSD__)
 #  undef  CENV_SYS_OPENBSD
-#  define CENV_SYS_OPENBSD 1 
+#  define CENV_SYS_OPENBSD 1
 # elif defined(__sun) && defined(__SVR4)
 #  undef  CENV_SYS_SOLARIS
-#  define CENV_SYS_SOLARIS 1 
+#  define CENV_SYS_SOLARIS 1
 # elif defined(__COMPILER_KCC__)
 #  undef  CENV_SYS_T20		/* Not quite right, but close enough */
 #  define CENV_SYS_T20 1

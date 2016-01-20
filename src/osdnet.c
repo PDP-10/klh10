@@ -502,6 +502,7 @@ osn_ifnmlookup(char *ifnam,		/* Interface name */
 }
 
 #if CENV_SYS_LINUX
+
 int
 set_proc_variable(char *template, char *ifname, char *value)
 {
@@ -522,9 +523,9 @@ set_proc_variable(char *template, char *ifname, char *value)
 }
 
 #endif /* CENV_SYS_LINUX */
+
 /* OSN_ARP_STUFF - stuff emulated-host ARP entry into kernel.
-**	Note it isn't necessary to specify an interface!
-**	Also, the code assumes that if an ARP entry already exists in the
+**	The code assumes that if an ARP entry already exists in the
 **	kernel for the given IP address, it will be reset to this new
 **	setting rather than (eg) failing.
 */
@@ -590,7 +591,7 @@ osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf)
     if (set_proc_variable("/proc/sys/net/ipv4/ip_forward", "", "1\n")) {
 	dbprintln("Enabled net.ipv4.ip_forward");
     }
-#endif /* OSN_USE_IPONLY */
+# endif /* OSN_USE_IPONLY */
     /*
      * It seems that if arp_accept=0, then ARP packets that are received
      * are not only ignored by the kernel, but also not passed to
@@ -1459,7 +1460,6 @@ error:
  * Receives a single packet and returns its size.
  * Include link-layer headers, but no BPF headers or anything like that.
  */
-inline
 ssize_t
 osn_pfread_pcap(struct pfdata *pfdata, void *buf, size_t nbytes)
 {
@@ -1513,7 +1513,6 @@ tryagain:
  * Expect a full ethernet frame including link-layer header.
  * returns the number of bytes written.
  */
-inline
 int
 osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 {
