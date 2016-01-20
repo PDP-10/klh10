@@ -43,6 +43,10 @@ static int decosfcclossage;
 #include <stdlib.h>
 #include <string.h>		/* For strerror() if present */
 
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+
 #include "dpsup.h"
 
 #if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_XBSD || CENV_SYS_LINUX
@@ -663,19 +667,19 @@ dp_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return dp_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#  if !CENV_SYS_XBSD		/* Already in signal.h */
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
 #  endif
 	if (0 < err &&  err <= sys_nerr)
-	    return (char *)sys_errlist[err];
+	    return sys_errlist[err];
     }
-#  endif
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -683,7 +687,7 @@ dp_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 

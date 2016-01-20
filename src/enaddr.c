@@ -60,6 +60,10 @@
 #include "rcsid.h"
 #include "osdnet.h"
 
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+
 #ifdef RCSID
  RCSID(enaddr_c,"$Id: enaddr.c,v 2.6 2002/03/18 04:19:17 klh Exp $")
 #endif
@@ -122,10 +126,6 @@ Usage: enaddr [-v] [<ifc> [default | <ifaddr>] [+<addmcast>] [-<delmcast>]]\n\
 
 #if 1	/* Error and diagnostic stuff */
 
-#if CENV_SYSF_STRERROR
-# include <string.h>		/* For strerror() */
-#endif
-
 /* Error and diagnostic output */
 
 static const char *log_progname = LOG_PROGNAME;
@@ -134,19 +134,19 @@ char *log_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return log_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#  if !CENV_SYS_XBSD		/* Already in signal.h */
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
 #  endif
 	if (0 < err &&  err <= sys_nerr)
 	    return sys_errlist[err];
     }
-#  endif
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -154,7 +154,7 @@ char *log_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 

@@ -52,6 +52,10 @@
 #include "osdsup.h"
 #include "kn10ops.h"
 
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+
 #if CENV_SYS_UNIX
 #  include <sys/types.h>
 #  include <sys/stat.h>
@@ -119,7 +123,7 @@
 #endif /* CENV_USE_COMM_TOOLBOX */
 #endif /* CENV_SYS_MAC */
 
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
   extern char *strerror(int);	/* Not always declared in string.h */
 #endif
 
@@ -180,19 +184,19 @@ os_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return os_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#  if !CENV_SYS_XBSD		/* Already in signal.h */
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
 #  endif
 	if (0 < err &&  err <= sys_nerr)
 	    return sys_errlist[err];
     }
-#  endif
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -200,7 +204,7 @@ os_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 /* Controlling terminal stuff

@@ -47,7 +47,11 @@ NETLIBS="$LIBS"
 LIBS="$SAVE_LIBS"
 
 # Checks for header files.
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netinet/in.h sgtty.h stddef.h stdlib.h string.h sys/file.h sys/ioctl.h sys/socket.h sys/time.h termios.h unistd.h net/if_tun.h linux/if_tun.h linux/if_packet.h net/if_tap.h sys/mtio.h net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h])
+AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h limits.h netinet/in.h sgtty.h \
+		  stddef.h stdlib.h string.h sys/file.h sys/ioctl.h \
+		  sys/socket.h sys/time.h termios.h unistd.h net/if_tun.h \
+		  linux/if_tun.h linux/if_packet.h net/if_tap.h sys/mtio.h \
+		  net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -63,7 +67,9 @@ AC_FUNC_FORK
 AC_FUNC_FSEEKO
 AC_FUNC_MALLOC
 AC_FUNC_REALLOC
-AC_CHECK_FUNCS([alarm dup2 gettimeofday localtime_r memset socket strcasecmp strchr strcspn strerror strncasecmp strpbrk strrchr strtol getifaddrs if_nameindex termios sigsetops sigaction nanosleep])
+AC_CHECK_FUNCS([alarm dup2 gettimeofday localtime_r memset socket strcasecmp \
+		strchr strcspn strerror strncasecmp strpbrk strrchr strtol \
+		getifaddrs if_nameindex termios sigsetops sigaction nanosleep])
 
 # Check for CPU.
 # This requires install-sh, config.sub, config.guess from automake.
@@ -110,6 +116,53 @@ typedef char vaddr_t;
 ])
 
 # -------------------------------------------------------------------------
+# Check how to replace strerror()
+# -------------------------------------------------------------------------
+
+AC_MSG_CHECKING([whether sys_errlist exists])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+#include <stdlib.h>
+#include <stdio.h>
+]], [[
+     return sys_errlist[sys_nerr-1];
+]])],
+[
+    # Compiles ok
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_SYS_ERRLIST], [1], [Define if  char *sys_errlist[] exists])
+],
+[
+    # Compile error; try another variation
+    AC_MSG_RESULT([no])
+
+    AC_MSG_CHECKING([whether sys_errlist exists but needs a declaration])
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+    #if HAVE_ERRNO_H
+    # include <errno.h>
+    #endif
+    #include <stdlib.h>
+    #include <stdio.h>
+    extern int sys_nerr;
+    extern char *sys_errlist[];
+    ]], [[
+	 return sys_errlist[sys_nerr-1];
+    ]])],
+    [
+	# Compiles ok
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([HAVE_SYS_ERRLIST], [1], [Define if char *sys_errlist[] exists])
+	AC_DEFINE([DECL_SYS_ERRLIST], [1], [Define if char *sys_errlist[] must be declared])
+    ],
+    [
+	# Compile error
+	AC_MSG_RESULT([no?])
+    ])
+])
+
+# -------------------------------------------------------------------------
 # Check whether we want bridge support
 # -------------------------------------------------------------------------
 
@@ -146,6 +199,15 @@ fi
 # -------------------------------------------------------------------------
 # Output section. State which @VARIABLES@ are going to be substituted
 # -------------------------------------------------------------------------
+
+AH_TOP([
+#ifndef CONFIG_H_INCLUDED
+#define CONFIG_H_INCLUDED
+])
+
+AH_BOTTOM([
+#endif /* CONFIG_H_INCLUDED */
+])
 
 AC_SUBST([CC])
 AC_SUBST([CFLAGS])
