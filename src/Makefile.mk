@@ -109,6 +109,7 @@ showdefs:
 	@echo "CONFFLAGS = $(CONFFLAGS)"
 	@echo "CONFFLAGS_AUX = $(CONFFLAGS_AUX)"
 	@echo "BUILDMOD = $(BUILDMOD)"
+	@echo "KLH10_HOME = $(KLH10_HOME)"
 
 
 # Generally applicable rules

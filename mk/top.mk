@@ -27,7 +27,7 @@ NETLIBS = @NETLIBS@
 
 prefix = @prefix@
 exec_prefix = @exec_prefix@
-KLH10_HOME = ${DESTDIR}@bindir@
+KLH10_HOME ?= ${DESTDIR}@bindir@
 
 # Source definitions
 CENVFLAGS = @CENVFLAGS@

@@ -1383,7 +1383,7 @@ osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 	what = "pcap_set_immediate_mode";
 	goto error;
     }
-#endif
+#endif /* HAVE_PCAP_SET_IMMEDIATE_MODE */
 
     /* Set read timeout.
        Safety check in order to avoid infinite hangs if something
@@ -1428,6 +1428,17 @@ osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
     }
 
     pfdata->pf_fd = pcap_get_selectable_fd(pc);
+
+#if !HAVE_PCAP_SET_IMMEDIATE_MODE && defined(BIOCIMMEDIATE)
+    /* Try to set immediate mode  another way. Assume BPF since we know how to
+     * do that. But don't complain if it fails, since it libpcap may use
+     * something else.
+     */
+    {
+	int yes = 1;
+	ioctl(pcap_fileno(pc), BIOCIMMEDIATE, &yes);
+    }
+#endif /* !HAVE_PCAP_SET_IMMEDIATE_MODE */
 
     /* Now get our interface's ethernet address. */
     (void) osn_ifealookup(ifnam, (unsigned char *) &osnpf->osnpf_ea);
