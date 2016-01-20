@@ -250,10 +250,24 @@
  */
 #ifndef  CENV_SYSF_LFS	/* Predefining this must predefine the rest */
 
+# if defined(SIZEOF_OFF_T)	/* system inspected by configure */
+#  if SIZEOF_OFF_T == 0 || SIZEOF_OFF_T == 4
+#   define CENV_SYSF_LFS 0		/* No off_t, use long */
+#   define CENV_SYSF_LFS_FMT "l"	/* printf format is long */
+#  elif SIZEOF_OFF_T == 8
+#   define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
+#    if SIZEOF_OFF_T == SIZEOF_LONG
+#     define CENV_SYSF_LFS_FMT "l"	/* printf format is long */
+#    elif SIZEOF_OFF_T == SIZEOF_LONG_LONG
+#     define CENV_SYSF_LFS_FMT "ll"	/* printf format is long long */
+#    endif
+#  endif
+#  define CENV_SYSF_FSEEKO	HAVE_FSEEKO
+
      /* FreeBSD defaults to 64-bit file off_t but calls the type "quad_t"
       * instead of "long long".  Always has fseeko.
       */
-# if CENV_SYS_FREEBSD
+# elif CENV_SYS_FREEBSD
 #  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
 #  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
 #  define CENV_SYSF_LFS_FMT "q"		/* printf format is quad_t */

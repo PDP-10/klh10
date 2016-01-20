@@ -128,6 +128,22 @@ then
 fi
 
 # -------------------------------------------------------------------------
+# Check large file support and the sizes of related types
+# -------------------------------------------------------------------------
+
+AC_SYS_LARGEFILE
+
+AC_CHECK_SIZEOF(long)
+AC_CHECK_SIZEOF(long long)
+# Only try to find the size of off_t if it really exists
+if test "x$ac_cv_type_off_t" = xyes
+then
+    AC_CHECK_SIZEOF(off_t)
+else
+    AC_DEFINE([SIZEOF_OFF_T], [0])
+fi
+
+# -------------------------------------------------------------------------
 # Output section. State which @VARIABLES@ are going to be substituted
 # -------------------------------------------------------------------------
 
