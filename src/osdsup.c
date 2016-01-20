@@ -1228,7 +1228,7 @@ os_v2rt_idle(ossighandler_t *hdlarg)
 void
 os_sleep(int secs)
 {
-#if CENV_SYSF_NANOSLEEP
+#if HAVE_NANOSLEEP
     osstm_t stm;
 
     OS_STM_SET(stm, secs);
@@ -1284,7 +1284,7 @@ os_sleep(int secs)
 int
 os_msleep(osstm_t *stm)
 {
-#if CENV_SYSF_NANOSLEEP
+#if HAVE_NANOSLEEP
 
     if (nanosleep(stm, stm) == 0) {
 	stm->tv_sec = 0;	/* Make sure returns zero */

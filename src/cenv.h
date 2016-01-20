@@ -229,10 +229,6 @@
 # define CENV_SYSF_SIGSET (CENV_SYS_DECOSF|CENV_SYS_SUN|CENV_SYS_SOLARIS \
 			  |CENV_SYS_XBSD|CENV_SYS_LINUX)
 #endif
-#ifndef  CENV_SYSF_NANOSLEEP	/* Has nanosleep(2) */
-# define CENV_SYSF_NANOSLEEP (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
-			     |CENV_SYS_LINUX)
-#endif
 
 /* Large File Support (LFS)
  * See <http://ftp.sas.com/standards/large.file/x_open.20Mar96.html>

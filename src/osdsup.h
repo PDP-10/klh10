@@ -236,7 +236,7 @@ typedef struct {
 
 /* Sleep time - osstm_t
  */
-#if CENV_SYSF_NANOSLEEP
+#if HAVE_NANOSLEEP
 typedef struct timespec osstm_t;
 # define OS_STM_SEC(stm)  ((stm).tv_sec)
 # define OS_STM_USEC(stm) ((stm).tv_nsec/1000)
@@ -249,7 +249,7 @@ typedef long osstm_t;
 # define OS_STM_USEC(stm) (((stm)%1000)*1000)
 # define OS_STM_SET(stm, sec) ((stm) = (sec)*1000)
 # define OS_STM_MSET(stm, ms) ((stm) = (ms))
-#endif /* !CENV_SYSF_NANOSLEEP */
+#endif /* !HAVE_NANOSLEEP */
 
 
 extern int os_vrtmget(osrtm_t *);
