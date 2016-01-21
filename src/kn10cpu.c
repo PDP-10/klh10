@@ -1386,7 +1386,7 @@ quant_freeze(int32 qc)
     ** don't report runtime in a monotonically increasing way.
     ** See os_vrtmget() for more detail.
     */
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     if (rtm.tv_sec < 0 || rtm.tv_usec < 0) {
 # if 0	/* Disable output for now.  Perhaps bump a meter later */
 	fprintf(stderr, "[Neg quantum! %ld,%ld]\r\n",
@@ -1394,7 +1394,7 @@ quant_freeze(int32 qc)
 # endif
 	return qc;
     }
-#endif	/* CENV_SYSF_BSDTIMEVAL */
+#endif	/* HAVE_SETITIMER */
 
     return qc + (int32)os_rtm_toqct(&rtm);	/* Convert to quantum ticks! */
 }

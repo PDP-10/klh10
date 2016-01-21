@@ -215,9 +215,6 @@
 /* Specific OS Feature defs
    This only has features of interest for KLH10 software.
  */
-#ifndef  CENV_SYSF_BSDTIMEVAL	/* Has "timeval" struct & calls */
-# define CENV_SYSF_BSDTIMEVAL (CENV_SYS_UNIX && !CENV_SYS_V7)
-#endif
 #ifndef  CENV_SYSF_TERMIOS	/* Has termios(3) tty stuff */
 # define CENV_SYSF_TERMIOS (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
 			   |CENV_SYS_LINUX)

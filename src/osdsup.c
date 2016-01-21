@@ -65,7 +65,7 @@
 #  include <errno.h>
 #  include <time.h>		/* For struct tm, localtime() */
 
-#  if CENV_SYSF_BSDTIMEVAL
+#  if HAVE_SETITIMER
 #    include <sys/time.h>	/* BSD: For setitimer() */
 #    include <sys/resource.h>	/* BSD: For getrusage() */
 #  endif
@@ -909,7 +909,7 @@ and fits within 20 bits.
 int
 os_rtmget(register osrtm_t *art)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER /* && HAVE_GETTIMEOFDAY ; implied */
     static osrtm_t os_last_rtm = {0,0};
     if (!gettimeofday(art, (struct timezone *)NULL) == 0)
 	return FALSE;
@@ -949,7 +949,7 @@ os_vrtmget(register osrtm_t *art)
 	return TRUE;
     }
     return FALSE;
-#elif CENV_SYSF_BSDTIMEVAL
+#elif HAVE_GETRUSAGE
     /* WARNING!!!  Some systems turn out not to report getrusage runtime in a
     ** monotonically increasing way!  This can result in negative deltas
     ** from one get to the next.
@@ -978,7 +978,7 @@ os_vrtmget(register osrtm_t *art)
 void
 os_rtmsub(register osrtm_t *a, register osrtm_t *b)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     a->tv_sec -= b->tv_sec;
     if ((a->tv_usec -= b->tv_usec) < 0) {
 	--a->tv_sec;
@@ -1062,7 +1062,7 @@ os_timer(int type,
 	 register uint32 usecs,
 	 ostimer_t *ostate)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     struct itimerval itm;
 
     if (type != ITIMER_VIRTUAL)
@@ -1127,7 +1127,7 @@ os_vtimer(ossighandler_t *irtn, uint32 usecs)
 void
 os_timer_restore(ostimer_t *ostate)
 {
-#if CENV_SYSF_BSDTIMEVAL && CENV_SYSF_SIGSET
+#if HAVE_SETITIMER && CENV_SYSF_SIGSET
     sigset_t blkset, savset;
     int ret;
 
@@ -1161,7 +1161,7 @@ os_timer_restore(ostimer_t *ostate)
 void
 os_v2rt_idle(ossighandler_t *hdlarg)
 {
-#if CENV_SYSF_BSDTIMEVAL && CENV_SYSF_SIGSET
+#if HAVE_SETITIMER && CENV_SYSF_SIGSET
     sigset_t allmsk, oldmsk, nomsk;
     struct itimerval ntval, vtval;
     static ossighandler_t *handler = NULL;
@@ -1234,7 +1234,7 @@ os_sleep(int secs)
     OS_STM_SET(stm, secs);
     while (os_msleep(&stm) > 0) ;
 
-#elif CENV_SYSF_BSDTIMEVAL
+#elif HAVE_SETITIMER
     /* Must save & restore ITIMER_REAL & SIGALRM, which conflict w/sleep() */
     ostimer_t savetmr;
 
@@ -1351,7 +1351,7 @@ os_rtm_tokst(register osrtm_t *art,
     register dw10_t d;
     register w10_t w;
 
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     LRHSET(w, 017, 0507640);			/* 4,100,000. */
     d = op10xmul(w, op10utow(art->tv_sec));
     w = op10utow((int32)((art->tv_usec << 2) + (art->tv_usec / 10)));
@@ -1384,7 +1384,7 @@ os_rtm_tokst(register osrtm_t *art,
 unsigned long
 os_rtm_toqct(register osrtm_t *art)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     return ((unsigned long)(art->tv_sec * 4100000)
 		+ (art->tv_usec << 2) + (art->tv_usec/10)) >> 4;
 #elif CENV_SYS_MAC
@@ -1417,7 +1417,7 @@ See io_rdtime().
 unsigned long
 os_rtm_toklt(register osrtm_t *art)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     return ((unsigned long)art->tv_sec * 1000000) + art->tv_usec;
 #elif CENV_SYS_MAC
     return art->lo;

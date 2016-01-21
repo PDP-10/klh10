@@ -730,7 +730,7 @@ dp_sleep(int secs)
 #if CENV_SYS_DECOSF
     sleep(secs);		/* Independent of interval timers! */
 
-#elif CENV_SYSF_BSDTIMEVAL && CENV_SYSF_SIGSET
+#elif HAVE_SETITIMER && CENV_SYSF_SIGSET
     /* Must save & restore ITIMER_REAL & SIGALRM, which conflict w/sleep() */
     struct itimerval ztm, otm;
     struct sigaction act, oact;
