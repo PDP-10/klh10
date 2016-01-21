@@ -51,10 +51,11 @@ for other ports such as MacOS or Windows have not yet been written.
 
 [3] Build a KN10 from sources.
 
-	$ cd <distrib>/bld/<platform>
-	$ make base-kl		;;; or base-ks or base-ks-its
-    or to make all variants, installing to <distrib>/new/<platform>-<model>:
-	$ ../MAKE-ALL
+	$ mkdir tmp; cd tmp
+	$ ../configure --bindir=$KLH10_HOME
+	$ make -C bld-kl
+	$ make -C bld-ks
+	$ make -C bld-ks-its
 
     Or see the "BUILDING FROM SOURCES" section farther on.
     Read "doc/dfkfb.txt" if you want to do a quick KL performance test now.
@@ -62,7 +63,10 @@ for other ports such as MacOS or Windows have not yet been written.
 
 [4] Install the binaries into $KLH10_HOME.
 
-	$ make install
+	$ make -C bld-<model> install
+
+    This installs into $KLH10_HOME if you have set it, or in the --bindir
+    directory given to configure otherwise.
 
     If this doesn't work, you can do it by hand; just copy all of the
     executable files to $KLH10_HOME (or establish symlinks to them).
@@ -218,44 +222,25 @@ ftp://ftp.its.os.org/its/klh10/.
 BUILDING FROM SOURCES
 =====================
 
-    Connect to the appropriate distribution build subdirectory for your
-    platform, and type "make <kn10>" where <kn10> is one of
-    the following standard targets:
+    The configure script will probe your system to find out some of its
+    characteristics. Normally no manual settings are needed.
 
-		Target      Builds this emulator
-		------      --------------------
-		base-kl     kn10-kl     (KL10B - runs TOPS-10/20)
-		base-ks     kn10-ks     (KS10  - runs TOPS-10/20)
-		base-ks-its kn10-ks-its (KS10  - runs ITS)
+    $ mkdir <some fresh directory>; cd <that same directory>
+    $ <distrib>/configure
 
-    Let's suppose the platform is FreeBSD-i386 for example:
+    This will generate 3 subdirectories with a Makefile in each.
+    They differ only in their default target, so that the different
+    models can easily be built independently.
 
-	$ cd <distrib>/bld/fbx86
-	$ make base-kl
+	Directory  Target      Builds this emulator
+	---------  ------      --------------------
+	bld-kl	   base-kl     kn10-kl     (KL10B - runs TOPS-10/20)
+	bld-ks	   base-ks     kn10-ks     (KS10  - runs TOPS-10/20)
+	bld-ks-its base-ks-its kn10-ks-its (KS10  - runs ITS)
 
-    This will compile everything necessary and leave all of the binaries
-    in the build directory.  The builds are separate from the sources
-    to make it easier to generate and maintain multiple flavors of KN10s.
-
-Notes:
-
-The "*axp" directories are not only useful for Alpha AXP hosts, but also
-for any other little-endian 64-bit CPU. That includes amd64 aka x86_64.
-While the x86 configuration may work on amd64, it is likely to be
-a bit less efficient.
-
-Solaris has two possible Makefiles; the default uses GCC, but you
-can change the link to Mk-solsparc-cc.mk which uses Sun's C compiler.
-
-If there isn't already a likely looking "bld" subdirectory for your
-platform, make one using the others as a guide.  In general, the
-compiler options provided are fairly simple in order to increase the
-odds that the compilation will succeed.  You can tune or revise the
-Makefile for your system by editing a local copy within your
-subdirectory, which avoids the need to change any of the actual
-Distribution files.  When you have it working, let me know what was
-done so I can add it to the Distribution or at least to some notes.
-
+    The pre-configure build directories are also still there, but they
+    are no longer maintained, and do not cover all possible host
+    OS and CPU options. These are in <distrib>/bld/<os><cpu>.
 
 PORTING
 =======
