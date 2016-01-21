@@ -910,7 +910,7 @@ void eth_adrset(struct dpni20_s *dpni)
     /* Apparently won!  Try reading it back just to be paranoid,
      * using packetfilter FD.
      */
-    if (!osn_pfeaget(pfdata.pf_fd, dpni->dpni_ifnam, rdea)) {
+    if (!osn_pfeaget(&pfdata, dpni->dpni_ifnam, rdea)) {
 	error("Can't read \"%s\" e/n addr!", dpni->dpni_ifnam);
 	/* Proceed as if set won, sigh */
     } else {

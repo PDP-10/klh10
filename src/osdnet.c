@@ -42,6 +42,11 @@
 # error "A bridge is useless without a TAP device... configuration error!"
 #endif
 
+#if HAVE_LIBVDEPLUG_H && HAVE_LIBVDEPLUG
+# include <libvdeplug.h>
+# define KLH10_NET_VDE 1
+#endif
+
 /* Local predeclarations */
 
 struct ifent *osn_iflookup(char *ifnam);
@@ -50,13 +55,13 @@ static struct ifent *osn_iftab_addaddress(char *name, struct sockaddr *addr, str
 #if KLH10_NET_PCAP
 static void osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg);
 static ssize_t osn_pfread_pcap(struct pfdata *pfdata, void *buf, size_t nbytes);
-static int osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes);
+static ssize_t osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes);
 #endif /* KLH10_NET_PCAP */
 #if KLH10_NET_TUN || KLH10_NET_TAP
 static void osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg);
 static void osn_pfdeinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf);
 static ssize_t osn_pfread_fd(struct pfdata *pfdata, void *buf, size_t nbytes);
-static int osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes);
+static ssize_t osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes);
 #endif /* TUN || TAP */
 
 struct tuntap_context;
@@ -66,6 +71,15 @@ void tap_bridge_close(struct tuntap_context *tt_ctx);
 #endif /* KLH10_NET_BRIDGE */
 static void osn_iff_up(int s, char *ifname);
 static int pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf);
+#if KLH10_NET_VDE
+static void osn_pfinit_vde(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg);
+static void osn_pfdeinit_vde(struct pfdata *pfdata, struct osnpf *osnpf);
+static ssize_t osn_pfread_vde(struct pfdata *pfdata, void *buf, size_t nbytes);
+static ssize_t osn_pfwrite_vde(struct pfdata *pfdata, const void *buf, size_t nbytes);
+#endif /* KLH10_NET_VDE */
+#if KLH10_NET_TUN || KLH10_NET_TAP || KLH10_NET_VDE
+static void osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf);
+#endif /* TUN || TAP || VDE */
 
 /* Get a socket descriptor suitable for general net interface
    examination and manipulation; this is not necessarily suitable for
@@ -859,12 +873,31 @@ static struct eth_addr emhost_ea = 	/* Emulated host ether addr for tap */
 /* OSN_PFEAGET - get physical ethernet address for an open packetfilter FD.
  *
  * Also not well documented, but generally easier to perform.
-*/
+ */
 int
-osn_pfeaget(int pfs,		/* Packetfilter socket or FD */
+osn_pfeaget(struct pfdata *pfdata,	/* Packetfilter data */
 	    char *ifnam,	/* Interface name (sometimes needed) */
 	    unsigned char *eap)	/* Where to write ether address */
 {
+    int fd = pfdata->pf_fd;
+
+    if (pfdata->pf_meth == PF_METH_TAP ||
+	pfdata->pf_meth == PF_METH_VDE) {
+
+	/* If we do tap(4) + bridge(4), the ether address of the tap is wholly
+	 * irrelevant, it is on the other side of the "wire".
+	 * Our own address is something we can make up completely.
+	 */
+	if (emhost_ea.ea_octets[5] == 0xFF) {
+	    time_t t = time(NULL);
+	    emhost_ea.ea_octets[5] =  t        & 0xFE;
+	    emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
+	    emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
+	}
+	ea_set(eap, &emhost_ea);	/* Return the ether address */
+
+	return TRUE;
+    }
 
 #if KLH10_NET_NIT
     /* SunOS/Solaris: The EA apparently can't be found until after the PF FD
@@ -904,18 +937,6 @@ osn_pfeaget(int pfs,		/* Packetfilter socket or FD */
     }
     ea_set(eap, endp.end_addr);
 
-#elif KLH10_NET_TAP
-    /* If we do tap(4) + bridge(4), the ether address of the tap is wholly
-     * irrelevant, it is on the other side of the "wire".
-     * Our own address is something we can make up completely.
-     */
-    if (emhost_ea.ea_octets[5] == 0xFF) {
-	time_t t = time(NULL);
-	emhost_ea.ea_octets[5] =  t        & 0xFE;
-	emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
-	emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
-    }
-    ea_set(eap, &emhost_ea);	/* Return the ether address */
 #elif (KLH10_NET_BPF && !CENV_SYS_NETBSD && !CENV_SYS_FREEBSD)
     /* NetBSD no longer seems to support this (on bpf) */
     struct ifreq ifr;
@@ -1311,7 +1332,14 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 	return osn_pfinit_pcap(pfdata, osnpf, pfarg);
     }
 #endif /* KLH10_NET_PCAP */
+#if KLH10_NET_VDE
+    if (!method[0] || !strcmp(method, "vde")) {
+	pfdata->pf_meth = PF_METH_VDE;
+	return osn_pfinit_vde(pfdata, osnpf, pfarg);
+    }
+#endif /* KLH10_NET_VDE */
 
+    esfatal(1, "Interface method \"%s\" not supported", method);
 }
 
 ssize_t
@@ -1524,7 +1552,7 @@ tryagain:
  * Expect a full ethernet frame including link-layer header.
  * returns the number of bytes written.
  */
-int
+ssize_t
 osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 {
     //if (DP_DBGFLG)
@@ -1533,6 +1561,7 @@ osn_pfwrite_pcap(struct pfdata *pfdata, const void *buf, size_t nbytes)
 }
 #endif /* KLH10_NET_PCAP */
 
+
 #if KLH10_NET_TUN || KLH10_NET_TAP
 
 /* Adapted from DEC's pfopen.c - doing it ourselves here because pfopen(3)
@@ -1682,50 +1711,21 @@ The ifra_mask field is ignored (left as-is or zeroed if new) unless
 void
 osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 {
-    int allowextern = TRUE;	/* For now, always try for external access */
     int fd;
     struct ifreq ifr;
     char *ifnam = osnpf->osnpf_ifnam; /* alias for the persisting copy */
     char ipb1[OSN_IPSTRSIZ];
     char ipb2[OSN_IPSTRSIZ];
-    struct ifent *ife = NULL;	/* Native host's default IP interface if one */
     struct in_addr iplocal;	/* TUN ifc address at hardware OS end */
     struct in_addr ipremote;	/* Address at remote (emulated guest) end */
-    static unsigned char ipremset[4] = { 192, 168, 0, 44};
+    char *basename = "";
     int s;
 
-    /* Remote address is always that of emulated machine */
-    ipremote = osnpf->osnpf_ip.ia_addr;
-    iplocal = osnpf->osnpf_tun.ia_addr;
     strncpy(tt_ctx.saved_ifnam, osnpf->osnpf_ifnam, IFNAM_LEN);
 
     if (DP_DBGFLG)
 	dbprint("Opening %s device",
 		pfdata->pf_meth == PF_METH_TUN ? "TUN" : "TAP");
-
-    /* Local address can be set explicitly if we plan to do full IP
-       masquerading. */
-    if (memcmp((char *)&iplocal, "\0\0\0\0", IP_ADRSIZ) == 0) {
-	/* Local address is that of hardware machine if we want to permit
-	   external access.  If not, it doesn't matter (and may not even
-	   exist, if there is no hardware interface)
-	   */
-	if (allowextern) {
-	    if ((ife = osn_ipdefault())) {
-		iplocal = ife->ife_ipia;
-	    } else {
-		error("Cannot find default IP interface for host");
-		allowextern = FALSE;
-	    }
-	}
-	if (!allowextern) {
-	    /* Make up bogus IP address for internal use */
-	    memcpy((char *)&iplocal, ipremset, 4);
-	}
-	osnpf->osnpf_tun.ia_addr = iplocal;
-    }
-
-    char *basename = "";
 
     switch (pfdata->pf_meth) {
     case PF_METH_TUN:
@@ -1739,6 +1739,12 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     default:
 	esfatal(0, "pf_meth value %d invalid", pfdata->pf_meth);
     }
+
+    osn_virt_ether(pfdata, osnpf);
+
+    /* Remote address is always that of emulated machine */
+    ipremote = osnpf->osnpf_ip.ia_addr;
+    iplocal = osnpf->osnpf_tun.ia_addr;
 
     fd = pfopen(basename, &tt_ctx, osnpf);
     if (fd < 0) {
@@ -1870,79 +1876,6 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     osn_iff_up(s, ifnam);
     close(s);
 
-    /* Now optionally determine ethernet address.
-       This amounts to what if anything we should put in the native
-       host's ARP tables.
-       - If we only intend to use the net between the virtual host and
-       its hardware host, then no ARP hackery is needed.
-       - However, if the intent is to allow traffic between the virtual
-       host and other machines on the LAN or Internet, then an ARP
-       entry is required.  It must advertise the virtual host's IP
-       address, using one of the hardware host's ethernet addresses
-       so any packets on the LAN for the virtual host will at least
-       wind up arriving at the hardware host it's running on.
-     */
-
-    /* Simple method is to get the ifconf table and scan it to find the
-       first interface with both an IP and ethernet address given.
-       Non-4.4BSD systems may not provide the latter datum, but if
-       we're using TUN then we almost certainly also have the good stuff
-       in ifconf.
-    */
-
-    /*
-     * Now get our fresh new virtual interface's ethernet address.
-     * Basically, we can make it up.
-     */
-    if (!pfdata->pf_ip4_only) {
-	/* If we do tap(4) + bridge(4), the ether address of the tap is wholly
-	 * irrelevant, it is on the other side of the "wire".
-	 * Our own address is something we can make up completely.
-	 */
-	if (emhost_ea.ea_octets[5] == 0xFF) {
-	    time_t t = time(NULL);
-	    emhost_ea.ea_octets[5] =  t        & 0xFE;
-	    emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
-	    emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
-	}
-	ea_set(&osnpf->osnpf_ea, &emhost_ea);	/* Return the ether address */
-
-	struct ifent *tap_ife = osn_ifcreate(ifnam);
-	if (tap_ife) {
-	    tap_ife->ife_flags = IFF_UP;
-	    ea_set(tap_ife->ife_ea, (unsigned char *)&osnpf->osnpf_ea);
-	    tap_ife->ife_gotea = TRUE;
-
-	    if (DP_DBGFLG) {
-		dbprintln("Entered 10-side of TAP into table:");
-		osn_iftab_show(stdout, &iftab[0], iftab_nifs);
-	    }
-	}
-    }
-
-    if (allowextern && ife) {
-	/* Need to determine ether addr of our default interface, then
-	   publish an ARP entry mapping the virtual host to the same
-	   ether addr.
-	 */
-
-	/* Use emhost_ea as set up above */
-    } else {
-	/* ARP hackery will be handled by IP masquerading and packet forwarding. */
-#if 1 /*OSN_USE_IPONLY*/ /* TOPS-20 does not like NI20 with made up address? */
-	/* Assume no useful ether addr for tun interface. */
-	ea_clr((char *)&osnpf->osnpf_ea);
-#else
-        /* Assign requested address to tap interface or get kernel assigned one. */
-        if (memcmp((char *)&osnpf->osnpf_ea, "\0\0\0\0\0\0", ETHER_ADRSIZ) == 0) {
-          osn_ifeaget(-1, ifnam, (unsigned char *)&osnpf->osnpf_ea, NULL);
-        }
-        else {
-          osn_ifeaset(-1, ifnam, (unsigned char *)&osnpf->osnpf_ea);
-        }
-#endif
-    }
-
     pfdata->pf_fd = fd;
     pfdata->pf_handle = &tt_ctx;
     pfdata->pf_can_filter = pfdata->pf_ip4_only;
@@ -1994,7 +1927,7 @@ osn_pfread_fd(struct pfdata *pfdata, void *buf, size_t nbytes)
  * returns the number of bytes written.
  */
 static inline
-int
+ssize_t
 osn_pfwrite_fd(struct pfdata *pfdata, const void *buf, size_t nbytes)
 {
     return write(pfdata->pf_fd, buf, nbytes);
@@ -2078,6 +2011,7 @@ pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf
 #endif /* CENV_SYS_NETBSD */
 #endif /* KLH10_NET_TAP || KLH10_NET_TUN */
 
+
 #if KLH10_NET_BRIDGE
 #if (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
 
@@ -2260,6 +2194,168 @@ static void osn_iff_up(int s, char *ifname)
     }
 }
 
+
+#if KLH10_NET_VDE
+
+static
+void
+osn_pfinit_vde(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
+{
+    struct vde_open_args voa;
+    char *devname = osnpf->osnpf_ifnam;
+    char errbuf[256];
+
+    memset(&voa, 0, sizeof(voa));
+
+    if (!(pfdata->pf_handle = (void*) vde_open(devname, "simh", &voa))) {
+	syserr(errno, "Can't open VDE device \"%s\"", devname);
+    } else {
+	pfdata->pf_fd = vde_datafd((VDECONN*)(pfdata->pf_handle));
+	pfdata->pf_meth = PF_METH_VDE;
+	pfdata->pf_can_filter = FALSE;
+	pfdata->pf_ip4_only = FALSE;
+	pfdata->pf_read = osn_pfread_vde;
+	pfdata->pf_write = osn_pfwrite_vde;
+	pfdata->pf_deinit = osn_pfdeinit_vde;
+    }
+
+    osn_virt_ether(pfdata, osnpf);
+}
+
+static
+void
+osn_pfdeinit_vde(struct pfdata *pfdata, struct osnpf *osnpf)
+{
+    vde_close(pfdata->pf_handle);
+}
+
+static
+ssize_t
+osn_pfread_vde(struct pfdata *pfdata, void *buf, size_t nbytes)
+{
+    ssize_t len = vde_recv((VDECONN *)pfdata->pf_handle, buf, nbytes, 0);
+
+    return len;
+}
+
+static
+ssize_t
+osn_pfwrite_vde(struct pfdata *pfdata, const void *buf, size_t nbytes)
+{
+    ssize_t len = vde_send((VDECONN*)pfdata->pf_handle, buf, nbytes, 0);
+
+    return len;
+}
+#endif /* KLH10_NET_VDE */
+
+
+#if KLH10_NET_TUN || KLH10_NET_TAP || KLH10_NET_VDE
+/*
+ * Some common code for fully virtual ethernet interfaces,
+ * where we have to invent our own ethernet address.
+ */
+static
+void
+osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf)
+{
+    static unsigned char ipremset[4] = { 192, 168, 0, 44};
+    struct ifent *ife = NULL;	/* Native host's default IP interface if one */
+
+    /* Local address can be set explicitly if we plan to do full IP
+       masquerading. */
+    if (memcmp((char *)&osnpf->osnpf_tun.ia_addr, "\0\0\0\0", IP_ADRSIZ) == 0) {
+	int have_addr = TRUE;
+	/* Local address is that of hardware machine if we want to permit
+	   external access.  If not, it doesn't matter (and may not even
+	   exist, if there is no hardware interface)
+	   */
+	if ((ife = osn_ipdefault())) {
+	    osnpf->osnpf_tun.ia_addr = ife->ife_ipia;
+	} else {
+	    error("Cannot find default IP interface for host");
+	    have_addr = FALSE;
+	}
+	if (!have_addr) {
+	    /* Make up bogus IP address for internal use */
+	    memcpy((char *)&osnpf->osnpf_tun.ia_addr, ipremset, 4);
+	}
+    }
+
+    /* Now optionally determine ethernet address.
+       This amounts to what if anything we should put in the native
+       host's ARP tables.
+       - If we only intend to use the net between the virtual host and
+       its hardware host, then no ARP hackery is needed.
+       - However, if the intent is to allow traffic between the virtual
+       host and other machines on the LAN or Internet, then an ARP
+       entry is required.  It must advertise the virtual host's IP
+       address, using one of the hardware host's ethernet addresses
+       so any packets on the LAN for the virtual host will at least
+       wind up arriving at the hardware host it's running on.
+     */
+
+    /* Simple method is to get the ifconf table and scan it to find the
+       first interface with both an IP and ethernet address given.
+       Non-4.4BSD systems may not provide the latter datum, but if
+       we're using TUN then we almost certainly also have the good stuff
+       in ifconf.
+    */
+
+    /*
+     * Now get our fresh new virtual interface's ethernet address.
+     * Basically, we can make it up.
+     */
+    if (!pfdata->pf_ip4_only) {
+	/* If we do tap(4) + bridge(4), the ether address of the tap is wholly
+	 * irrelevant, it is on the other side of the "wire".
+	 * Our own address is something we can make up completely.
+	 */
+	if (emhost_ea.ea_octets[5] == 0xFF) {
+	    time_t t = time(NULL);
+	    emhost_ea.ea_octets[5] =  t        & 0xFE;
+	    emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
+	    emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
+	}
+	ea_set(&osnpf->osnpf_ea, &emhost_ea);	/* Return the ether address */
+
+	char *ifnam = osnpf->osnpf_ifnam; /* alias for the persisting copy */
+	struct ifent *tap_ife = osn_ifcreate(ifnam);
+	if (tap_ife) {
+	    tap_ife->ife_flags = IFF_UP;
+	    ea_set(tap_ife->ife_ea, (unsigned char *)&osnpf->osnpf_ea);
+	    tap_ife->ife_gotea = TRUE;
+
+	    if (DP_DBGFLG) {
+		dbprintln("Entered 10-side of %s into table:", ifnam);
+		osn_iftab_show(stdout, &iftab[0], iftab_nifs);
+	    }
+	}
+    }
+
+    if (ife) {
+	/* Need to determine ether addr of our default interface, then
+	   publish an ARP entry mapping the virtual host to the same
+	   ether addr.
+	 */
+
+	/* Use emhost_ea as set up above */
+    } else {
+	/* ARP hackery will be handled by IP masquerading and packet forwarding. */
+#if 1 /*OSN_USE_IPONLY*/ /* TOPS-20 does not like NI20 with made up address? */
+	/* Assume no useful ether addr for tun interface. */
+	ea_clr((char *)&osnpf->osnpf_ea);
+#else
+        /* Assign requested address to tap interface or get kernel assigned one. */
+        if (memcmp((char *)&osnpf->osnpf_ea, "\0\0\0\0\0\0", ETHER_ADRSIZ) == 0) {
+          osn_ifeaget(-1, ifnam, (unsigned char *)&osnpf->osnpf_ea, NULL);
+        }
+        else {
+          osn_ifeaset(-1, ifnam, (unsigned char *)&osnpf->osnpf_ea);
+        }
+#endif
+    }
+}
+#endif /* TUN || TAP || VDE */
 
 #if KLH10_NET_DLPI
 

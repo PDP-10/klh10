@@ -43,6 +43,7 @@ AC_CHECK_LIB([pcap], [pcap_findalldevs])
 AC_CHECK_LIB([pcap], [pcap_set_immediate_mode],
 	     [AC_DEFINE(HAVE_PCAP_SET_IMMEDIATE_MODE, 1, [Set to 1 if we have pcap_set_immediate_mode])]
 )
+AC_CHECK_LIB([vdeplug], [vde_send])
 NETLIBS="$LIBS"
 LIBS="$SAVE_LIBS"
 
@@ -51,7 +52,8 @@ AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h limits.h netinet/in.h sgtty.h \
 		  stddef.h stdlib.h string.h sys/file.h sys/ioctl.h \
 		  sys/socket.h sys/time.h termios.h unistd.h net/if_tun.h \
 		  linux/if_tun.h linux/if_packet.h net/if_tap.h sys/mtio.h \
-		  net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h])
+		  net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h \
+		  libvdeplug.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE

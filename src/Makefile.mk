@@ -103,6 +103,7 @@ showdefs:
 	@echo "MAKER = $(MAKER)"
 	@echo "CFLAGS = $(CFLAGS)"
 	@echo "CFLAGS_AUX = $(CFLAGS_AUX)"
+	@echo "LDFLAGS = $(LDFLAGS)"
 	@echo "LIBS = $(LIBS)"
 	@echo "NETLIBS = $(NETLIBS)"
 	@echo "CENVFLAGS = $(CENVFLAGS)"

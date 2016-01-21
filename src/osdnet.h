@@ -286,7 +286,7 @@ struct pfdata;
 struct osnpf;
 
 typedef ssize_t (*osn_pfread_f)(struct pfdata *pfdata, void *buf, size_t nbytes);
-typedef int (*osn_pfwrite_f)(struct pfdata *pfdata, const void *buf, size_t nbytes);
+typedef ssize_t (*osn_pfwrite_f)(struct pfdata *pfdata, const void *buf, size_t nbytes);
 typedef void (*osn_pfdeinit_f)(struct pfdata *, struct osnpf *);
 
 /*
@@ -308,6 +308,7 @@ struct pfdata {
 #define PF_METH_PCAP		1
 #define PF_METH_TUN		2
 #define PF_METH_TAP		3
+#define PF_METH_VDE		4
 
 int osn_iftab_init(void);
 int osn_nifents(void);		/* # of entries cached by osn_iftab_init */
@@ -318,7 +319,7 @@ void osn_iftab_show(FILE *f, struct ifent *ife, int nents);
 void osn_ifctab_show(FILE *f, struct ifconf *ifc);
 int osn_ifipget(int s, char *ifnam, unsigned char *ipa);
 int osn_ifnmget(int s, char *ifnam, unsigned char *ipa);
-int osn_pfeaget(int s, char *ifnam, unsigned char *eap);
+int osn_pfeaget(struct pfdata *, char *ifnam, unsigned char *eap);
 int osn_ifeaget2(char *ifnam, unsigned char *eap);
 #if !OSN_USE_IPONLY
 int osn_ifeaset(int s, char *ifnam, unsigned char *newpa);
