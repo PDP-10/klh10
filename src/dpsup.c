@@ -696,7 +696,7 @@ dp_strerror(int err)
 static int
 dp_signal(int sig, void (*func)(int))
 {
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     struct sigaction act, oact;
 
     act.sa_handler = func;
@@ -730,7 +730,7 @@ dp_sleep(int secs)
 #if CENV_SYS_DECOSF
     sleep(secs);		/* Independent of interval timers! */
 
-#elif HAVE_SETITIMER && CENV_SYSF_SIGSET
+#elif HAVE_SETITIMER && HAVE_SIGACTION
     /* Must save & restore ITIMER_REAL & SIGALRM, which conflict w/sleep() */
     struct itimerval ztm, otm;
     struct sigaction act, oact;

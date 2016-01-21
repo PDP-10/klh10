@@ -222,10 +222,6 @@
 #ifndef  CENV_SYSF_BSDTTY	/* Has old BSD tty stuff */
 # define CENV_SYSF_BSDTTY (!CENV_SYSF_TERMIOS && CENV_SYS_BSD)
 #endif
-#ifndef  CENV_SYSF_SIGSET	/* Has sigsetops(3) and sigaction(2) */
-# define CENV_SYSF_SIGSET (CENV_SYS_DECOSF|CENV_SYS_SUN|CENV_SYS_SOLARIS \
-			  |CENV_SYS_XBSD|CENV_SYS_LINUX)
-#endif
 
 /* Large File Support (LFS)
  * See <http://ftp.sas.com/standards/large.file/x_open.20Mar96.html>

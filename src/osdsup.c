@@ -67,6 +67,8 @@
 
 #  if HAVE_SETITIMER
 #    include <sys/time.h>	/* BSD: For setitimer() */
+#  endif
+#  if HAVE_GETRUSAGE
 #    include <sys/resource.h>	/* BSD: For getrusage() */
 #  endif
 
@@ -1127,7 +1129,7 @@ os_vtimer(ossighandler_t *irtn, uint32 usecs)
 void
 os_timer_restore(ostimer_t *ostate)
 {
-#if HAVE_SETITIMER && CENV_SYSF_SIGSET
+#if HAVE_SETITIMER && HAVE_SIGACTION
     sigset_t blkset, savset;
     int ret;
 
@@ -1161,7 +1163,7 @@ os_timer_restore(ostimer_t *ostate)
 void
 os_v2rt_idle(ossighandler_t *hdlarg)
 {
-#if HAVE_SETITIMER && CENV_SYSF_SIGSET
+#if HAVE_SETITIMER && HAVE_SIGACTION
     sigset_t allmsk, oldmsk, nomsk;
     struct itimerval ntval, vtval;
     static ossighandler_t *handler = NULL;
@@ -1523,7 +1525,7 @@ osux_signal(int sig, ossighandler_t *func)
 int
 osux_sigact(int sig, ossighandler_t *func, ossigact_t *ossa)
 {
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     struct sigaction act;
 
     act.sa_handler = func;
@@ -1550,7 +1552,7 @@ osux_sigact(int sig, ossighandler_t *func, ossigact_t *ossa)
 int
 osux_sigrestore(ossigact_t *ossa)
 {
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     return sigaction(ossa->ossa_sig,
 		     &ossa->ossa_sa, (struct sigaction *)NULL);
 #elif CENV_SYS_BSD

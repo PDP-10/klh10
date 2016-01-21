@@ -69,7 +69,7 @@ AC_FUNC_MALLOC
 AC_FUNC_REALLOC
 AC_CHECK_FUNCS([alarm dup2 gettimeofday localtime_r memset socket strcasecmp \
 		strchr strcspn strerror strncasecmp strpbrk strrchr strtol \
-		getifaddrs if_nameindex termios sigsetops sigaction nanosleep \
+		getifaddrs if_nameindex termios sigaction nanosleep \
 		gettimeofday getrusage setitimer])
 
 # Check for CPU.

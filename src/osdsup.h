@@ -106,7 +106,8 @@ typedef void ossighandler_t(int);
 # define SIG_ERR ((ossighandler_t *)-1)
 #endif
 
-#if CENV_SYSF_SIGSET
+/* HAVE_SIGACTION pretty much implies the sigemptyset functions/macros */
+#if HAVE_SIGACTION
 # define ossigset_t sigset_t
 # define os_sigemptyset(set) sigemptyset(set)
 # define os_sigfillset(set)  sigfillset(set)
@@ -133,7 +134,7 @@ typedef void ossighandler_t(int);
 
 typedef struct {
     int ossa_sig;
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     struct sigaction ossa_sa;
 #else
     ossighandler_t *ossa_handler;

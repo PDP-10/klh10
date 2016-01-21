@@ -17,7 +17,7 @@
 
 SRC = @top_srcdir@/src
 BLDSRC = @top_builddir@/src
-CC = @CC@
+CC ?= @CC@
 CFLAGS = -c @CFLAGS@ -I$(BLDSRC) -I$(SRC)
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
                 -Wstrict-prototypes -Wmissing-prototypes \
