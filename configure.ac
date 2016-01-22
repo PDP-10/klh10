@@ -71,8 +71,8 @@ AC_FUNC_MALLOC
 AC_FUNC_REALLOC
 AC_CHECK_FUNCS([alarm dup2 gettimeofday localtime_r memset socket strcasecmp \
 		strchr strcspn strerror strncasecmp strpbrk strrchr strtol \
-		getifaddrs if_nameindex termios sigaction nanosleep \
-		gettimeofday getrusage setitimer])
+		getifaddrs if_nameindex sigaction nanosleep \
+		gettimeofday getrusage setitimer tcsetattr])
 
 # Check for CPU.
 # This requires install-sh, config.sub, config.guess from automake.

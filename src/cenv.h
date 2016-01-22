@@ -216,8 +216,7 @@
    This only has features of interest for KLH10 software.
  */
 #ifndef  CENV_SYSF_TERMIOS	/* Has termios(3) tty stuff */
-# define CENV_SYSF_TERMIOS (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
-			   |CENV_SYS_LINUX)
+# define CENV_SYSF_TERMIOS (HAVE_TERMIOS_H && HAVE_TCSETATTR)
 #endif
 #ifndef  CENV_SYSF_BSDTTY	/* Has old BSD tty stuff */
 # define CENV_SYSF_BSDTTY (!CENV_SYSF_TERMIOS && CENV_SYS_BSD)
