@@ -22,6 +22,7 @@ CFLAGS = -c @CFLAGS@ -I$(BLDSRC) -I$(SRC)
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
                 -Wstrict-prototypes -Wmissing-prototypes \
                 -Wmissing-declarations -Wredundant-decls
+LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
 NETLIBS = @NETLIBS@
 

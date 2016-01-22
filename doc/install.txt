@@ -925,7 +925,7 @@ The parameters for the NI20 driver are:
 	known interfaces.
 	See also the ENADDR parameter.
 
-[IFMETH=<pcap|tap|tap+bridge>] Default: system dependent
+[IFMETH=<pcap|tap|tap+bridge|vde>] Default: system dependent
 	Different host operating systems have different methods to allow
 	access to an ethernet interface. Some may have more than one.
 	The desired option can be chosen at runtime from the ones that are
@@ -961,6 +961,8 @@ The parameters for the NI20 driver are:
 	to an ethernet interface. The name of this bridge can be passed in
 	the environment variable KLH10_NET_BRIDGE. Note that the sudo command
 	by default cleans the environment so use sudo -E.
+
+	With VDE networking, IFC= has the name of the switch (the directory).
 
 [ENADDR=<x:x:x:x:x:x>]	Default: <none>
 	Normally unnecessary.
@@ -1243,7 +1245,7 @@ The parameters for the LHDH driver are:
 	Normally the host platform can be specified, but a real gateway
 	is OK too.
 
-[IFMETH=<tun|tap|tap+bridge|pcap>] Required
+[IFMETH=<tun|tap|tap+bridge|pcap|vde>] Required
 	As with the NI20.
 
 [DEBUG=<boolean>]	Default: FALSE
