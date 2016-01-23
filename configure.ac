@@ -2,7 +2,8 @@
 # Process this file with autogen.sh to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([klh10], [2.0i], [https://github.com/Rhialto/klh10])
+AC_INIT([klh10], [2.0i-Rhialto], [https://github.com/Rhialto/klh10],
+	[], [https://github.com/Rhialto/klh10])
 AC_CONFIG_SRCDIR([src/klh10.h])
 AC_CONFIG_HEADERS([src/config.h])
 
@@ -119,7 +120,7 @@ typedef char vaddr_t;
 ])
 
 # -------------------------------------------------------------------------
-# Check how to replace strerror()
+# Check how to replace strerror() if needed
 # -------------------------------------------------------------------------
 
 AC_MSG_CHECKING([whether sys_errlist exists])
