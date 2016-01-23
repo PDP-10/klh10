@@ -33,5 +33,6 @@ KLH10_HOME ?= ${DESTDIR}@bindir@
 # Source definitions
 CENVFLAGS = @CENVFLAGS@
 MAKEFILE = @MAKEFILE@
+CONFFLAGS_AUX = -DKLH10_I_CIRC=1
 
 #---

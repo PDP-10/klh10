@@ -18,7 +18,6 @@ CONFFLAGS = -DKLH10_CPU_KS=1	\
 	    $(DINTFLAGS) \
 	    -DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 	    -DKLH10_CLIENT=\"MyITS\" \
-	    $(CONFFLAGS_AUX) \
 	    -DVMTAPE_ITSDUMP=1
 
 all:	kn10-ks-its tapedd vdkfmt wxtest enaddr

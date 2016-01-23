@@ -17,8 +17,7 @@ CONFFLAGS = -DKLH10_CPU_KLX=1	\
 	    -DKLH10_ITIME_INTRP=1	\
 	    -DKLH10_CTYIO_INT=1	\
 	    -DKLH10_APRID_SERIALNO=3600 \
-	    -DKLH10_CLIENT=\"MyKL\" \
-	    $(CONFFLAGS_AUX)
+	    -DKLH10_CLIENT=\"MyKL\"
 
 all:	kn10-kl tapedd vdkfmt wxtest enaddr
 
