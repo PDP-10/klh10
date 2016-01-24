@@ -1120,7 +1120,7 @@ osn_pareth(char *cp, unsigned char *adr)
 */
 int
 osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
-	    int s,			/* socket */
+	    int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	    char *ifnam,		/* Interface name */
 	    unsigned char *newpa)	/* New ether address */
 {
@@ -1134,16 +1134,24 @@ osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
 
     /* Common preamble code */
     int ownsock = FALSE;
+
+#if defined(SIOCALIFADDR) && defined(PF_LINK) && defined(IFLR_ACTIVE) /* typically NetBSD */
+# define AF	PF_LINK
+    s = -1;			/* Can't use the supplied socket */
+#else
+# define AF	PF_INET
     struct ifreq ifr;
 
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
+#endif
     if (s == -1) {
-	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+	if ((s = socket(AF, SOCK_DGRAM, 0)) < 0) {
 	    syserr(errno, "Failed osn_ifeaset socket()");
 	    return FALSE;
 	}
 	ownsock = TRUE;
+#undef AF
     }
 
 #if defined(SIOCSPHYSADDR) && defined(AF_DECnet) /* Typically DECOSF; Direct approach */
@@ -1188,33 +1196,27 @@ osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
 	if (ownsock) close(s);
 	return FALSE;
     }
-#elif defined(SIOCALIFADDR) && defined(PF_LINK) /* typically NetBSD */
-    {
-	int s2 = socket(PF_LINK, SOCK_DGRAM, 0);
-	struct if_laddrreq iflr;
+#elif defined(SIOCALIFADDR) && defined(PF_LINK) && defined(IFLR_ACTIVE) /* typically NetBSD */
+    /* FreeBSD 10 knows SIOCALIFADDR but not IFLR_ACTIVE */
+    struct if_laddrreq iflr;
 
-	/* The equivalent of
-	 *   ifconfig tap0 link 11:22:33:44:55:66 active
-	 */
+    /* The equivalent of
+     *   ifconfig tap0 link 11:22:33:44:55:66 active
+     */
 
-	if (s2 >= 0) {
-	    memset(&iflr, 0, sizeof(iflr));
+    memset(&iflr, 0, sizeof(iflr));
 
-	    strncpy(iflr.iflr_name, ifnam, sizeof(iflr.iflr_name));
-	    iflr.flags = IFLR_ACTIVE;
+    strncpy(iflr.iflr_name, ifnam, sizeof(iflr.iflr_name));
+    iflr.flags = IFLR_ACTIVE;
 
-	    struct sockaddr_dl *sdl = sdl = (struct sockaddr_dl *)&iflr.addr;
-	    sdl->sdl_len = sizeof(struct sockaddr_dl);
-	    sdl->sdl_family = AF_LINK;
-	    sdl->sdl_alen = ETHER_ADRSIZ;
-	    ea_set(LLADDR(sdl), newpa);
+    struct sockaddr_dl *sdl = sdl = (struct sockaddr_dl *)&iflr.addr;
+    sdl->sdl_len = sizeof(struct sockaddr_dl);
+    sdl->sdl_family = AF_LINK;
+    sdl->sdl_alen = ETHER_ADRSIZ;
+    ea_set(LLADDR(sdl), newpa);
 
-	    if (ioctl(s2, SIOCALIFADDR, &iflr) < 0) {
-		perror("ioctl");
-	    }
-
-	    close(s2);
-	}
+    if (ioctl(s, SIOCALIFADDR, &iflr) < 0) {
+	syserr(errno, "\"%s\" SIOCALIFADDR failed", ifnam);
     }
 #else
 # warning "Unimplemented OS routine osn_ifeaset()"
