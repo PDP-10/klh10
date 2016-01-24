@@ -895,7 +895,7 @@ void eth_adrset(struct dpni20_s *dpni)
 	}
     }
 
-    if (!osn_ifeaset(-1, dpni->dpni_ifnam, dpni->dpni_rqeth)) {
+    if (!osn_ifeaset(&pfdata, -1, dpni->dpni_ifnam, dpni->dpni_rqeth)) {
 	error("\"%s\" E/N addr change failed, Old=%s New=%s",
 	       dpni->dpni_ifnam, old, new);
 	return;
@@ -985,7 +985,7 @@ void eth_mcatset(struct dpni20_s *dpni)
 		      dpni->dpni_ifnam,
 		      eth_adrsprint(ethstr, ethmcat[i]));
 	}
-        if (!osn_ifmcset(s, dpni->dpni_ifnam, TRUE /*DEL*/, ethmcat[i])) {
+        if (!osn_ifmcset(&pfdata, s, dpni->dpni_ifnam, TRUE /*DEL*/, ethmcat[i])) {
 	    error("\"%s\" Multicast delete failed", dpni->dpni_ifnam);
 	    /* Keep going */
 	}
@@ -1008,7 +1008,7 @@ void eth_mcatset(struct dpni20_s *dpni)
 		      dpni->dpni_ifnam,
 		      eth_adrsprint(ethstr, dpni->dpni_mcat[i]));
 	}
-        if (!osn_ifmcset(s, dpni->dpni_ifnam, FALSE /*ADD*/,
+        if (!osn_ifmcset(&pfdata, s, dpni->dpni_ifnam, FALSE /*ADD*/,
 			 dpni->dpni_mcat[i])) {
 	    error("\"%s\" Multicast add failed", dpni->dpni_ifnam);
 	    /* Keep going */

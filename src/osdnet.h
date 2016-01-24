@@ -322,8 +322,8 @@ int osn_ifnmget(int s, char *ifnam, unsigned char *ipa);
 int osn_pfeaget(struct pfdata *, char *ifnam, unsigned char *eap);
 int osn_ifeaget2(char *ifnam, unsigned char *eap);
 #if !OSN_USE_IPONLY
-int osn_ifeaset(int s, char *ifnam, unsigned char *newpa);
-int osn_ifmcset(int s, char *ifc, int delf, unsigned char *pa);
+int osn_ifeaset(struct pfdata *pfdata, int s, char *ifnam, unsigned char *newpa);
+int osn_ifmcset(struct pfdata *pfdata, int s, char *ifc, int delf, unsigned char *pa);
 #endif
 
 struct ifent *osn_ipdefault(void);

@@ -1119,12 +1119,18 @@ osn_pareth(char *cp, unsigned char *adr)
  *
 */
 int
-osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
-	    char *ifnam,	/* Interface name */
+osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
+	    int s,			/* socket */
+	    char *ifnam,		/* Interface name */
 	    unsigned char *newpa)	/* New ether address */
 {
-#if CENV_SYS_DECOSF || CENV_SYS_LINUX || KLH10_NET_TAP \
-		    || (CENV_SYS_FREEBSD && defined(SIOCSIFLLADDR))
+    if (pfdata->pf_meth == PF_METH_TAP ||
+	pfdata->pf_meth == PF_METH_VDE) {
+
+	ea_set(&emhost_ea, newpa);
+
+	return TRUE;
+    }
 
     /* Common preamble code */
     int ownsock = FALSE;
@@ -1140,7 +1146,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	ownsock = TRUE;
     }
 
-# if CENV_SYS_DECOSF		/* Direct approach */
+#if defined(SIOCSPHYSADDR) && defined(AF_DECnet) /* Typically DECOSF; Direct approach */
     /* NOTE!!! DECOSF Doc bug!
     ** Contrary to appearances in <sys/ioctl.h where SIOCSPHYSADDR is
     ** said to take a "struct devea" arg, it actually uses an ifreq!
@@ -1154,7 +1160,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	return FALSE;
     }
 
-# elif CENV_SYS_LINUX
+#elif defined(SIOCGIFHWADDR) /* Typically Linux */
 
     /* Address family must match what device thinks it is, so find that
        out first... sigh.
@@ -1171,7 +1177,7 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	return FALSE;
     }
 
-# elif CENV_SYS_FREEBSD && defined(SIOCSIFLLADDR)
+#elif defined(SIOCSIFLLADDR)	/* typically FreeBSD */
     /* This works for 4.2 and up; as of 3.3 no known way to set ether addr. */
 
     ifr.ifr_addr.sa_len = 6;
@@ -1182,28 +1188,47 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
 	if (ownsock) close(s);
 	return FALSE;
     }
-# elif KLH10_NET_TAP
-    ea_set(&emhost_ea, newpa);
-# else
-#  error "Unimplemented OS routine osn_ifeaset()"
-# endif
+#elif defined(SIOCALIFADDR) && defined(PF_LINK) /* typically NetBSD */
+    {
+	int s2 = socket(PF_LINK, SOCK_DGRAM, 0);
+	struct if_laddrreq iflr;
+
+	/* The equivalent of
+	 *   ifconfig tap0 link 11:22:33:44:55:66 active
+	 */
+
+	if (s2 >= 0) {
+	    memset(&iflr, 0, sizeof(iflr));
+
+	    strncpy(iflr.iflr_name, ifnam, sizeof(iflr.iflr_name));
+	    iflr.flags = IFLR_ACTIVE;
+
+	    struct sockaddr_dl *sdl = sdl = (struct sockaddr_dl *)&iflr.addr;
+	    sdl->sdl_len = sizeof(struct sockaddr_dl);
+	    sdl->sdl_family = AF_LINK;
+	    sdl->sdl_alen = ETHER_ADRSIZ;
+	    ea_set(LLADDR(sdl), newpa);
+
+	    if (ioctl(s2, SIOCALIFADDR, &iflr) < 0) {
+		perror("ioctl");
+	    }
+
+	    close(s2);
+	}
+    }
+#else
+# warning "Unimplemented OS routine osn_ifeaset()"
+    error("\"%s\" could not set ether addr - osn_ifeaset() unimplemented",
+	  ifnam);
+    if (ownsock)
+	close(s);
+    return FALSE;
+#endif
     /* Common postamble code */
     if (ownsock)
 	close(s);
     return TRUE;
 
-#else
-# ifdef __GNUC__
-#  if CENV_SYS_NETBSD	/* As of 1.6 NetBSD STILL has no way to do this */
-#   warning "NetBSD still sucks - Unimplemented OS routine osn_ifeaset()"
-#  else
-#   warning "Unimplemented OS routine osn_ifeaset()"
-#  endif
-# endif
-    error("\"%s\" could not set ether addr - osn_ifeaset() unimplemented",
-	  ifnam);
-    return FALSE;
-#endif
 }
 
 
@@ -1214,11 +1239,20 @@ osn_ifeaset(int s,		/* Socket for (AF_INET, SOCK_DGRAM, 0) */
  *	promiscuous mode; "delf" is TRUE to turn off, else it's turned on.
  */
 int
-osn_ifmcset(int s,
+osn_ifmcset(struct pfdata *pfdata,
+	    int s,
 	    char *ifnam,
 	    int delf,
 	    unsigned char *pa)
 {
+    if (pfdata->pf_meth == PF_METH_TAP ||
+	pfdata->pf_meth == PF_METH_VDE) {
+
+	/* no action; we don't have a multicast filter anyway */
+
+	return TRUE;
+    }
+
 #if CENV_SYS_DECOSF || CENV_SYS_LINUX || CENV_SYS_FREEBSD || CENV_SYS_NETBSD
 
     /* Common preamble code */
@@ -1458,8 +1492,8 @@ osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
     pfdata->pf_fd = pcap_get_selectable_fd(pc);
 
 #if !HAVE_PCAP_SET_IMMEDIATE_MODE && defined(BIOCIMMEDIATE)
-    /* Try to set immediate mode  another way. Assume BPF since we know how to
-     * do that. But don't complain if it fails, since it libpcap may use
+    /* Try to set immediate mode another way. Assume BPF since we know how to
+     * do that. But don't complain if it fails, since libpcap may use
      * something else.
      */
     {

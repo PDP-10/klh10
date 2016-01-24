@@ -259,6 +259,7 @@ main(int argc, char **argv)
     int i;
     ossock_t s;
     char ebuf[32];
+    struct pfdata pfdata;
 
     if (argc < 2) {
 	printf("%s", usage);
@@ -315,6 +316,8 @@ main(int argc, char **argv)
     /* First, show interface info if desired */
     osn_iftab_init();
 
+    pfdata.pf_meth = PF_METH_NONE;
+
     /* Now mung interface if one given */
     if (ifc) {
 	/* Open socket to generic network interface */
@@ -335,7 +338,7 @@ main(int argc, char **argv)
 		   ifc, sprinteth(ebuf, pa_cur), enstr);
 
 	    /* Setup the new MAC address - use default or new */
-	    (void) osn_ifeaset(s, ifc, (endef ? pa_def : pa_new));
+	    (void) osn_ifeaset(&pfdata, s, ifc, (endef ? pa_def : pa_new));
 
 	    /* Read back to confirm */
 	    osn_iftab_init();
@@ -349,7 +352,7 @@ main(int argc, char **argv)
 		    (mcat[i].mcdel ? " Deleting" : "   Adding"),
 		    sprinteth(ebuf, mcat[i].mcaddr));
 
-	    if (!osn_ifmcset(s, ifc, mcat[i].mcdel, mcat[i].mcaddr)) {
+	    if (!osn_ifmcset(&pfdata, s, ifc, mcat[i].mcdel, mcat[i].mcaddr)) {
 		printf(" ... failed: %s", log_strerror(errno));
 		/* Continue anyway.  Note that delete can fail harmlessly
 		   if mcat address is already gone.
@@ -363,7 +366,7 @@ main(int argc, char **argv)
 	    printf("Setting promiscuous mode to %s... ",
 		   (promiscon ? "ON" : "OFF"));
 	    fflush(stdout);
-	    if (!osn_ifmcset(s, ifc, !promiscon, NULL)) {
+	    if (!osn_ifmcset(&pfdata, s, ifc, !promiscon, NULL)) {
 		printf(" failed\n");
 		/* Continue anyway */
 	    } else
