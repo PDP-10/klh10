@@ -20,6 +20,6 @@ CONFFLAGS = -DKLH10_CPU_KS=1	\
 	    -DKLH10_CLIENT=\"MyITS\" \
 	    -DVMTAPE_ITSDUMP=1
 
-all:	kn10-ks-its tapedd vdkfmt wxtest enaddr
+all:	kn10-ks-its DPROCS_KSITS ALL_UTILS
 
 #---

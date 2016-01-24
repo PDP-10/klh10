@@ -204,6 +204,12 @@ DPROCS_KSITS = dprpxx dptm03 dpimp
 BASE_UTILS = wfconv tapedd vdkfmt wxtest
 ALL_UTILS  = $(BASE_UTILS) udlconv uexbconv enaddr
 
+DPROCS_KL: $(DPROCS_KL)
+DPROCS_KS: $(DPROCS_KS)
+DPROCS_KSITS: $(DPROCS_KSITS)
+BASE_UTILS: $(BASE_UTILS)
+ALL_UTILS: $(ALL_UTILS)
+
 
 ############################################################
 ##	KLH10 config - helper definitions

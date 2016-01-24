@@ -19,6 +19,6 @@ CONFFLAGS = -DKLH10_CPU_KLX=1	\
 	    -DKLH10_APRID_SERIALNO=3600 \
 	    -DKLH10_CLIENT=\"MyKL\"
 
-all:	kn10-kl tapedd vdkfmt wxtest enaddr
+all:	kn10-kl DPROCS_KL ALL_UTILS
 
 #---

@@ -17,6 +17,6 @@ CONFFLAGS = -DKLH10_CPU_KS=1	\
 	    -DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 	    -DKLH10_CLIENT=\"MyKS\"
 
-all:	kn10-ks tapedd vdkfmt wxtest enaddr
+all:	kn10-ks DPROCS_KS ALL_UTILS
 
 #---
