@@ -42,7 +42,7 @@
 # error "A bridge is useless without a TAP device... configuration error!"
 #endif
 
-#if HAVE_LIBVDEPLUG_H && HAVE_LIBVDEPLUG
+#if HAVE_LIBVDEPLUG_H && HAVE_LIBVDEPLUG && (!defined(KLH10_NET_VDE) || KLH10_NET_VDE)
 # include <libvdeplug.h>
 # define KLH10_NET_VDE 1
 #endif

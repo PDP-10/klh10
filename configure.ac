@@ -185,6 +185,24 @@ then
 fi
 
 # -------------------------------------------------------------------------
+# Check whether we want VDE support
+# -------------------------------------------------------------------------
+
+AC_ARG_ENABLE(vde,
+    AC_HELP_STRING([--disable-vde],[disable vde networking]),
+    [ case "${enableval}" in
+	  yes) vde=true ;;
+	  no)  vde=false ;;
+	  *)   AC_MSG_ERROR(bad value ${enableval} for --enable-vde) ;;
+      esac ],
+    [ vde=true ] )
+if test x$vde = xfalse
+then
+    AC_DEFINE(KLH10_NET_VDE, 0, [Set to 0 to disable VDE networking])
+    echo 'Compiling without VDE support'
+fi
+
+# -------------------------------------------------------------------------
 # Check large file support and the sizes of related types
 # -------------------------------------------------------------------------
 
