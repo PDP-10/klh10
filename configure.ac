@@ -19,6 +19,36 @@ do
 done
 CFLAGS="$NEWCFLAGS -g3 -O3"
 
+# -------------------------------------------------------------------------
+# Check whether we want VDE support
+# -------------------------------------------------------------------------
+
+AC_ARG_WITH(vde,
+    AS_HELP_STRING([--with-vde=PATH],[enable vde networking (default on) when it cannot be found]))
+
+case "${with_vde}" in
+    yes | "") ;;
+    no)  AC_DEFINE(KLH10_NET_VDE, 0, [Set to 0 to disable VDE networking])
+	 AC_MSG_NOTICE([Compiling without VDE support]) ;;
+    /*)  CFLAGS="$CFLAGS -I ${withval}/include"
+         LDFLAGS="$LDFLAGS -L ${withval}/lib" ;;
+    *)   AC_MSG_ERROR([bad value ${with_vde} for --with-vde]) ;;
+esac
+
+# -------------------------------------------------------------------------
+# Check whether we want bridge support
+# -------------------------------------------------------------------------
+
+AC_ARG_ENABLE(bridge,
+    AS_HELP_STRING([--disable-bridge],[disable bridge networking]))
+
+case "${enable_bridge}" in
+    yes | "") ;;
+    no)  AC_DEFINE(KLH10_NET_BRIDGE, 0, [Set to 0 to disable bridge networking])
+         AC_MSG_NOTICE([Compiling without bridge support]) ;;
+    *)   AC_MSG_ERROR([bad value ${enableval} for --enable-bridge]) ;;
+esac
+
 # Checks for programs.
 AC_PROG_CC
 AC_PROG_MAKE_SET
@@ -165,42 +195,6 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 	AC_MSG_RESULT([no?])
     ])
 ])
-
-# -------------------------------------------------------------------------
-# Check whether we want bridge support
-# -------------------------------------------------------------------------
-
-AC_ARG_ENABLE(bridge,
-    AC_HELP_STRING([--disable-bridge],[disable bridge networking]),
-    [ case "${enableval}" in
-	  yes) bridge=true ;;
-	  no)  bridge=false ;;
-	  *)   AC_MSG_ERROR(bad value ${enableval} for --enable-bridge) ;;
-      esac ],
-    [ bridge=true ] )
-if test x$bridge = xfalse
-then
-    AC_DEFINE(KLH10_NET_BRIDGE, 0, [Set to 0 to disable bridge networking])
-    echo 'Compiling without bridge support'
-fi
-
-# -------------------------------------------------------------------------
-# Check whether we want VDE support
-# -------------------------------------------------------------------------
-
-AC_ARG_ENABLE(vde,
-    AC_HELP_STRING([--disable-vde],[disable vde networking]),
-    [ case "${enableval}" in
-	  yes) vde=true ;;
-	  no)  vde=false ;;
-	  *)   AC_MSG_ERROR(bad value ${enableval} for --enable-vde) ;;
-      esac ],
-    [ vde=true ] )
-if test x$vde = xfalse
-then
-    AC_DEFINE(KLH10_NET_VDE, 0, [Set to 0 to disable VDE networking])
-    echo 'Compiling without VDE support'
-fi
 
 # -------------------------------------------------------------------------
 # Check large file support and the sizes of related types
