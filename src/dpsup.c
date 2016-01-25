@@ -488,7 +488,7 @@ int dp_main(register struct dp_s *dp, int argc, char **argv)
 	** beforehand - only warn if an error isn't EPERM and hence is
 	** unusual.
 	*/
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+#if HAVE_MLOCKALL
 	if (mlockall(MCL_CURRENT|MCL_FUTURE) != 0) {
 	    if (errno != EPERM)
 		fprintf(stderr, "[%s: mlockall failed - %s]\r\n",

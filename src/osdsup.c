@@ -1666,14 +1666,14 @@ os_mmkill(osmm_t mm, char *ptr)
 
 /* Attempt to lock all of our process memory now and in the future.
 */
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS
+#if HAVE_MLOCKALL
 # include <sys/mman.h>
 #endif
 
 int
 os_memlock(int dolock)
 {
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS
+#if HAVE_MLOCKALL
     /* Both Solaris and OSF/1 have mlockall() which looks like what we want.
     ** It requires being the super-user, but don't bother to check here,
     ** just return error if it fails for any reason.

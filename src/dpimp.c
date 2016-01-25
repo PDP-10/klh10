@@ -608,7 +608,7 @@ main(int argc, char **argv)
 	/* And ensure its memory is locked too, since the lockage isn't
 	** inherited over a fork().  Don't bother warning if it fails.
 	*/
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+#if HAVE_MLOCKALL
 	(void) mlockall(MCL_CURRENT|MCL_FUTURE);
 #endif
 	progname = progname_r;	/* Reset progname to indicate identity */
