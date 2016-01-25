@@ -320,7 +320,7 @@ main(int argc, char **argv)
 #if 0 /* was CENV_SYS_SOLARIS */
     if (nice(-20) == -1)
 	syserr(errno, "Warning - cannot set high priority");
-#elif CENV_SYS_SOLARIS || CENV_SYS_DECOSF || CENV_SYS_XBSD || CENV_SYS_LINUX
+#elif HAVE_SETPRIORITY
     if (setpriority(PRIO_PROCESS, 0, -20) < 0)
 	syserr(errno, "Warning - cannot set high priority");
 #endif
@@ -336,8 +336,9 @@ main(int argc, char **argv)
 	dbprint("Started");
 
     /* General initialization */
-    if (geteuid() != 0)
-	efatal(1, "Must be superuser!");
+    if (geteuid() != 0) {
+	error("*** Must usually run as superuser; networking may fail! ***");
+    }
 
     if (!dp_main(&dp, argc, argv)) {
 	efatal(1, "DP init failed!");
