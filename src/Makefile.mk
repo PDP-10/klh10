@@ -47,8 +47,9 @@
 # Generic compile/link flags
 #	Suitable for plain vanilla Unix but normally overridden.
 CC ?= cc
-CFLAGS ?= -c -I. -I$(SRC)
+CFLAGS ?= -c
 CFLAGS_AUX ?=
+CPPFLAGS ?= -I. -I$(SRC)
 CFLAGS_LINT ?=
 LINKER ?= $(CC)
 LDFLAGS ?=
@@ -67,7 +68,7 @@ CONFFLAGS_AUX ?=
 MAKEFILE ?= $(SRC)/Makefile.mk
 
 MAKER = make -f $(MAKEFILE) $(MAKE_CENV)
-BUILDMOD = $(CC) $(CFLAGS) $(CFLAGS_AUX) \
+BUILDMOD = $(CC) $(CFLAGS) $(CFLAGS_AUX) $(CPPFLAGS) \
 	$(CENVFLAGS) $(CONFFLAGS) $(CONFFLAGS_AUX)
 
 
@@ -103,6 +104,7 @@ showdefs:
 	@echo "MAKER = $(MAKER)"
 	@echo "CFLAGS = $(CFLAGS)"
 	@echo "CFLAGS_AUX = $(CFLAGS_AUX)"
+	@echo "CPPFLAGS= $(CPPFLAGS)"
 	@echo "LDFLAGS = $(LDFLAGS)"
 	@echo "LIBS = $(LIBS)"
 	@echo "NETLIBS = $(NETLIBS)"
@@ -142,7 +144,7 @@ showdefs:
 .PRECIOUS: kn10-ks kn10-ks-its kn10-kl
 
 depend:
-	mkdep  $(CFLAGS) $(CFLAGS_AUX) $(CENVFLAGS) *.c
+	mkdep  $(CFLAGS) $(CFLAGS_AUX) $(CPPFLAGS) $(CENVFLAGS) *.c
 
 #######################################################################	
 ##
@@ -315,6 +317,7 @@ base-ks-its:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -343,6 +346,7 @@ base-ks:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -367,6 +371,7 @@ base-kl:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -418,6 +423,7 @@ lint-ks-its:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -429,6 +435,7 @@ lint-ks:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -440,6 +447,7 @@ lint-kl:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -461,6 +469,7 @@ port-ks:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -486,6 +495,7 @@ kl0i-sync:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -510,6 +520,7 @@ kl0i-rtmopt:
 	    "SRC = $(SRC)" \
 	    "CC = $(CC)" \
 	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
+	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
@@ -595,7 +606,7 @@ dpimp: dpimp.o dpsup.o
 ##	Needs CONFFLAGS just for optional VMTAPE_ITSDUMP.
 ##
 tapedd.o: $(SRC)/tapedd.c $(SRC)/vmtape.c $(SRC)/vmtape.h $(BLDSRC)/config.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(CONFFLAGS) $(SRC)/tapedd.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(CONFFLAGS) $(SRC)/tapedd.c
 
 tapedd: tapedd.o wfio.o prmstr.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) tapedd tapedd.o wfio.o prmstr.o $(LIBS)
@@ -604,7 +615,7 @@ tapedd: tapedd.o wfio.o prmstr.o
 ## VDKFMT - Virtual Disk Format & copy
 ##
 vdkfmt.o: $(SRC)/vdkfmt.c $(SRC)/vdisk.c $(SRC)/vdisk.h $(BLDSRC)/config.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(SRC)/vdkfmt.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(SRC)/vdkfmt.c
 
 vdkfmt: vdkfmt.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) vdkfmt vdkfmt.o $(LIBS)
@@ -613,7 +624,7 @@ vdkfmt: vdkfmt.o
 ## WXTEST - word10.h tester
 ##
 wxtest.o: $(SRC)/wxtest.c  $(SRC)/word10.h $(BLDSRC)/config.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(SRC)/wxtest.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(SRC)/wxtest.c
 
 wxtest: wxtest.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) wxtest wxtest.o $(LIBS)
@@ -622,7 +633,7 @@ wxtest: wxtest.o
 ## WFCONV - Word-File Conversion
 ##
 wfconv.o: $(SRC)/wfconv.c $(SRC)/wfio.c $(SRC)/wfio.h $(SRC)/word10.h $(BLDSRC)/config.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(SRC)/wfconv.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(SRC)/wfconv.c
 
 wfconv: wfconv.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) wfconv wfconv.o $(LIBS)
@@ -631,7 +642,7 @@ wfconv: wfconv.o
 ## UDLCONV - DIR.LIST Conversion (of ITS interest only)
 ##
 udlconv.o: $(SRC)/udlconv.c $(BLDSRC)/config.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(SRC)/udlconv.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(SRC)/udlconv.c
 
 udlconv: udlconv.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) udlconv udlconv.o $(LIBS)
@@ -640,7 +651,7 @@ udlconv: udlconv.o
 ## UEXBCONV - Convert .EXB file into .SAV (of KL interest only)
 ##
 uexbconv.o: $(SRC)/uexbconv.c $(SRC)/wfio.c $(SRC)/wfio.h $(SRC)/word10.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(SRC)/uexbconv.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(SRC)/uexbconv.c
 
 uexbconv: uexbconv.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) uexbconv uexbconv.o $(LIBS)
@@ -649,7 +660,7 @@ uexbconv: uexbconv.o
 ## ENADDR - Ethernet interface test & manipulation
 ##	    May require CONFFLAGS to force a particular osdnet config.
 enaddr.o: $(SRC)/enaddr.c $(SRC)/osdnet.h $(SRC)/osdnet.c $(BLDSRC)/config.h
-	$(CC) $(CFLAGS) $(CENVFLAGS) $(CONFFLAGS) $(SRC)/enaddr.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CENVFLAGS) $(CONFFLAGS) $(SRC)/enaddr.c
 
 enaddr: enaddr.o
 	$(LINKER) $(LDFLAGS) $(LDOUTF) enaddr enaddr.o $(NETLIBS) $(LIBS)

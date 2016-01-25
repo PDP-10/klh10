@@ -30,8 +30,8 @@ case "${with_vde}" in
     yes | "") ;;
     no)  AC_DEFINE(KLH10_NET_VDE, 0, [Set to 0 to disable VDE networking])
 	 AC_MSG_NOTICE([Compiling without VDE support]) ;;
-    /*)  CFLAGS="$CFLAGS -I ${withval}/include"
-         LDFLAGS="$LDFLAGS -L ${withval}/lib" ;;
+    /*)  CPPFLAGS="$CPPFLAGS -I ${with_vde}/include"
+         LDFLAGS="$LDFLAGS -L ${with_vde}/lib" ;;
     *)   AC_MSG_ERROR([bad value ${with_vde} for --with-vde]) ;;
 esac
 
@@ -227,6 +227,7 @@ AH_BOTTOM([
 
 AC_SUBST([CC])
 AC_SUBST([CFLAGS])
+AC_SUBST([CPPFLAGS])
 AC_SUBST([DESTDIR])
 AC_SUBST([PREFIX])
 AC_SUBST([LIBS])
