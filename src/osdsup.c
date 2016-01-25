@@ -1679,7 +1679,7 @@ os_memlock(int dolock)
     ** just return error if it fails for any reason.
     */
     if (dolock)
-	return (mlockall(MCL_CURRENT+MCL_FUTURE) == 0);
+	return (mlockall(MCL_CURRENT|MCL_FUTURE) == 0);
     else
 	return (munlockall() == 0);
 #else

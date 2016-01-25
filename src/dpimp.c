@@ -486,7 +486,7 @@ main(int argc, char **argv)
     ** small, must respond quickly, and SU mode is more or less guaranteed.
     ** Skip it only if dp_main() already did it for us.
     */
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+#if HAVE_MLOCKALL
     if (!(dpimp->dpimp_dpc.dpc_flags & DPCF_MEMLOCK)) {
 	if (mlockall(MCL_CURRENT|MCL_FUTURE) != 0) {
 	    dbprintln("Warning - cannot lock memory");
