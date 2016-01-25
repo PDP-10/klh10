@@ -1185,7 +1185,7 @@ osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
 	return FALSE;
     }
 
-#elif defined(SIOCSIFLLADDR)	/* typically FreeBSD */
+#elif defined(SIOCSIFLLADDR)	/* typically FreeBSD and MacOS X */
     /* This works for 4.2 and up; as of 3.3 no known way to set ether addr. */
 
     ifr.ifr_addr.sa_len = 6;
@@ -1217,6 +1217,8 @@ osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
 
     if (ioctl(s, SIOCALIFADDR, &iflr) < 0) {
 	syserr(errno, "\"%s\" SIOCALIFADDR failed", ifnam);
+	if (ownsock) close(s);
+	return FALSE;
     }
 #else
 # warning "Unimplemented OS routine osn_ifeaset()"
@@ -1255,7 +1257,7 @@ osn_ifmcset(struct pfdata *pfdata,
 	return TRUE;
     }
 
-#if CENV_SYS_DECOSF || CENV_SYS_LINUX || CENV_SYS_FREEBSD || CENV_SYS_NETBSD
+#if defined(SIOCADDMULTI) /* Typically DECOSF, Linux, *BSD, and MacOS X. */
 
     /* Common preamble code */
     int ownsock = FALSE;
@@ -1268,13 +1270,15 @@ osn_ifmcset(struct pfdata *pfdata,
 	}
 	ownsock = TRUE;
     }
+
+    memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
 
 # if CENV_SYS_DECOSF
     ifr.ifr_addr.sa_family = AF_DECnet;	/* Known to work; AF_UNSPEC may not */
 # elif CENV_SYS_LINUX
     ifr.ifr_addr.sa_family = AF_UNSPEC;	/* MUST be this for Linux! */
-# elif CENV_SYS_FREEBSD || CENV_SYS_NETBSD
+# elif defined(AF_LINK) /* Typically FreeBSD, NetBSD, and MacOS X */
     ifr.ifr_addr.sa_family = AF_LINK;	/* MUST be this for FreeBSD! */
 # else
 #  error "Unimplemented OS routine osn_ifmcset()"
@@ -1321,7 +1325,7 @@ osn_ifmcset(struct pfdata *pfdata,
     error("\"%s\" could not %s multicast addr - osn_ifmcset() unimplemented",
 	  ifnam, (delf ? "delete" : "add"));
     return FALSE;
-#endif
+#endif /* SIOCADDMULTI */
 }
 
 #endif /* !OSN_USE_IPONLY */
