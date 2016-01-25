@@ -296,7 +296,8 @@ executables over into $KLH10_HOME, but there is one tricky bit.
 
 If you plan to use the network interface emulation, you MUST either
 run the KN10 as root, or make the interface process setuid-root.
-There is no single right choice.
+There is no single right choice. For VDE networking, root is fortunately
+not required.
 
 If you want to do the latter:
     Make sure only authorized users can access $KLH10_HOME.
@@ -306,6 +307,7 @@ If you want to do the latter:
     
 Another factor to consider is that running as root may allow you to
 use the MEM_LOCK setting to lock things in memory and avoid swapping.
+See also the note on setuid below at NOTES.
 
 If your KN10 is being automatically started up in the background when
 your system boots, running as root is simplest.
@@ -1082,6 +1084,11 @@ The parameters for the NI20 driver are:
 	IMPORTANT: This program must run as root, either by setting the binary
 	to setuid-root or by running the KN10 while logged in as root.
 	It cannot perform the necessary network operations otherwise.
+	For VDE, being a userspace network emulation, this is not needed.
+	See also the NOTE below.
+	Note that on some systems, the setuid-root option is not available,
+	since there may be limitations on signals that can be sent to
+	such programs.
 
 [ECHOCHK=<boolean>]	Default: TRUE
 	Primarily for debugging.
@@ -1146,6 +1153,11 @@ reason to keep the KLH10_HOME directory well-protected.  The only
 alternative is to run the entire KN10 while logged in as root, which
 you may wish to do anyway to enhance responsiveness (it is then able
 to lock itself in memory and raise its process priority).
+
+	* Note that on some systems, the setuid-root option is not
+available, since there may be limitations on signals that can be sent to
+such programs. This is for instance the case on FreeBSD 9.1 and higher
+when sysctl security.bsd.conservative_signals=1.
 
 	* Each time the KN10 starts or stops its NIA20, the dpni20
 process is created and killed.  This means you can sometimes recover
