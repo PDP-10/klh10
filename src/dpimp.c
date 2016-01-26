@@ -275,6 +275,7 @@ int mylockid;			/* Locker IDs: 1 for W, 0 for R */
 int othlockid;
 int swstatus = TRUE;
 struct pfdata pfdata;		/* Packet-Filter state */
+struct osnpf npf;		/* Configuration data */
 
 struct in_addr ehost_ip;	/* Emulated guest IP addr, net order */
 struct in_addr ihost_ip;	/* IMP/Native host IP addr, net order */
@@ -621,7 +622,10 @@ main(int argc, char **argv)
 
     hosttoimp(dpimp);		/* Parent process handles output */
 
-    return 1;			/* Never returns, but placate compiler */
+    osn_pfdeinit(&pfdata, &npf);/* Clean up created tunnels etc */
+    dp_xrdone(dp_dpxto(&dp));
+
+    return 1;
 }
 
 /* NET_INIT - Initialize net-related variables,
@@ -688,24 +692,20 @@ net_init(struct dpimp_s *dpimp)
     ** Should also determine interface's ethernet addr, if possible,
     ** and set ihost_ea.
     */
-    {
-	struct osnpf npf;		/* Configuration data */
-
-	npf.osnpf_ifnam = dpimp->dpimp_ifnam;
-	npf.osnpf_ifmeth = dpimp->dpimp_ifmeth;
-	npf.osnpf_dedic = FALSE;		/* Force filtering always! */
-	npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
-	npf.osnpf_backlog = dpimp->dpimp_backlog;
-	npf.osnpf_ip.ia_addr = ehost_ip;
-	npf.osnpf_tun.ia_addr = tun_ip;
-	/* Ether addr is both a potential arg and a returned value;
-	   the packetfilter open may use and/or change it.
-	   */
-	ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);/* Set requested ea if any */
-	osn_pfinit(&pfdata, &npf, (void *)dpimp);/* Will abort if fails */
-	ea_set(&ihost_ea, &npf.osnpf_ea);	/* Copy actual ea if one */
-	tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
-    }
+    npf.osnpf_ifnam = dpimp->dpimp_ifnam;
+    npf.osnpf_ifmeth = dpimp->dpimp_ifmeth;
+    npf.osnpf_dedic = FALSE;		/* Force filtering always! */
+    npf.osnpf_rdtmo = dpimp->dpimp_rdtmo;
+    npf.osnpf_backlog = dpimp->dpimp_backlog;
+    npf.osnpf_ip.ia_addr = ehost_ip;
+    npf.osnpf_tun.ia_addr = tun_ip;
+    /* Ether addr is both a potential arg and a returned value;
+       the packetfilter open may use and/or change it.
+       */
+    ea_set(&npf.osnpf_ea, dpimp->dpimp_eth);/* Set requested ea if any */
+    osn_pfinit(&pfdata, &npf, (void *)dpimp);/* Will abort if fails */
+    ea_set(&ihost_ea, &npf.osnpf_ea);	/* Copy actual ea if one */
+    tun_ip = npf.osnpf_tun.ia_addr;		/* Copy actual tun if any */
 
     if (!pfdata.pf_ip4_only) {
 	/* Now set remaining stuff */
@@ -1646,6 +1646,12 @@ hosttoimp(struct dpimp_s *dpimp)
 		    fprintf(stderr, "[dpimp-W: SPKT %d]", rcnt);
 	    }
 	    break;
+
+	case DPIMP_QUIT:
+	    if (DBGFLG)
+		fprintf(stderr, "[dpimp-W: QUIT]\r\n");
+	    return;
+
 	}
 
 	/* Come here to handle output packet */

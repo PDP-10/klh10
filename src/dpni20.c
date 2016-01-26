@@ -442,9 +442,10 @@ main(int argc, char **argv)
     progname = progname_w;	/* Reset progname to indicate identity */
     tentoeth(dpni);		/* Parent process handles output to net */
 
-    osn_pfdeinit(&pfdata, &npf);
+    osn_pfdeinit(&pfdata, &npf);/* Clean up created tunnels etc */
+    dp_xrdone(dp_dpxto(&dp));
 
-    return 1;			/* Never returns, but placate compiler */
+    return 1;
 }
 
 /* NET_INIT - Initialize net-related variables,
@@ -1358,6 +1359,11 @@ void tentoeth(struct dpni20_s *dpni)
 	    dpni_restart(2);
 #endif
 	    break;
+
+	case DPNI_QUIT:
+	    if (DBGFLG)
+		dbprint("QUIT");
+	    return;
 
 	default:
 	    dbprintln("Unknown cmd %d", dp_xrcmd(dpx));

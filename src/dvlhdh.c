@@ -1141,7 +1141,33 @@ imp_start(register struct lhdh *lh)
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), " started!]\r\n");
 
+    lh->lh_dpstate = TRUE;
+
     return TRUE;
+}
+
+/* IMP_QUIT - Tells the IMP process to quit
+** and clean up resources such as networking tunnels.
+*/
+static void
+imp_quit(register struct lhdh *lh)
+{
+    struct dpx_s *dpx = dp_dpxto(&lh->lh_dp);
+
+    /* Make sure we can send the message, or just skip it if not */
+    if (lh->lh_dpstate) {
+	if (DVDEBUG(lh))
+	    fprintf(DVDBF(lh), " [Sending QUIT to IMP]");
+
+	/* Make sure we can output message and just skip it if not */
+	if (dp_xswait(dpx)) {
+	    dp_xsend(dpx, DPIMP_QUIT, 0);
+	    dp_xswait(dpx);
+	}
+    } else {
+	if (DVDEBUG(lh))
+	    fprintf(DVDBF(lh), "[No need to send QUIT to IMP]");
+    }
 }
 
 /* IMP_STOP - Stops IMP and drops Host Ready by killing IMP subproc,
@@ -1150,9 +1176,12 @@ imp_start(register struct lhdh *lh)
 static void
 imp_stop(register struct lhdh *lh)
 {
+    struct dpx_s *dpx = dp_dpxto(&lh->lh_dp);
+
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP: stopping...");
 
+    imp_quit(lh);
     dp_stop(&lh->lh_dp, 1);	/* Say to kill and wait 1 sec for synch */
 
     lh->lh_dpstate = FALSE;	/* No longer there and ready */
@@ -1168,6 +1197,8 @@ imp_kill(register struct lhdh *lh)
 {
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP kill]\r\n");
+
+    imp_quit(lh);
 
     lh->lh_dpstate = FALSE;
     (*lh->lh_dv.dv_evreg)(	/* Flush all event handlers for device */
@@ -1548,6 +1579,8 @@ imp_stop(register struct lhdh *lh)
 {
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP stop - %d]\r\n", lh->lh_imppid);
+
+    /* Should send a QUIT message here */
 
     if (lh->lh_imppid) {
 	int status;

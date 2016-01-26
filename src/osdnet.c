@@ -1936,7 +1936,7 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
 
 /*
- * Too bad that this is never called...
+ * Clean up any tunnels or bridges or whatever we have created.
  */
 void
 osn_pfdeinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf)

@@ -769,6 +769,28 @@ ni20_reset(struct device *d)
     ni20_clear((struct ni20 *)d);
 }
 
+/* NI20_QUIT - Tells the IMP process to quit
+** and clean up resources such as networking tunnels.
+*/
+static void
+ni20_quit(struct ni20 *ni)
+{
+    struct dpx_s *dpx = &(ni->ni_dp.dp_adr->dpc_frdp);
+
+    /* Make sure we can send the message, or just skip it if not */
+    if (ni->ni_dpstate) {
+	if (DVDEBUG(ni))
+	    fprintf(NIDBF(ni), " [Sending QUIT to NI20]");
+
+	if (dp_xswait(dpx)) {
+	    dp_xsend(dpx, DPNI_QUIT, 0);
+	    dp_xswait(dpx);
+	}
+    } else {
+	if (DVDEBUG(ni))
+	    fprintf(NIDBF(ni), "[No need to send QUIT to NI20]");
+    }
+}
 
 /* NI20_POWOFF - Handle "power-off" which usually means the KLH10 is
 **	being shut down.  This is important if using a dev subproc!
@@ -1558,6 +1580,7 @@ ni20_stop(register struct ni20 *ni)
 	fprintf(NIDBF(ni), "[ni20_stop: stopping...");
 
     if (ni->ni_dp.dp_chpid) {
+	ni20_quit(ni);
 	dp_stop(&ni->ni_dp, 1);	/* Say to kill and wait 1 sec for synch */
     }
 

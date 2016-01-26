@@ -70,6 +70,7 @@ struct dpni20_s {
 #define DPNI_SETETH	2	/* Set hardware ethernet address */
 #define DPNI_SETMCAT	3	/* Set hardware multicasts from MCAT table */
 #define DPNI_SETPTT	4	/* Set packetfilter using PTT */
+#define DPNI_QUIT   	5	/* Clean up and exit */
 
 	/* From DP to 10 */
 #define DPNI_INIT	1	/* DP->10 Finished init */

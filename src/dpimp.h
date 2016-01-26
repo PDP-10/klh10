@@ -154,6 +154,7 @@ but the alignment may make it slightly easier for O/S I/O).
 #define DPIMP_RESET	0	/* Reset DP */
 #define DPIMP_SPKT	1	/* Send data packet to ethernet */
 #define DPIMP_SETETH	2	/* Set hardware ethernet address */
+#define DPIMP_QUIT   	3	/* Clean up and exit */
 
 	/* From DP to 10 */
 #define DPIMP_INIT	1	/* DP->10 Finished init */
