@@ -1,6 +1,9 @@
 #                                               -*- Autoconf -*-
 # Process this file with autogen.sh to produce a configure script.
 
+dnl This configure.ac script was created for Autoconf 2.69, but I
+dnl tried it with one as old as 2.61, and that seemed to work fine.
+
 AC_PREREQ([2.69])
 AC_INIT([klh10], [2.0i-Rhialto], [https://github.com/Rhialto/klh10],
 	[], [https://github.com/Rhialto/klh10])

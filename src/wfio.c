@@ -759,7 +759,7 @@ wfu_gasc(register struct wfile *wf,
 	    {	register int cnt;
 		for(cnt = 0; cnt < i; ++cnt)
 		    printf(" %o", cbuf[cnt]);
-		printf(" Bad byte: %o   File location: %ld.\n", ch,
+		printf(" Bad byte: %o   File location: %" WFOFF_FMT "d.\n", ch,
 				wf->wfloc-1);
 	    }
 	    return -1;

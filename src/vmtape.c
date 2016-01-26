@@ -3802,6 +3802,7 @@ TF-Format: raw %s\n",
     if ((rd = td->tdrd)) {
 	do {
 	    if (bol) {
+		/* print unsigned even though the type is actually signed */
 		fprintf(f, "%" VMTAPE_POS_FMT "u:", rd->rdloc);
 		bol = FALSE;
 	    }

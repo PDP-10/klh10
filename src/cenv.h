@@ -237,13 +237,13 @@
 # if defined(SIZEOF_OFF_T)	/* system inspected by configure */
 #  if SIZEOF_OFF_T == 0 || SIZEOF_OFF_T == 4
 #   define CENV_SYSF_LFS 0		/* No off_t, use long */
-#   define CENV_SYSF_LFS_FMT "l"	/* printf format is long */
+#   define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
 #  elif SIZEOF_OFF_T == 8
 #   define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
 #    if SIZEOF_OFF_T == SIZEOF_LONG
-#     define CENV_SYSF_LFS_FMT "l"	/* printf format is long */
+#     define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
 #    elif SIZEOF_OFF_T == SIZEOF_LONG_LONG
-#     define CENV_SYSF_LFS_FMT "ll"	/* printf format is long long */
+#     define CENV_SYSF_LFS_FMT	"ll"	/* printf format is signed long long */
 #    endif
 #  endif
 #  define CENV_SYSF_FSEEKO	HAVE_FSEEKO
