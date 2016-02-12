@@ -246,6 +246,7 @@ AC_SUBST([CENVFLAGS])
 AC_CONFIG_FILES([bld-kl/Makefile:mk/top.mk:mk/top-kl.mk:src/Makefile.mk
                  bld-ks/Makefile:mk/top.mk:mk/top-ks.mk:src/Makefile.mk
                  bld-ks-its/Makefile:mk/top.mk:mk/top-ks-its.mk:src/Makefile.mk
+		 Makefile:mk/bld.mk
 		])
 
 AC_OUTPUT
