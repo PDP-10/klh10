@@ -1176,8 +1176,6 @@ imp_quit(register struct lhdh *lh)
 static void
 imp_stop(register struct lhdh *lh)
 {
-    struct dpx_s *dpx = dp_dpxto(&lh->lh_dp);
-
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP: stopping...");
 
