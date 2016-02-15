@@ -666,6 +666,10 @@ vmt_attrmount(struct vmtape *t, struct vmtattrs *ta)
 
 	return vmt_rdmount(t, ta);
     }
+
+    /* Should not get here... */
+    vmterror(t, "vmt_attrmount: Invalid tapefile mode %x", ta->vmta_mode);
+    return FALSE;
 }
 
 /* VMT_CRMOUNT - Create and mount a new virtual tape for
