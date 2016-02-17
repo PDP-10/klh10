@@ -21,6 +21,7 @@ KLH10 2.0I: up to early 2016, by Olaf "Rhialto" Seibert
     - Networking code mostly replaced with libpcap as an interface
       to the system packet filter, and Net/Free/OpenBSD/Linux tunnel
       devices, and virtual VDE devices.
+    - Due to the previous, it should also work now on MacOS X.
 
 KLH10 2.0G: 21-May-2002
     - Fixed Large File Support for disks.
