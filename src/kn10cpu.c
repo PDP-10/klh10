@@ -54,18 +54,7 @@
 #endif
 
 /* Exported functions */
-void apr_init(void);
-void apr_init_aprid(void);
-int apr_run(void);
-void pi_devupd(void);
-void apr_check(void);
-void pxct_undo(void);	/* Stuff needed by KN10PAG for page fail trap */
-void trap_undo(void);
-#if KLH10_ITS_1PROC
-void a1pr_undo(void);
-#elif KLH10_CPU_KI || KLH10_CPU_KL
-void afi_undo(void);
-#endif
+#include "kn10cpu.h"
 
 /* Pre-declarations */
 static void trap_xct(void);

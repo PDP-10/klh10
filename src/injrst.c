@@ -31,16 +31,12 @@
 #include "klh10.h"
 #include "kn10def.h"
 #include "kn10ops.h"
+#include "klh10exp.h"
 #include <stdio.h>	/* For debug output */
 
 #ifdef RCSID
  RCSID(injrst_c,"$Id: injrst.c,v 2.4 2002/03/21 09:50:55 klh Exp $")
 #endif
-
-/* Imported functions */
-
-extern void pishow(FILE *);
-extern void pcfshow(FILE *, h10_t flags);
 
 
 

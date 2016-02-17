@@ -32,13 +32,11 @@
 #include "kn10ops.h"
 #include "fecmd.h"
 #include "dvcty.h"	/* Exported functions, etc */
+#include "dvdte.h"
 
 #ifdef RCSID
  RCSID(dvcty_c,"$Id: dvcty.c,v 2.4 2002/03/21 09:47:52 klh Exp $")
 #endif
-
-/* Imported functions */
-extern int dte_ctysin(int);
 
 /* Local functions & data */
 #if KLH10_CPU_KS

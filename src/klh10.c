@@ -52,6 +52,7 @@
 #include "kn10def.h"
 #include "kn10dev.h"
 #include "kn10ops.h"
+#include "kn10cpu.h"
 #include "wfio.h"
 #include "fecmd.h"
 #include "feload.h"
@@ -71,21 +72,7 @@
 #endif
 
 /* Exported functions */
-void klh10_main(int argc, char **argv);
-void fe_aprcont(int, int, vaddr_t, int);
-void fe_shutdown(void);
-void fe_traceprint(w10_t, vaddr_t);
-void fe_begpcfdbg(FILE *f);
-void fe_endpcfdbg(FILE *f);
-void pishow(FILE *);
-void pcfshow(FILE *, h10_t);
-void insprint(FILE *, int);
-/* void panic(char *, ...); */	/* Declared in kn10def.h */
-
-/* Imported functions */
-extern void apr_init(void);
-extern void apr_init_aprid(void);
-extern int apr_run(void);
+#include "klh10exp.h"
 
 /* Local function kept external for easier debug access  */
 void errpt(void);

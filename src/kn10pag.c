@@ -33,25 +33,15 @@
 #include "kn10def.h"
 #include "kn10ops.h"
 #include "dvlites.h"
+#include "klh10exp.h"
+#include "kn10cpu.h"
 
 #ifdef RCSID
  RCSID(kn10pag_c,"$Id: kn10pag.c,v 2.4 2002/04/26 05:22:21 klh Exp $")
 #endif
 
-/* Exported functions - see kn10pag.h */
-
-/* Imported functions */
-extern void pishow(FILE *f);
-extern void pcfshow(FILE *f, h10_t flags);
-extern void insprint(FILE *, int);
-
-extern void pxct_undo(void);	/* KN10CPU stuff needed for page fail trap */
-extern void trap_undo(void);
-#if KLH10_ITS_1PROC
-extern void a1pr_undo(void);
-#elif KLH10_CPU_KI || KLH10_CPU_KL
-extern void afi_undo(void);
-#endif
+/* Exported functions */
+#include "kn10pag.h"
 
 /* Local Pre-declarations */
 static void acblk_set(unsigned, unsigned);

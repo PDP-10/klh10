@@ -53,14 +53,12 @@ static int decosfcclossage;
 #include "kn10def.h"
 #include "kn10ops.h"
 #include "kn10dev.h"
+#include "kn10cpu.h"
 #include "dvuba.h"
 
 #ifdef RCSID
  RCSID(dvuba_c,"$Id: dvuba.c,v 2.4 2002/05/21 09:44:52 klh Exp $")
 #endif
-
-/* Imported functions */
-extern void pi_devupd(void);
 
 /* Pre-declarations */
 static void ubasta_write(struct ubctl *, h10_t);

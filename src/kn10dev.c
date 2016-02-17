@@ -38,6 +38,7 @@
 #include "kn10dev.h"
 #include "kn10ops.h"
 #include "prmstr.h"
+#include "kn10cpu.h"
 
 #if KLH10_CPU_KS && KLH10_DEV_TM03
 # include "dvtm03.h"	/* For setting up FECOM_BOOTP with magtape params */
@@ -46,9 +47,6 @@
 #ifdef RCSID
  RCSID(kn10dev_c,"$Id: kn10dev.c,v 2.4 2001/11/10 21:28:59 klh Exp $")
 #endif
-
-/* Imported functions */
-extern void pi_devupd(void);
 
 /* NULL device routines, for handling non-existent device. */
 
