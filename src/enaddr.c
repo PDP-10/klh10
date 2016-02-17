@@ -313,6 +313,8 @@ main(int argc, char **argv)
 	}
     }
 
+    printf("Supported network interface methods:%s\n", osn_networking);
+
     /* First, show interface info if desired */
     osn_iftab_init();
 

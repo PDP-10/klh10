@@ -428,8 +428,10 @@ main(int argc, char **argv)
 	    }
 	}
     }
-    if (initdebug)
-	dbprint("Starting");
+    if (initdebug) {
+	dbprintln("Starting");
+	dbprintln("Supported ifmeth=%s", osn_networking);
+    }
 
     /* Right off the bat attempt to get the highest scheduling priority
     ** we can, since a slow response will cause the 10 monitor to declare

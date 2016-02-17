@@ -60,7 +60,7 @@
 # define ossock_t int		/* No typedef until code revised */
 #endif /* CENV_SYS_UNIX */
 
-#if HAVE_NET_IF_TUN_H
+#if HAVE_NET_IF_TUN_H && OSN_USE_IPONLY
 # include <net/if_tun.h>
 # define KLH10_NET_TUN	1
 #endif
@@ -362,5 +362,7 @@ void osn_pfdeinit(struct pfdata *, struct osnpf *);
 
 ssize_t osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes);
 int osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes);
+
+extern char osn_networking[];
 
 #endif /* ifndef OSDNET_INCLUDED */

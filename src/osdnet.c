@@ -81,6 +81,29 @@ static ssize_t osn_pfwrite_vde(struct pfdata *pfdata, const void *buf, size_t nb
 static void osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf);
 #endif /* TUN || TAP || VDE */
 
+/*
+ * Put together a string that shows which network interface methods
+ * are supported.
+ */
+char osn_networking[] =
+    ""
+#if KLH10_NET_PCAP
+    " pcap"
+#endif
+#if KLH10_NET_TUN
+    " tun"
+#endif
+#if KLH10_NET_TAP
+    " tap"
+#endif
+#if KLH10_NET_TAP && KLH10_NET_BRIDGE
+    " tap+bridge"
+#endif
+#if KLH10_NET_VDE
+    " vde"
+#endif
+    ;
+
 /* Get a socket descriptor suitable for general net interface
    examination and manipulation; this is not necessarily suitable for
    use as a packetfilter.
@@ -1379,7 +1402,8 @@ osn_pfinit(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
     }
 #endif /* KLH10_NET_VDE */
 
-    esfatal(1, "Interface method \"%s\" not supported", method);
+    esfatal(1, "Interface method \"%s\" not supported (only%s)",
+	    method, osn_networking);
 }
 
 ssize_t
