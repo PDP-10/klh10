@@ -64,19 +64,21 @@
 /* Attempt to determine max size and type of tape position information.
  * This is most important when running on platforms that only support
  * 64-bit integers with a non-long data type.
+ * VMTAPE_POS_T is always signed: off_t is signed and so is long.
  */
 #ifndef VMTAPE_POS_T
 # if CENV_SYSF_LFS == 0
-#  define VMTAPE_POS_T long
+#  define VMTAPE_POS_T		long
+#  define VMTAPE_POS_FMT	"l"
 # else
-#  define VMTAPE_POS_T off_t
+#  define VMTAPE_POS_T		off_t
+#  define VMTAPE_POS_FMT	CENV_SYSF_LFS_FMT
 # endif
 # if CENV_SYSF_FSEEKO
 #  define VMTAPE_POS_FSEEK(f,pos) fseeko((f), (off_t)(pos), SEEK_SET)
 # else
 #  define VMTAPE_POS_FSEEK(f,pos) fseek((f), (long)(pos), SEEK_SET)
 # endif
-# define VMTAPE_POS_FMT CENV_SYSF_LFS_FMT
 #endif
 
 typedef VMTAPE_POS_T vmtpos_t;

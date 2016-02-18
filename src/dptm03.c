@@ -222,7 +222,9 @@ So, algorithm (on DECOSF anyway) should be:
 # include <sys/file.h>
 # include <sys/ioctl.h>
 # include <sys/time.h>
-# include <sys/mtio.h>
+# if HAVE_SYS_MTIO_H
+#  include <sys/mtio.h>
+# endif
 # include <sys/types.h>
 # include <sys/ioctl.h>
 #endif
@@ -781,7 +783,7 @@ void dptmstat(register struct devmt *d)
 	break;
 
     default:
-	if (dptm->dptm_mol = d->mta_mol) {
+	if ((dptm->dptm_mol = d->mta_mol)) {
 	    if (d->d_state == DPTM03_STA_HARDOFF) {
 		if (1 /*DBGFLG*/)
 		    dbprintln("Tape came online: \"%s\" %s", d->d_path,
@@ -1337,7 +1339,7 @@ os_mtmoveinit(register struct devmt *d)
     d->mta_frms = 0;
 }
 
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
 /* General-purpose ioctl operation invocation
 */
 int
@@ -1358,6 +1360,7 @@ osux_mtop(register struct devmt *d, int op, int cnt, char *name)
     }
     return TRUE;
 }
+#endif /* CENV_SYS_UNIX && HAVE_SYS_MTIO_H */
 
 /* Get physical magtape state.
  * Unfortunately there is no general way to do this.
@@ -1529,7 +1532,6 @@ os_mtstate(register struct devmt *d,
     }
     return res;
 }
-#endif /* CENV_SYS_UNIX */
 
 /* Called when an unexpected error is hit -- attempts to determine
  * whether the tape is still there or if it's a real data error.
@@ -1610,7 +1612,7 @@ os_mterrchk(register struct devmt *d,
 	}
 	/* OK, should have good state bits now */
     }
-#else
+#elif HAVE_SYS_MTIO_H
     /* Error may indicate tape is no longer present or drive is gone.
        Try to distinguish this error from a real data I/O error
        by performing a NOP.
@@ -1637,7 +1639,7 @@ os_mtopen(struct devmt *d, char *path, int mtof)
 
     os_mtflaginit(d);	/* Clear all state flags */
 
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
   {
     int fd;
     int mode = ((mtof & OS_MTOF_READONLY) ? O_RDONLY   : O_RDWR)
@@ -1822,7 +1824,7 @@ os_mtweof(struct devmt *d)		/* Write a tapemark */
 {
     os_mtmoveinit(d);	/* Clear movement flags */
 
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     if (!osux_mtop(d, MTWEOF, 1, "MTWEOF")) {
 	syserr(-1, "Tapemark write error");
 	os_mterrchk(d, -DPTM_WTM);	 /* Try to recover state from OS */
@@ -1847,7 +1849,7 @@ os_mtunload(struct devmt *d)		/* Try to unload tape */
 {
     d->mta_mol = FALSE;		/* Say no longer online */
     os_mtmoveinit(d);		/* Clear movement flags */
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     lseek(d->d_fd, (long)0, 0);		/* Barf - See DECOSF "man mtio" */
 
     /* Do MTUNLOAD.  Known to be defined by DECOSF and LINUX; other
@@ -1873,7 +1875,7 @@ os_mtrewind(struct devmt *d)		/* Rewind tape */
     os_mtmoveinit(d);		/* Clear movement flags */
     d->mta_rew = TRUE;		/* Now rewinding */
 
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     lseek(d->d_fd, (long)0, 0);		/* Barf - See DECOSF "man mtio" */
     if (!osux_mtop(d, MTREW, 1, "MTREW")) {
 	syserr(-1, "Tape rewind error");
@@ -1919,7 +1921,7 @@ os_mtrewind(struct devmt *d)		/* Rewind tape */
 int
 os_mtspace(struct devmt *d, long unsigned int cnt, int revf)
 {
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     int op = (revf ? MTBSR : MTFSR);
     int dir = (revf ? -1 : 1);
     int prevfileno;
@@ -2022,7 +2024,7 @@ os_mtspace(struct devmt *d, long unsigned int cnt, int revf)
 int
 os_mtfspace(struct devmt *d, long unsigned int cnt, int revf)
 {
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     int op = (revf ? MTBSF : MTFSF);
     int dir = (revf ? -1 : 1);
     int prevfileno;
@@ -2094,7 +2096,7 @@ int
 os_mtclrerr(struct devmt *d)
 {
     /* Do MTCSE.  Known to be defined only by DECOSF? */
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
 # if CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_BSD || CENV_SYS_LINUX
 #  ifndef MTCSE			/* No equiv, try NOP instead */
 #   define MTCSE MTNOP
@@ -2106,7 +2108,7 @@ os_mtclrerr(struct devmt *d)
     d->mta_err = 0;
     return TRUE;
 #else
-    return FALSE
+    return FALSE;
 #endif
 }
 
@@ -2139,7 +2141,7 @@ struct mtget {
 void
 os_mtshow(struct devmt *d, FILE *f)
 {
-#if CENV_SYS_UNIX
+#if CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     struct mtget mt;
 
     if (ioctl(d->d_fd, MTIOCGET, (char *)&mt) < 0) {

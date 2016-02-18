@@ -1100,7 +1100,7 @@ xildb(register struct cleanbp *bp, register w10_t *wp)
 	    /* Ugh.  Write out BP, then re-compute byte EA. */
 	    register enum xires res;
 	    xbpupdate(bp);
-	    if (res = xbpinit(bp, bp->ac, bp->src)) {
+	    if ((res = xbpinit(bp, bp->ac, bp->src))) {
 		xdecbp(bp);		/* Failed??  Back up P */
 		return bp->err = res;
 	    }
@@ -1144,7 +1144,7 @@ xidpb(register struct cleanbp *bp, register w10_t *wp)
 	    /* Ugh.  Write out BP, then re-compute byte EA. */
 	    register enum xires res;
 	    xbpupdate(bp);
-	    if (res = xbpinit(bp, bp->ac, bp->src)) {
+	    if ((res = xbpinit(bp, bp->ac, bp->src))) {
 		xdecbp(bp);		/* Failed??  Back up P */
 		return bp->err = res;
 	    }
@@ -2424,7 +2424,7 @@ xinsdef(ix_edit)
 		/* Set up bp for internal use, fail if error result
 		** (most likely MUUO for bogus OWGBP, if extended)
 		*/
-		if (res = xbpinit(&s2, ac_off(ac,4), BPDST)) {
+		if ((res = xbpinit(&s2, ac_off(ac,4), BPDST))) {
 		    /* Note: Not sure if this is correct behavior, since at
 		    ** this point the AC has already been clobbered, and the
 		    ** rest of the world is probably not in a very good

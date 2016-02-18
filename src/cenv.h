@@ -50,6 +50,9 @@
  RCSID(cenv_h,"$Id: cenv.h,v 2.6 2002/03/28 16:48:50 klh Exp $")
 #endif
 
+/* Include the configure-generated definitions */
+#include "config.h"
+
 /* Machine architecture - alpha order */
 
 #ifndef  CENV_CPU_ALPHA		/* DEC Alpha AXP series */
@@ -79,7 +82,7 @@
  */
 #if !(CENV_CPU_M68|CENV_CPU_SPARC|CENV_CPU_PDP10|CENV_CPU_I386 \
      |CENV_CPU_ALPHA|CENV_CPU_PPC)
-# if defined(__alpha) || defined(__alpha__)
+# if defined(__alpha) || defined(__alpha__) || defined(__x86_64__) || defined(__amd64__)
 #  undef  CENV_CPU_ALPHA
 #  define CENV_CPU_ALPHA 1
 # elif defined(__arm) || defined(__arm__)
@@ -169,22 +172,25 @@
 #  define CENV_SYS_DECOSF 1
 # elif defined(__FreeBSD__)
 #  undef  CENV_SYS_FREEBSD
-#  define CENV_SYS_FREEBSD 1 
+#  define CENV_SYS_FREEBSD 1
 # elif defined(__linux__)
 #  undef  CENV_SYS_LINUX
 #  define CENV_SYS_LINUX 1
-# elif defined(__APPLE__)
+# elif defined(__APPLE__) && !defined(__MACH__)
 #  undef  CENV_SYS_MAC
-#  define CENV_SYS_MAC 1 
+#  define CENV_SYS_MAC 1
+# elif defined(__APPLE__) && defined(__MACH__)
+#  define CENV_SYS_BSD 1
+#  define CENV_SYS_XBSD 1
 # elif defined(__NetBSD__)
 #  undef  CENV_SYS_NETBSD
-#  define CENV_SYS_NETBSD 1 
+#  define CENV_SYS_NETBSD 1
 # elif defined(__OpenBSD__)
 #  undef  CENV_SYS_OPENBSD
-#  define CENV_SYS_OPENBSD 1 
+#  define CENV_SYS_OPENBSD 1
 # elif defined(__sun) && defined(__SVR4)
 #  undef  CENV_SYS_SOLARIS
-#  define CENV_SYS_SOLARIS 1 
+#  define CENV_SYS_SOLARIS 1
 # elif defined(__COMPILER_KCC__)
 #  undef  CENV_SYS_T20		/* Not quite right, but close enough */
 #  define CENV_SYS_T20 1
@@ -209,27 +215,11 @@
 /* Specific OS Feature defs
    This only has features of interest for KLH10 software.
  */
-#ifndef  CENV_SYSF_BSDTIMEVAL	/* Has "timeval" struct & calls */
-# define CENV_SYSF_BSDTIMEVAL (CENV_SYS_UNIX && !CENV_SYS_V7)
-#endif
 #ifndef  CENV_SYSF_TERMIOS	/* Has termios(3) tty stuff */
-# define CENV_SYSF_TERMIOS (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
-			   |CENV_SYS_LINUX)
+# define CENV_SYSF_TERMIOS (HAVE_TERMIOS_H && HAVE_TCSETATTR)
 #endif
 #ifndef  CENV_SYSF_BSDTTY	/* Has old BSD tty stuff */
 # define CENV_SYSF_BSDTTY (!CENV_SYSF_TERMIOS && CENV_SYS_BSD)
-#endif
-#ifndef  CENV_SYSF_SIGSET	/* Has sigsetops(3) and sigaction(2) */
-# define CENV_SYSF_SIGSET (CENV_SYS_DECOSF|CENV_SYS_SUN|CENV_SYS_SOLARIS \
-			  |CENV_SYS_XBSD|CENV_SYS_LINUX)
-#endif
-#ifndef  CENV_SYSF_STRERROR	/* Has strerror(3) */
-# define CENV_SYSF_STRERROR (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
-			    |CENV_SYS_LINUX)
-#endif
-#ifndef  CENV_SYSF_NANOSLEEP	/* Has nanosleep(2) */
-# define CENV_SYSF_NANOSLEEP (CENV_SYS_DECOSF|CENV_SYS_SOLARIS|CENV_SYS_XBSD \
-			     |CENV_SYS_LINUX)
 #endif
 
 /* Large File Support (LFS)
@@ -244,10 +234,24 @@
  */
 #ifndef  CENV_SYSF_LFS	/* Predefining this must predefine the rest */
 
+# if defined(SIZEOF_OFF_T)	/* system inspected by configure */
+#  if SIZEOF_OFF_T == 0 || SIZEOF_OFF_T == 4
+#   define CENV_SYSF_LFS 0		/* No off_t, use long */
+#   define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
+#  elif SIZEOF_OFF_T == 8
+#   define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
+#    if SIZEOF_OFF_T == SIZEOF_LONG
+#     define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
+#    elif SIZEOF_OFF_T == SIZEOF_LONG_LONG
+#     define CENV_SYSF_LFS_FMT	"ll"	/* printf format is signed long long */
+#    endif
+#  endif
+#  define CENV_SYSF_FSEEKO	HAVE_FSEEKO
+
      /* FreeBSD defaults to 64-bit file off_t but calls the type "quad_t"
       * instead of "long long".  Always has fseeko.
       */
-# if CENV_SYS_FREEBSD
+# elif CENV_SYS_FREEBSD
 #  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
 #  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
 #  define CENV_SYSF_LFS_FMT "q"		/* printf format is quad_t */
@@ -267,7 +271,7 @@
 #  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
 #  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
 #  ifndef _FILE_OFFSET_BITS
-#   define _FILE_OFFSET_BITS=64	/* Use 64-bit file ops */
+#   define _FILE_OFFSET_BITS 64	/* Use 64-bit file ops */
 #  endif
 #  ifndef _LARGEFILE_SOURCE
 #   define _LARGEFILE_SOURCE		/* Include fseeko, ftello, etc */

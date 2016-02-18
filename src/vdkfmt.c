@@ -52,10 +52,13 @@
 # include <unistd.h>		/* Basic Unix syscalls */
 # include <sys/types.h>
 # include <sys/ioctl.h>
-# include <sys/mtio.h>
 # define NULLDEV "/dev/null"
 # define FD_STDIN 0
 # define FD_STDOUT 1
+#endif
+
+#if HAVE_ERRNO_H
+# include <errno.h>
 #endif
 
 #define FNAMSIZ 200
@@ -219,19 +222,19 @@ os_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return os_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#if !CENV_SYS_XBSD
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
-#endif
-	if (0 < err &&  err <= sys_nerr)
-	    return (char *)sys_errlist[err];
-    }
 #  endif
+	if (0 < err &&  err <= sys_nerr)
+	    return sys_errlist[err];
+    }
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -239,7 +242,7 @@ os_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 void errhan(struct vdk_unit *t, char *s)
@@ -267,7 +270,7 @@ main(int argc, char **argv)
 
     dvi.d_fmt = dvo.d_fmt = -1;
 
-    if (ret = cmdsget(argc, argv))	/* Parse and handle command line */
+    if ((ret = cmdsget(argc, argv)))	/* Parse and handle command line */
 	exit(ret);
 
 
@@ -315,7 +318,7 @@ main(int argc, char **argv)
     /* Do it! */
     fprintf(logfile, "; Copying from \"%s\" to \"%s\"...\n", dvi.d_path,
 		dvo.d_path ? dvo.d_path : NULLDEV);
-    if (ret = docopy())
+    if ((ret = docopy()))
 	ret = devclose(&dvo);
     else (void) devclose(&dvo);
 
@@ -421,7 +424,7 @@ cmdsget(int ac, char **av)
     dvi.d_isdisk = dvo.d_isdisk = MTYP_NULL;
 
     while (--ac > 0 && (cp = *++av)) {
-	if (arg = strchr(cp, '='))	/* If arg furnished for param, */
+	if ((arg = strchr(cp, '=')))	/* If arg furnished for param, */
 	    *arg++ = '\0';		/* split arg off */
 	if ((plen = strlen(cp)) <= 0)
 	    break;			/* Bad param */

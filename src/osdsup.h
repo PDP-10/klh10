@@ -106,7 +106,8 @@ typedef void ossighandler_t(int);
 # define SIG_ERR ((ossighandler_t *)-1)
 #endif
 
-#if CENV_SYSF_SIGSET
+/* HAVE_SIGACTION pretty much implies the sigemptyset functions/macros */
+#if HAVE_SIGACTION
 # define ossigset_t sigset_t
 # define os_sigemptyset(set) sigemptyset(set)
 # define os_sigfillset(set)  sigfillset(set)
@@ -133,7 +134,7 @@ typedef void ossighandler_t(int);
 
 typedef struct {
     int ossa_sig;
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     struct sigaction ossa_sa;
 #else
     ossighandler_t *ossa_handler;
@@ -198,7 +199,13 @@ extern osintf_t os_swap(osintf_t *, int);
 
 /* Real-time - osrtm_t
  */
-#if CENV_SYSF_BSDTIMEVAL		/* timeval is a BSD artifact */
+#if HAVE_SETITIMER && HAVE_GETTIMEOFDAY	/* timeval is a BSD artifact */
+    /* The of setitimer(2) and gettimeofday(struct timeval *, ...)
+     * are used together, and the latter implies the existence of
+     * struct timeval.
+     * Further checks will omit HAVE_GETTIMEOFDAY; if it's missing
+     * it will error out below anyway.
+     */
 #  include <sys/time.h>
    typedef struct timeval osrtm_t;
 #  define OS_RTM_SEC(rtm) ((rtm).tv_sec)
@@ -223,7 +230,7 @@ typedef struct {
 # define OS_ITIMER_VIRT 1
 #endif
     ossigact_t ostmr_sigact;
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     struct itimerval ostmr_itm;
 #elif CENV_SYS_MAC
     /* XXX: Mac implem uses static interval_timer* timer instead of a
@@ -236,7 +243,7 @@ typedef struct {
 
 /* Sleep time - osstm_t
  */
-#if CENV_SYSF_NANOSLEEP
+#if HAVE_NANOSLEEP
 typedef struct timespec osstm_t;
 # define OS_STM_SEC(stm)  ((stm).tv_sec)
 # define OS_STM_USEC(stm) ((stm).tv_nsec/1000)
@@ -249,7 +256,7 @@ typedef long osstm_t;
 # define OS_STM_USEC(stm) (((stm)%1000)*1000)
 # define OS_STM_SET(stm, sec) ((stm) = (sec)*1000)
 # define OS_STM_MSET(stm, ms) ((stm) = (ms))
-#endif /* !CENV_SYSF_NANOSLEEP */
+#endif /* !HAVE_NANOSLEEP */
 
 
 extern int os_vrtmget(osrtm_t *);

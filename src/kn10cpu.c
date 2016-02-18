@@ -46,32 +46,15 @@
 #include "kn10ops.h"
 #include "kn10dev.h"	/* For device PI handling */
 #include "dvcty.h"	/* For cty_ stuff */
+#include "fecmd.h"
+#include "klh10exp.h"
 
 #ifdef RCSID
  RCSID(kn10cpu_c,"$Id: kn10cpu.c,v 2.9 2002/05/21 16:54:32 klh Exp $")
 #endif
 
 /* Exported functions */
-void apr_init(void);
-void apr_init_aprid(void);
-int apr_run(void);
-void pi_devupd(void);
-void apr_check(void);
-void pxct_undo(void);	/* Stuff needed by KN10PAG for page fail trap */
-void trap_undo(void);
-#if KLH10_ITS_1PROC
-void a1pr_undo(void);
-#elif KLH10_CPU_KI || KLH10_CPU_KL
-void afi_undo(void);
-#endif
-
-/* Imported functions */
-extern void fe_begpcfdbg(FILE *);
-extern void fe_endpcfdbg(FILE *);
-extern void pishow(FILE *);
-extern void pcfshow(FILE *, h10_t flags);
-extern void pinstr(FILE *, w10_t w, int flags, vaddr_t e);
-extern void fe_traceprint (register w10_t instr, vaddr_t e);
+#include "kn10cpu.h"
 
 /* Pre-declarations */
 static void trap_xct(void);
@@ -194,7 +177,7 @@ apr_run(void)
     register int haltval;
 
     /* Save return point for APR halt */
-    if (haltval = _setjmp(aprhaltbuf)) {	/* If longjmp back, */
+    if ((haltval = _setjmp(aprhaltbuf))) {	/* If longjmp back, */
 	clk_suspend();				/* stop internal clock */
 	return haltval;				/* return from running APR */
     }
@@ -320,7 +303,7 @@ apr_fly(void)
 	    vp = vm_xeamap(PC_VADDR, VMF_FETCH);  /* Do mapping, may fault */
 	    /* Remember start of page or ac block */
 	    cpu.mr_cachevp = vp - (pc & PAG_MASK);
-	    if (cachelo = (pc & (H10MASK & ~PAG_MASK))) {
+	    if ((cachelo = (pc & (H10MASK & ~PAG_MASK)))) {
 		/* Normal page reference */
 		cachehi = cachelo | PAG_MASK;
 	    } else if (pc > AC_17) {	/* Page 0, special handling */
@@ -499,7 +482,7 @@ apr_check(void)
 	/* Check for PI requests */
 	{
 	    register int pilev;
-	    if (pilev = pi_check())	/* If PI interrupt requested, */
+	    if ((pilev = pi_check()))	/* If PI interrupt requested, */
 		pi_xct(pilev);		/* handle it! */
 	}
 
@@ -1352,8 +1335,8 @@ tim_init(void)
 	os_rtmget(&cpu.tim.osbase);
 	return FALSE;
     }
-    fread((char *)&cpu.tim.wrbase, sizeof(cpu.tim.wrbase), 1, f);
-    fread((char *)&cpu.tim.osbase, sizeof(cpu.tim.osbase), 1, f);
+    (void)fread((char *)&cpu.tim.wrbase, sizeof(cpu.tim.wrbase), 1, f);
+    (void)fread((char *)&cpu.tim.osbase, sizeof(cpu.tim.osbase), 1, f);
     os_rtm_adjust_base(&cpu.tim.osbase, &cpu.tim.osbase, 0);
     if (ferror(f)) {
 	fclose(f);
@@ -1392,7 +1375,7 @@ quant_freeze(int32 qc)
     ** don't report runtime in a monotonically increasing way.
     ** See os_vrtmget() for more detail.
     */
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     if (rtm.tv_sec < 0 || rtm.tv_usec < 0) {
 # if 0	/* Disable output for now.  Perhaps bump a meter later */
 	fprintf(stderr, "[Neg quantum! %ld,%ld]\r\n",
@@ -1400,7 +1383,7 @@ quant_freeze(int32 qc)
 # endif
 	return qc;
     }
-#endif	/* CENV_SYSF_BSDTIMEVAL */
+#endif	/* HAVE_SETITIMER */
 
     return qc + (int32)os_rtm_toqct(&rtm);	/* Convert to quantum ticks! */
 }
@@ -1820,7 +1803,7 @@ tim_klupdate(void *ignored)		/* Arg is unused */
 	cpu.tim.tim_intcnt = 0;			/* Reset countup */
 
 	cpu.tim.tim_flgs |= TIM_RDONE;		/* "Timer Interval Done" */
-	if (cpu.pi.pilev_timreq |= cpu.tim.tim_lev)	/* Add PI if any */
+	if ((cpu.pi.pilev_timreq |= cpu.tim.tim_lev))	/* Add PI if any */
 	    pi_devupd();			/* Check to trigger intrupt */
     }
 }
@@ -2370,7 +2353,7 @@ ioinsdef(io_wrpi)
 void
 pi_devupd(void)
 {
-    if (cpu.pi.pilev_dreq = (cpu.pi.pilev_aprreq
+    if ((cpu.pi.pilev_dreq = (cpu.pi.pilev_aprreq
 #if KLH10_CPU_KS
 	| cpu.pi.pilev_ub1req | cpu.pi.pilev_ub3req
 #elif KLH10_CPU_KL
@@ -2379,7 +2362,7 @@ pi_devupd(void)
 	| cpu.pi.pilev_dtereq
 	| cpu.pi.pilev_diareq
 #endif
-						)) {
+						))) {
 	INSBRKSET();
     }
 }

@@ -149,6 +149,7 @@ struct ni20 {
 
     /* Misc config info not set elsewhere */
     char *ni_ifnam;	/* Native platform's interface name */
+    char *ni_ifmeth;	/* Native platform's interface access method */
     int ni_dedic;	/* TRUE if interface dedicated (else shared) */
     int ni_decnet;	/* TRUE to filter DECNET packets (if shared) */
     int ni_doarp;	/* TRUE to do ARP hackery (if shared) */
@@ -292,6 +293,7 @@ static uint32 ni_ecpdigest(unsigned char *ucp, int len);
     prmdef(NIP_DBG,"debug"),    /* Initial debug flag */\
     prmdef(NIP_EN, "enaddr"),   /* Ethernet address to use (override) */\
     prmdef(NIP_IFC,"ifc"),      /* Ethernet interface name */\
+    prmdef(NIP_IFM,"ifmeth"),   /* Ethernet interface access method */\
     prmdef(NIP_BKL,"backlog"),/* Max bklog for rcvd pkts (else sys default) */\
     prmdef(NIP_DED,"dedic"),    /* TRUE= Ifc dedicated (else shared) */\
     prmdef(NIP_IP, "ipaddr"),   /* IP address of KLH10, if shared */\
@@ -343,6 +345,7 @@ ni20_conf(FILE *f, char *s, struct ni20 *ni)
     /* First set defaults for all configurable parameters */
     DVDEBUG(ni) = FALSE;
     ni->ni_ifnam = NULL;
+    ni->ni_ifmeth = NULL;
     ni->ni_backlog = 0;
     ni->ni_decnet = FALSE;
     ni->ni_dedic = FALSE;
@@ -411,6 +414,12 @@ ni20_conf(FILE *f, char *s, struct ni20 *ni)
 	    if (!prm.prm_val)
 		break;
 	    ni->ni_ifnam = s_dup(prm.prm_val);
+	    continue;
+
+	case NIP_IFM:		/* Parse as simple string */
+	    if (!prm.prm_val)
+		break;
+	    ni->ni_ifmeth = s_dup(prm.prm_val);
 	    continue;
 
 	case NIP_BKL:		/* Parse as decimal number */
@@ -718,6 +727,10 @@ ni20_init(struct device *d,
 	strncpy(dpc->dpni_ifnam, ni->ni_ifnam, sizeof(dpc->dpni_ifnam)-1);
     else
 	dpc->dpni_ifnam[0] = '\0';	/* No specific interface */
+    if (ni->ni_ifmeth)			/* Pass on interface access method */
+	strncpy(dpc->dpni_ifmeth, ni->ni_ifmeth, sizeof(dpc->dpni_ifmeth)-1);
+    else
+	dpc->dpni_ifmeth[0] = '\0';	/* No specific access method */
     memcpy((char *)dpc->dpni_ip,	/* Set our IP address for filter */
 		ni->ni_ipadr, 4);
     memcpy((char *)dpc->dpni_tun,	/* Set IP address for tunnel */
@@ -756,6 +769,28 @@ ni20_reset(struct device *d)
     ni20_clear((struct ni20 *)d);
 }
 
+/* NI20_QUIT - Tells the IMP process to quit
+** and clean up resources such as networking tunnels.
+*/
+static void
+ni20_quit(struct ni20 *ni)
+{
+    struct dpx_s *dpx = &(ni->ni_dp.dp_adr->dpc_frdp);
+
+    /* Make sure we can send the message, or just skip it if not */
+    if (ni->ni_dpstate) {
+	if (DVDEBUG(ni))
+	    fprintf(NIDBF(ni), " [Sending QUIT to NI20]");
+
+	if (dp_xswait(dpx)) {
+	    dp_xsend(dpx, DPNI_QUIT, 0);
+	    dp_xswait(dpx);
+	}
+    } else {
+	if (DVDEBUG(ni))
+	    fprintf(NIDBF(ni), "[No need to send QUIT to NI20]");
+    }
+}
 
 /* NI20_POWOFF - Handle "power-off" which usually means the KLH10 is
 **	being shut down.  This is important if using a dev subproc!
@@ -1545,6 +1580,7 @@ ni20_stop(register struct ni20 *ni)
 	fprintf(NIDBF(ni), "[ni20_stop: stopping...");
 
     if (ni->ni_dp.dp_chpid) {
+	ni20_quit(ni);
 	dp_stop(&ni->ni_dp, 1);	/* Say to kill and wait 1 sec for synch */
     }
 

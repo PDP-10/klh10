@@ -43,6 +43,10 @@ static int decosfcclossage;
 #include <stdlib.h>
 #include <string.h>		/* For strerror() if present */
 
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+
 #include "dpsup.h"
 
 #if CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_XBSD || CENV_SYS_LINUX
@@ -53,11 +57,11 @@ static int decosfcclossage;
 # include <sys/mman.h>
 # include <unistd.h>
 # include <signal.h>
-# if CENV_SYS_SUN || CENV_SYS_SOLARIS
+# if defined(MAXSIG)
 #  define SIGMAX MAXSIG		/* Different wording on Sun */
-# elif CENV_SYS_FREEBSD
+# elif defined(NSIG)
 #  define SIGMAX NSIG
-# elif CENV_SYS_NETBSD || CENV_SYS_LINUX
+# elif defined(_NSIG)
 #  define SIGMAX _NSIG
 # endif
 #endif /* CENV_SYS_DECOSF || CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_XBSD || CENV_SYS_LINUX */
@@ -95,11 +99,11 @@ int dp_init(register struct dp_s *dp, size_t dpcsiz,
     dp->dp_chpid = 0;
 
     /* Ensure all sizes are aligned to satisfy maximum restrictions */
-    if (adj = (dpcsiz % sizeof(double)))
+    if ((adj = (dpcsiz % sizeof(double))))
 	dpcsiz += sizeof(double) - adj;
-    if (adj = (insiz % sizeof(double)))
+    if ((adj = (insiz % sizeof(double))))
 	insiz += sizeof(double) - adj;
-    if (adj = (outsiz % sizeof(double)))
+    if ((adj = (outsiz % sizeof(double))))
 	outsiz += sizeof(double) - adj;
 
     totsiz = dpcsiz + insiz + outsiz;
@@ -306,7 +310,7 @@ int dp_stop(register struct dp_s *dp, int timeout)
 
     switch (dp->dp_type) {
     case DP_XT_MSIG:
-	if (pid = dp->dp_chpid) {
+	if ((pid = dp->dp_chpid)) {
 	    (void) dp_killchild(pid, timeout);
 
 	    /* For now, flush pid even if didn't find it when waited. */
@@ -484,7 +488,7 @@ int dp_main(register struct dp_s *dp, int argc, char **argv)
 	** beforehand - only warn if an error isn't EPERM and hence is
 	** unusual.
 	*/
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+#if HAVE_MLOCKALL
 	if (mlockall(MCL_CURRENT|MCL_FUTURE) != 0) {
 	    if (errno != EPERM)
 		fprintf(stderr, "[%s: mlockall failed - %s]\r\n",
@@ -663,19 +667,19 @@ dp_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return dp_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#  if !CENV_SYS_XBSD		/* Already in signal.h */
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
 #  endif
 	if (0 < err &&  err <= sys_nerr)
-	    return (char *)sys_errlist[err];
+	    return sys_errlist[err];
     }
-#  endif
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -683,7 +687,7 @@ dp_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 
@@ -692,7 +696,7 @@ dp_strerror(int err)
 static int
 dp_signal(int sig, void (*func)(int))
 {
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     struct sigaction act, oact;
 
     act.sa_handler = func;
@@ -726,7 +730,7 @@ dp_sleep(int secs)
 #if CENV_SYS_DECOSF
     sleep(secs);		/* Independent of interval timers! */
 
-#elif CENV_SYSF_BSDTIMEVAL && CENV_SYSF_SIGSET
+#elif HAVE_SETITIMER && HAVE_SIGACTION
     /* Must save & restore ITIMER_REAL & SIGALRM, which conflict w/sleep() */
     struct itimerval ztm, otm;
     struct sigaction act, oact;

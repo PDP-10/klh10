@@ -63,7 +63,7 @@
 # include <jsys.h>
 # include <macsym.h>		/* FLD macros */
 # define char8 _KCCtype_char8
-# define CENV_SYSF_STRERROR 1
+# define HAVE_STRERROR 1
 # define NULLDEV "NUL:"
 # define FD_STDIN 0
 # define FD_STDOUT 1
@@ -72,13 +72,19 @@
 # include <unistd.h>		/* Basic Unix syscalls */ 
 # include <sys/types.h>
 # include <sys/ioctl.h>
-# include <sys/mtio.h>
+# if HAVE_SYS_MTIO_H
+#  include <sys/mtio.h>
+# endif /* HAVE_SYS_MTIO_H */
 # define char8 unsigned char
 # define O_BSIZE_8 0
 # define NULLDEV "/dev/null"
 # define FD_STDIN 0
 # define FD_STDOUT 1
 # define strCMP strcmp		/* Temporary compat hack */
+#endif
+
+#if HAVE_ERRNO_H
+# include <errno.h>
 #endif
 
 
@@ -338,19 +344,19 @@ os_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return os_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#if !CENV_SYS_XBSD
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
-#endif
-	if (0 < err &&  err <= sys_nerr)
-	    return (char *)sys_errlist[err];
-    }
 #  endif
+	if (0 < err &&  err <= sys_nerr)
+	    return sys_errlist[err];
+    }
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -358,7 +364,7 @@ os_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 void errhan(void *arg, struct vmtape *t, char *s)
@@ -394,7 +400,7 @@ main(int argc, char **argv)
     dvo.d_vmt.mt_errhan = errhan;
     dvo.d_vmt.mt_errarg = &dvo.d_vmt;
 
-    if (ret = cmdsget(argc, argv))	/* Parse and handle command line */
+    if ((ret = cmdsget(argc, argv)))	/* Parse and handle command line */
 	exit(ret);
 
 
@@ -673,7 +679,7 @@ cmdsget(int ac, char **av)
     dvi.d_istape = dvo.d_istape = MTYP_NULL;
 
     while (--ac > 0 && (cp = *++av)) {
-	if (arg = strchr(cp, '='))	/* If arg furnished for param, */
+	if ((arg = strchr(cp, '=')))	/* If arg furnished for param, */
 	    *arg++ = '\0';		/* split arg off */
 	if ((plen = strlen(cp)) <= 0)
 	    break;			/* Bad param */
@@ -992,7 +998,7 @@ int devopen(register struct dev *d, int wrtf)
 
 
     /* Set default buffer length */
-    if (d->d_blen = d->d_vmt.mt_tdr.tdmaxrsiz) {
+    if ((d->d_blen = d->d_vmt.mt_tdr.tdmaxrsiz)) {
 	if (d->d_recsiz) {		/* Explicit record size spec? */
 	    if (d->d_blen <= d->d_recsiz)	/* If it's bigger, */
 		d->d_blen = d->d_recsiz;	/* adjust quietly */
@@ -1096,7 +1102,7 @@ int devread(struct dev *d)
 	    return ret;
 	}
 
-	if (d->d_vmt.mt_frames = d->mta_frms) {		/* Read any data? */
+	if ((d->d_vmt.mt_frames = d->mta_frms)) {	/* Read any data? */
 	    d->d_buse = d->mta_frms;	/* Say this much of buffer used */
 	    d->d_iop = d->d_buff;
 	}
@@ -1131,7 +1137,7 @@ int devwrite(struct dev *d, unsigned char *buff, rsiz_t len)
 
     if (len) {
 	if (d->d_istape == MTYP_VIRT) {
-	    if (ret = vmt_rput(&(d->d_vmt), buff, (size_t)len)) {
+	    if ((ret = vmt_rput(&(d->d_vmt), buff, (size_t)len))) {
 		d->d_tloc += len;
 		d->d_recs++;
 		d->d_frecs++;
@@ -1466,6 +1472,8 @@ int os_mtweof(struct dev *dp)		/* Write a tapemark */
     acs[1] = dp->d_fd;
     acs[2] = monsym(".MOCLE");
     jsys(MTOPR, acs);
+#elif CENV_SYS_UNIX && !HAVE_SYS_MTIO_H
+    return FALSE;
 #else
     struct mtop mtcmd;
     mtcmd.mt_op = MTWEOF;
@@ -1486,6 +1494,8 @@ int os_mtfsr(struct dev *dp)	/* Forward Space Record (to inter-record gap)*/
     acs[2] = monsym(".MOCLE");
     jsys(MTOPR, acs);
 */
+#elif CENV_SYS_UNIX && !HAVE_SYS_MTIO_H
+    return FALSE;
 #else
     struct mtop mtcmd;
     mtcmd.mt_op = MTFSR;
@@ -1537,7 +1547,7 @@ t20status(register struct dev *d, register FILE *f, int swd, int cnt)
 void os_mtstatus(struct dev *dp, FILE *f)
 {
 #if CENV_SYS_T20
-#elif CENV_SYS_UNIX
+#elif CENV_SYS_UNIX && HAVE_SYS_MTIO_H
     struct mtget mtstatb;
 
     if (ioctl(dp->d_fd, MTIOCGET, (char *)&mtstatb) < 0) {

@@ -51,10 +51,11 @@ for other ports such as MacOS or Windows have not yet been written.
 
 [3] Build a KN10 from sources.
 
-	$ cd <distrib>/bld/<platform>
-	$ make base-kl		;;; or base-ks or base-ks-its
-    or to make all variants, installing to <distrib>/new/<platform>-<model>:
-	$ ../MAKE-ALL
+	$ mkdir tmp; cd tmp
+	$ ../configure --bindir=$KLH10_HOME
+	$ make -C bld-kl
+	$ make -C bld-ks
+	$ make -C bld-ks-its
 
     Or see the "BUILDING FROM SOURCES" section farther on.
     Read "doc/dfkfb.txt" if you want to do a quick KL performance test now.
@@ -62,7 +63,10 @@ for other ports such as MacOS or Windows have not yet been written.
 
 [4] Install the binaries into $KLH10_HOME.
 
-	$ make install
+	$ make -C bld-<model> install
+
+    This installs into $KLH10_HOME if you have set it, or in the --bindir
+    directory given to configure otherwise.
 
     If this doesn't work, you can do it by hand; just copy all of the
     executable files to $KLH10_HOME (or establish symlinks to them).
@@ -188,6 +192,10 @@ how to recompile a kernel. You need at least these options (as of 3.0):
 	pseudo-device	tap		# cloning device for NI20
 	pseudo-device	bridge		# cloning device for NI20
 
+Later versions of NetBSD make SHMMAXPGS configurable at runtime, via
+sysctl -w kern.ipc.shmmaxpgs=value. The default value may be large enough
+already.
+
 Linux
 -----
 
@@ -214,44 +222,25 @@ ftp://ftp.its.os.org/its/klh10/.
 BUILDING FROM SOURCES
 =====================
 
-    Connect to the appropriate distribution build subdirectory for your
-    platform, and type "make <kn10>" where <kn10> is one of
-    the following standard targets:
+    The configure script will probe your system to find out some of its
+    characteristics. Normally no manual settings are needed.
 
-		Target      Builds this emulator
-		------      --------------------
-		base-kl     kn10-kl     (KL10B - runs TOPS-10/20)
-		base-ks     kn10-ks     (KS10  - runs TOPS-10/20)
-		base-ks-its kn10-ks-its (KS10  - runs ITS)
+    $ mkdir <some fresh directory>; cd <that same directory>
+    $ <distrib>/configure
 
-    Let's suppose the platform is FreeBSD-i386 for example:
+    This will generate 3 subdirectories with a Makefile in each.
+    They differ only in their default target, so that the different
+    models can easily be built independently.
 
-	$ cd <distrib>/bld/fbx86
-	$ make base-kl
+	Directory  Target      Builds this emulator
+	---------  ------      --------------------
+	bld-kl	   base-kl     kn10-kl     (KL10B - runs TOPS-10/20)
+	bld-ks	   base-ks     kn10-ks     (KS10  - runs TOPS-10/20)
+	bld-ks-its base-ks-its kn10-ks-its (KS10  - runs ITS)
 
-    This will compile everything necessary and leave all of the binaries
-    in the build directory.  The builds are separate from the sources
-    to make it easier to generate and maintain multiple flavors of KN10s.
-
-Notes:
-
-The "*axp" directories are not only useful for Alpha AXP hosts, but also
-for any other little-endian 64-bit CPU. That includes amd64 aka x86_64.
-While the x86 configuration may work on amd64, it is likely to be
-a bit less efficient.
-
-Solaris has two possible Makefiles; the default uses GCC, but you
-can change the link to Mk-solsparc-cc.mk which uses Sun's C compiler.
-
-If there isn't already a likely looking "bld" subdirectory for your
-platform, make one using the others as a guide.  In general, the
-compiler options provided are fairly simple in order to increase the
-odds that the compilation will succeed.  You can tune or revise the
-Makefile for your system by editing a local copy within your
-subdirectory, which avoids the need to change any of the actual
-Distribution files.  When you have it working, let me know what was
-done so I can add it to the Distribution or at least to some notes.
-
+    The pre-configure build directories are also still there, but they
+    are no longer maintained, and do not cover all possible host
+    OS and CPU options. These are in <distrib>/bld/<os><cpu>.
 
 PORTING
 =======
@@ -307,7 +296,8 @@ executables over into $KLH10_HOME, but there is one tricky bit.
 
 If you plan to use the network interface emulation, you MUST either
 run the KN10 as root, or make the interface process setuid-root.
-There is no single right choice.
+There is no single right choice. For VDE networking, root is fortunately
+not required.
 
 If you want to do the latter:
     Make sure only authorized users can access $KLH10_HOME.
@@ -317,6 +307,7 @@ If you want to do the latter:
     
 Another factor to consider is that running as root may allow you to
 use the MEM_LOCK setting to lock things in memory and avoid swapping.
+See also the note on setuid below at NOTES.
 
 If your KN10 is being automatically started up in the background when
 your system boots, running as root is simplest.
@@ -930,9 +921,50 @@ The parameters for the NI20 driver are:
 	However, for a shared interface this will default to whatever the host
 	system uses for its IP datagrams, normally "ln0" or "tu0" for
 	OSF/1.
+	If really needed, you can force the choice with the environment
+	variable KLH10_NET_DEFAULT_IF.
 	The shell commands "ifconfig -a" or "netstat -i" will show the
 	known interfaces.
 	See also the ENADDR parameter.
+
+[IFMETH=<pcap|tap|tap+bridge|vde>] Default: system dependent
+	Different host operating systems have different methods to allow
+	access to an ethernet interface. Some may have more than one.
+	The desired option can be chosen at runtime from the ones that are
+	compiled in.
+
+	pcap uses the libpcap library and therefore is the most portable.
+	However, on some systems this uses a backing method that does not
+	allow 2-way communication between the host and the guest system.
+	(BPF may on some cases not allow packets sent by the guest to be
+	seen by the host).
+	pcap is essentially always available, since the library is also used
+	to enumerate the real ethernet interfaces.
+
+	tun uses the IP tunnel device. Implemented for *BSD and Linux. This
+	option is only available for dpimp, i.e. for ks-its.
+
+	tap uses the Ethernet  tunnel device. Implemented for *BSD and Linux.
+	For the ethernet packets to be received anywhere outside the
+	host, they need to be bridged (tap+bridge) to a real interface,
+	or routing needs to be set up on the host (this is not built into klh).
+
+	With both tun and tap you can specify with ifc=tun33 which of the tun/
+	tap devices you want to use, for instance if you have one pre-set-up.
+	Otherwise, one will be created for you.
+
+	tap+bridge networking is a mix between DEDIC=TRUE and DEDIC=FALSE.
+	It is dedicated in the sense that the interface is virtual and can
+	be manipulated at will (ethernet address, multicast, etc) but it
+	is shared in the sense that it receives packets promiscuously,
+	i.e. unfiltered.
+
+	On Linux, the bridge must be pre-created by the user and connected
+	to an ethernet interface. The name of this bridge can be passed in
+	the environment variable KLH10_NET_BRIDGE. Note that the sudo command
+	by default cleans the environment so use sudo -E.
+
+	With VDE networking, IFC= has the name of the switch (the directory).
 
 [ENADDR=<x:x:x:x:x:x>]	Default: <none>
 	Normally unnecessary.
@@ -1052,6 +1084,11 @@ The parameters for the NI20 driver are:
 	IMPORTANT: This program must run as root, either by setting the binary
 	to setuid-root or by running the KN10 while logged in as root.
 	It cannot perform the necessary network operations otherwise.
+	For VDE, being a userspace network emulation, this is not needed.
+	See also the NOTE below.
+	Note that on some systems, the setuid-root option is not available,
+	since there may be limitations on signals that can be sent to
+	such programs.
 
 [ECHOCHK=<boolean>]	Default: TRUE
 	Primarily for debugging.
@@ -1117,6 +1154,11 @@ alternative is to run the entire KN10 while logged in as root, which
 you may wish to do anyway to enhance responsiveness (it is then able
 to lock itself in memory and raise its process priority).
 
+	* Note that on some systems, the setuid-root option is not
+available, since there may be limitations on signals that can be sent to
+such programs. This is for instance the case on FreeBSD 9.1 and higher
+when sysctl security.bsd.conservative_signals=1.
+
 	* Each time the KN10 starts or stops its NIA20, the dpni20
 process is created and killed.  This means you can sometimes recover
 from problems, or try a new version of the dpni20, simply by using
@@ -1181,7 +1223,8 @@ I/O possible is in terms of IP datagrams rather than ethernet packets.
 	devdef imp ub3 lhdh \
 		addr=767600 br=6 vec=250 \	; Generic Unibus params
 		ipaddr=10.2.0.6 \		; ITS IP address 
-		gwaddr=199.34.53.50		; Host platform's IP address
+		gwaddr=199.34.53.50 \		; Host platform's IP address
+		ifmeth=tun			; networking method
 
 The parameters for the LHDH driver are:
 
@@ -1213,6 +1256,9 @@ The parameters for the LHDH driver are:
 	(as defined by the IPADDR parameter).
 	Normally the host platform can be specified, but a real gateway
 	is OK too.
+
+[IFMETH=<tun|tap|tap+bridge|pcap|vde>] Required
+	As with the NI20.
 
 [DEBUG=<boolean>]	Default: FALSE
 [DEBUG]			Same as DEBUG=TRUE

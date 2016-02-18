@@ -25,10 +25,6 @@
 #ifndef DPNI20_INCLUDED
 #define DPNI20_INCLUDED 1
 
-#ifdef RCSID
- RCSID(dpni20_h,"$Id: dpni20.h,v 2.3 2001/11/10 21:28:59 klh Exp $")
-#endif
-
 #ifndef DPSUP_INCLUDED
 # include "dpsup.h"
 #endif
@@ -38,8 +34,8 @@
 
 /* Version of DPNI20-specific shared memory structure */
 
-#define DPNI20_VERSION DPC_VERSION(1,1,1)	/* 1.1.1 */
-
+#define DPNI20_VERSION DPC_VERSION(1,1,2)	/* 1.1.2 */
+#define IFNAM_LEN	16	/* at least IFNAMSIZ! */
 
 /* DPNI20-specific stuff */
 			/* C = controlling parent sets, D = Device proc sets */
@@ -49,7 +45,8 @@ struct dpni20_s {
     int dpni_attrs;		/* C  Attribute flags */
 # define DPNI20F_LSAP	0x0100	/*	Set if LSAP value specified */
     int dpni_lsap;		/* C  Dest/Source LSAP value if needed */
-    char dpni_ifnam[16];	/* CD Interface name if any */
+    char dpni_ifnam[IFNAM_LEN];	/* CD Interface name if any */
+    char dpni_ifmeth[16];	/* C  Interface access method */
     unsigned char dpni_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpni_ip[4];	/* C 10's IP address to filter on, if shared */
     unsigned char dpni_tun[4];	/* CD host's IP address on tunnel */
@@ -73,6 +70,7 @@ struct dpni20_s {
 #define DPNI_SETETH	2	/* Set hardware ethernet address */
 #define DPNI_SETMCAT	3	/* Set hardware multicasts from MCAT table */
 #define DPNI_SETPTT	4	/* Set packetfilter using PTT */
+#define DPNI_QUIT   	5	/* Clean up and exit */
 
 	/* From DP to 10 */
 #define DPNI_INIT	1	/* DP->10 Finished init */

@@ -77,7 +77,13 @@ int dotests(void);
 int txtest(void);
 int tinttypes(void);
 int tmasks(void);
+int testfmt(void);
+int test32(void);
+#ifdef WORD10_INT
+int test36(void);
+#endif
 
+int
 main(int argc, char **argv)
 {
     char *cp;
@@ -256,7 +262,7 @@ tmasks(void)
     register int i, j;
     int nerrs = 0;
 
-    for (i = 0; j = masktab[i].me_bits; ++i) {
+    for (i = 0; (j = masktab[i].me_bits); ++i) {
 	UINTMAX mask = 1;
 	/* Generate mask in a particularly stupid way to ensure that the
 	   clever ways worked.

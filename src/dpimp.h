@@ -93,7 +93,9 @@
 
 /* Version of DPIMP-specific shared memory structure */
 
-#define DPIMP_VERSION ((1<<10) | (1<<5) | (2))	/* 1.1.2 */
+#define DPIMP_VERSION ((1<<10) | (1<<5) | (3))	/* 1.1.3 */
+
+#define IFNAM_LEN	16	/* at least IFNAMSIZ! */
 
 /* DPIMP-specific stuff */
 			/* C = controlling parent sets, D = Device proc sets */
@@ -102,7 +104,8 @@ struct dpimp_s {
     struct dpc_s dpimp_dpc;	/* CD Standard DPC portion */
     int dpimp_ver;		/* C  Version of shared struct */
     int dpimp_attrs;		/* C  Attribute flags */
-    char dpimp_ifnam[16];	/* CD Interface name if any */
+    char dpimp_ifnam[IFNAM_LEN];/* CD Interface name if any */
+    char dpimp_ifmeth[16];	/* C  Interface access method */
     unsigned char dpimp_eth[6];	/* CD Ethernet address of interface */
     unsigned char dpimp_ip[4];	/* C 10's IP address to filter on, if shared */
     unsigned char dpimp_gw[4];	/* C Default GW address for IMP to use */
@@ -151,6 +154,7 @@ but the alignment may make it slightly easier for O/S I/O).
 #define DPIMP_RESET	0	/* Reset DP */
 #define DPIMP_SPKT	1	/* Send data packet to ethernet */
 #define DPIMP_SETETH	2	/* Set hardware ethernet address */
+#define DPIMP_QUIT   	3	/* Clean up and exit */
 
 	/* From DP to 10 */
 #define DPIMP_INIT	1	/* DP->10 Finished init */

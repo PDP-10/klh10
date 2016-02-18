@@ -97,6 +97,7 @@ struct lhdh {
 
     /* Misc config info not set elsewhere */
     char *lh_ifnam;	/* Native platform's interface name */
+    char *lh_ifmeth;	/* Access method to the native interface */
     int lh_dedic;	/* TRUE if interface dedicated (else shared) */
     int lh_doarp;	/* TRUE to do ARP hackery (if shared) */
     int lh_backlog;	/* Max # input msgs to queue up in kernel */
@@ -175,6 +176,7 @@ static int  imp_outxfer(struct lhdh *lh);
     prmdef(LHDHP_TUN,"tunaddr"),  /* IP address of local side of tunnel */\
     prmdef(LHDHP_EN, "enaddr"),   /* Ethernet address to use (override) */\
     prmdef(LHDHP_IFC,"ifc"),      /* Ethernet interface name */\
+    prmdef(LHDHP_IFM,"ifmeth"),   /* Access method to Ethernet interface */\
     prmdef(LHDHP_BKL,"backlog"),/* Max bklog for rcvd pkts (else sys deflt) */\
     prmdef(LHDHP_DED,"dedic"),    /* TRUE= Ifc dedicated (else shared) */\
     prmdef(LHDHP_ARP,"doarp"),    /* TRUE= if shared, do ARP hackery */\
@@ -222,10 +224,11 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
      */
     DVDEBUG(lh) = FALSE;
     lh->lh_ifnam = NULL;
+    lh->lh_ifmeth = NULL;
     lh->lh_backlog = 0;
     lh->lh_dedic = FALSE;
     lh->lh_doarp = TRUE;
-    lh->lh_rdtmo = 1;			/* Default to 1 sec timeout check */
+    lh->lh_rdtmo = 60;			/* Default to 60 sec timeout check */
     lh->lh_dpidly = 0;
     lh->lh_dpdbg = FALSE;
 #if KLH10_DEV_DPIMP
@@ -321,6 +324,12 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
 	    if (!prm.prm_val)
 		break;
 	    lh->lh_ifnam = s_dup(prm.prm_val);
+	    continue;
+
+	case LHDHP_IFM:		/* Parse as simple string */
+	    if (!prm.prm_val)
+		break;
+	    lh->lh_ifmeth = s_dup(prm.prm_val);
 	    continue;
 
 	case LHDHP_BKL:		/* Parse as decimal number */
@@ -840,7 +849,7 @@ lh_io(register struct lhdh *lh, int wrtf)
 	return 1;
     }
 
-    for (; wcnt = (wrtf ? REG(lh, LHR_OWC) : REG(lh, LHR_IWC)); ++loopcnt) {
+    for (; (wcnt = (wrtf ? REG(lh, LHR_OWC) : REG(lh, LHR_IWC))); ++loopcnt) {
 
 	wcnt = (-(wcnt | ~MASK16))>>1;		/* Find # of PDP10 words */
 	if (wcnt > 01000)		/* One DEC page per pass */
@@ -1062,6 +1071,10 @@ imp_init(register struct lhdh *lh, FILE *of)
 	strncpy(dpc->dpimp_ifnam, lh->lh_ifnam, sizeof(dpc->dpimp_ifnam)-1);
     else
 	dpc->dpimp_ifnam[0] = '\0';	/* No specific interface */
+    if (lh->lh_ifmeth)			/* Pass on interface method if any */
+	strncpy(dpc->dpimp_ifmeth, lh->lh_ifmeth, sizeof(dpc->dpimp_ifmeth)-1);
+    else
+	dpc->dpimp_ifnam[0] = '\0';	/* No specific interface */
     memcpy((char *)dpc->dpimp_ip,	/* Set our IP address for filter */
 		lh->lh_ipadr, 4);
     memcpy((char *)dpc->dpimp_gw,	/* Set our GW address for IMP */
@@ -1128,7 +1141,33 @@ imp_start(register struct lhdh *lh)
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), " started!]\r\n");
 
+    lh->lh_dpstate = TRUE;
+
     return TRUE;
+}
+
+/* IMP_QUIT - Tells the IMP process to quit
+** and clean up resources such as networking tunnels.
+*/
+static void
+imp_quit(register struct lhdh *lh)
+{
+    struct dpx_s *dpx = dp_dpxto(&lh->lh_dp);
+
+    /* Make sure we can send the message, or just skip it if not */
+    if (lh->lh_dpstate) {
+	if (DVDEBUG(lh))
+	    fprintf(DVDBF(lh), " [Sending QUIT to IMP]");
+
+	/* Make sure we can output message and just skip it if not */
+	if (dp_xswait(dpx)) {
+	    dp_xsend(dpx, DPIMP_QUIT, 0);
+	    dp_xswait(dpx);
+	}
+    } else {
+	if (DVDEBUG(lh))
+	    fprintf(DVDBF(lh), "[No need to send QUIT to IMP]");
+    }
 }
 
 /* IMP_STOP - Stops IMP and drops Host Ready by killing IMP subproc,
@@ -1140,6 +1179,7 @@ imp_stop(register struct lhdh *lh)
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP: stopping...");
 
+    imp_quit(lh);
     dp_stop(&lh->lh_dp, 1);	/* Say to kill and wait 1 sec for synch */
 
     lh->lh_dpstate = FALSE;	/* No longer there and ready */
@@ -1155,6 +1195,8 @@ imp_kill(register struct lhdh *lh)
 {
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP kill]\r\n");
+
+    imp_quit(lh);
 
     lh->lh_dpstate = FALSE;
     (*lh->lh_dv.dv_evreg)(	/* Flush all event handlers for device */
@@ -1535,6 +1577,8 @@ imp_stop(register struct lhdh *lh)
 {
     if (DVDEBUG(lh))
 	fprintf(DVDBF(lh), "[IMP stop - %d]\r\n", lh->lh_imppid);
+
+    /* Should send a QUIT message here */
 
     if (lh->lh_imppid) {
 	int status;

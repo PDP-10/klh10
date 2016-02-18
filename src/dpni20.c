@@ -164,26 +164,21 @@ The following general situations are possible:
 
 #include "dpsup.h"		/* General DP defs */
 #include "dpni20.h"		/* NI20 specific defs */
-
-#ifdef RCSID
- RCSID(dpni20_c,"$Id: dpni20.c,v 2.7 2003/02/23 18:07:50 klh Exp $")
-#endif
 
 
 /* Globals */
 
 int chpid;		/* PID of child, handles input (net-to-10). */
 int swstatus = TRUE;
-int pffd;			/* Packet-Filter FD (bidirectional) */
+struct osnpf npf;
+struct pfdata pfdata;		/* Packet-Filter state */
 struct dp_s dp;			/* Device-Process struct for DP ops */
 
 struct in_addr ehost_ip;	/* Emulated host IP addr, net order */
 #if 0
 struct in_addr ihost_ip;	/* Native host's IP addr, net order */
 #endif
-#if KLH10_NET_TUN
-struct in_addr tun_ip;		/* Tunnel IP addr, net order */
-#endif
+struct in_addr tun_ip;		/* IP addr of Host side of tunnel, net order */
 struct ether_addr ihost_ea;	/* Native host ether addr for selected ifc */
 
 /* Debug flag reference.  Use DBGFLG within functions that have "dpni";
@@ -197,6 +192,7 @@ struct ether_addr ihost_ea;	/* Native host ether addr for selected ifc */
 int nmcats = 0;
 unsigned char ethmcat[DPNI_MCAT_SIZ][6]; /* Table of known MCAT addresses */
 
+
 /* Local predeclarations */
 
 void ethtoten(struct dpni20_s *);
@@ -206,7 +202,7 @@ void net_init(struct dpni20_s *dpni);
 void eth_mcatset(struct dpni20_s *dpni);
 void eth_adrset(struct dpni20_s *dpni);
 void dumppkt(unsigned char *ucp, int cnt);
-int arp_myreply(unsigned char *buf, int cnt);
+int arp_myreply(unsigned char *buf, int cnt, struct dpx_s *dpx);
 
 /* Error and diagnostic output */
 
@@ -298,7 +294,7 @@ int initdebug = 0;
 int
 main(int argc, char **argv)
 {
-    register struct dpni20_s *dpni;
+    struct dpni20_s *dpni;
 
     /* Search for a "-debug" command-line argument so that we can start
        debug output ASAP if necessary.
@@ -312,8 +308,10 @@ main(int argc, char **argv)
 	    }
 	}
     }
-    if (initdebug)
-	dbprint("Starting");
+    if (initdebug) {
+	dbprintln("Starting");
+	dbprintln("Supported ifmeth=%s", osn_networking);
+    }
 
     /* Right off the bat attempt to get the highest scheduling priority
     ** we can.  It's important that the NI respond as quickly as possible
@@ -324,7 +322,7 @@ main(int argc, char **argv)
 #if 0 /* was CENV_SYS_SOLARIS */
     if (nice(-20) == -1)
 	syserr(errno, "Warning - cannot set high priority");
-#elif CENV_SYS_SOLARIS || CENV_SYS_DECOSF || CENV_SYS_XBSD || CENV_SYS_LINUX
+#elif HAVE_SETPRIORITY
     if (setpriority(PRIO_PROCESS, 0, -20) < 0)
 	syserr(errno, "Warning - cannot set high priority");
 #endif
@@ -340,8 +338,9 @@ main(int argc, char **argv)
 	dbprint("Started");
 
     /* General initialization */
-    if (geteuid() != 0)
-	efatal(1, "Must be superuser!");
+    if (geteuid() != 0) {
+	error("*** Must usually run as superuser; networking may fail! ***");
+    }
 
     if (!dp_main(&dp, argc, argv)) {
 	efatal(1, "DP init failed!");
@@ -364,7 +363,7 @@ main(int argc, char **argv)
     ** small, must respond quickly, and SU mode is more or less guaranteed.
     ** Skip it only if dp_main() already did it for us.
     */
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+#if HAVE_MLOCKALL
     if (!(dpni->dpni_dpc.dpc_flags & DPCF_MEMLOCK)) {
 	if (mlockall(MCL_CURRENT|MCL_FUTURE) != 0) {
 	    dbprintln("Warning - cannot lock memory");
@@ -399,10 +398,10 @@ main(int argc, char **argv)
 	dbprintln("  addr  %s",
 		  ip_adrsprint(sbuf, (unsigned char *)&ihost_ip));
 #endif
-#if KLH10_NET_TUN
-	dbprintln("  tun  %s",
-		  ip_adrsprint(sbuf, (unsigned char *)&tun_ip));
-#endif
+	if (pfdata.pf_ip4_only) {
+	    dbprintln("  tun  %s",
+		      ip_adrsprint(sbuf, (unsigned char *)&tun_ip));
+	}
 	dbprintln("  VHOST %s",
 		  ip_adrsprint(sbuf, (unsigned char *)&ehost_ip));
     }
@@ -413,7 +412,8 @@ main(int argc, char **argv)
     ** monitor can do it).
     */
     if (dpni->dpni_doarp & (DPNI_ARPF_PUBL|DPNI_ARPF_PERM)) {
-	if (!osn_arp_stuff(&dpni->dpni_ip[0],	/* Set up fake IP addr */
+	if (!osn_arp_stuff(dpni->dpni_ifnam,	/* interface name */
+		           &dpni->dpni_ip[0],	/* Set up fake IP addr */
 			   &dpni->dpni_eth[0],	/* mapped to this ether addr */
 			   (dpni->dpni_doarp & DPNI_ARPF_PUBL))) /* Publicized if nec */
 	    esfatal(1, "ARP_STUFF failed");
@@ -435,7 +435,7 @@ main(int argc, char **argv)
 	/* And ensure its memory is locked too, since the lockage isn't
 	** inherited over a fork().  Don't bother warning if it fails.
 	*/
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+#if HAVE_MLOCKALL
 	(void) mlockall(MCL_CURRENT|MCL_FUTURE);
 #endif
 	progname = progname_r;	/* Reset progname to indicate identity */
@@ -444,25 +444,25 @@ main(int argc, char **argv)
     progname = progname_w;	/* Reset progname to indicate identity */
     tentoeth(dpni);		/* Parent process handles output to net */
 
-    osn_pfdeinit();
+    osn_pfdeinit(&pfdata, &npf);/* Clean up created tunnels etc */
+    dp_xrdone(dp_dpxto(&dp));
 
-    return 1;			/* Never returns, but placate compiler */
+    return 1;
 }
 
 /* NET_INIT - Initialize net-related variables,
 **	given network interface we'll use.
 */
-void net_init(register struct dpni20_s *dpni)
+void net_init(struct dpni20_s *dpni)
 {
     struct ifreq ifr;
 
     /* Get the IP address we need to filter on, if shared */
     memcpy((char *)&ehost_ip, (char *)&dpni->dpni_ip, 4);
 
-#if KLH10_NET_TUN
     /* Get the IP address for the tunnel, if specified */
     memcpy((char *)&tun_ip, (char *)&dpni->dpni_tun, 4);
-#else
+
     /* Ensure network device name, if specified, isn't too long */
     if (dpni->dpni_ifnam[0] && (strlen(dpni->dpni_ifnam)
 		>= sizeof(ifr.ifr_name))) {
@@ -475,10 +475,11 @@ void net_init(register struct dpni20_s *dpni)
     ** cannot be found by iftab_init).
     ** Also grab native IP and ethernet addresses, if ARP might need them.
     */
+    if (osn_iftab_init() <= 0)
+	esfatal(0, "Couldn't find interface information");
+
     if ((!dpni->dpni_ifnam[0] && !dpni->dpni_dedic)
       || (dpni->dpni_doarp & DPNI_ARPF_OCHK)) {
-	if (osn_iftab_init(IFTAB_IPS) <= 0)
-	    esfatal(0, "Couldn't find interface information");
 
 	/* Found at least one!  Pick first one, if a default is needed. */
 	if (!dpni->dpni_ifnam[0]) {
@@ -494,39 +495,32 @@ void net_init(register struct dpni20_s *dpni)
 		dbprintln("Using default interface \"%s\"", dpni->dpni_ifnam);
 	}
     }
-#endif
 
     /* Now set remaining stuff */
 
     /* Set up packet filter.  This also returns in "ihost_ea"
        the ethernet address for the selected interface.
     */
-  {
-    struct osnpf npf;
 
     npf.osnpf_ifnam = dpni->dpni_ifnam;
+    npf.osnpf_ifmeth = dpni->dpni_ifmeth;
     npf.osnpf_dedic = dpni->dpni_dedic;
     npf.osnpf_rdtmo = dpni->dpni_rdtmo;
     npf.osnpf_backlog = dpni->dpni_backlog;
     npf.osnpf_ip.ia_addr = ehost_ip;
-#if KLH10_NET_TUN
     npf.osnpf_tun.ia_addr = tun_ip;
-#endif
     /* Ether addr is both a potential arg and a returned value;
        the packetfilter open may use and/or change it.
     */
     ea_set(&npf.osnpf_ea, dpni->dpni_eth);	/* Set requested ea if any */
-    pffd = osn_pfinit(&npf, (void *)dpni);	/* Will abort if fails */
+    osn_pfinit(&pfdata, &npf, (void *)dpni);	/* Will abort if fails */
     ea_set(&ihost_ea, &npf.osnpf_ea);		/* Copy actual ea */
-#if KLH10_NET_TUN
     tun_ip = npf.osnpf_tun.ia_addr;		/* Get actual tunnel addr */
-#endif
-  }
 
 
     /* Now set any return info values in shared struct.
     */
-    memcpy(dpni->dpni_eth, (char *)&ihost_ea, 6);	/* Copy ether addr */
+    ea_set(dpni->dpni_eth, (char *)&ihost_ea);	/* Copy ether addr */
 
     if (DBGFLG)
 	dbprint("PF inited");
@@ -549,255 +543,9 @@ void net_init(register struct dpni20_s *dpni)
 ** IP data; if it's too short, it's rejected anyway.
 */
 
-/* Common packetfilter definitions - for all but BPF */
-
-#if KLH10_NET_PFLT || KLH10_NET_NIT || KLH10_NET_DLPI
-
-#if KLH10_NET_PFLT
-# define OSN_PFSTRUCT enfilter
-# define PF_PRIO enf_Priority
-# define PF_FLEN enf_FilterLen
-# define PF_FILT enf_Filter
-#elif (KLH10_NET_DLPI || KLH10_NET_NIT)
-# define OSN_PFSTRUCT packetfilt
-# define PF_PRIO Pf_Priority
-# define PF_FLEN Pf_FilterLen
-# define PF_FILT Pf_Filter
-#endif
-
-struct OSN_PFSTRUCT pfilter;
-
-static void pfshow(struct OSN_PFSTRUCT *);
-
-struct OSN_PFSTRUCT *
-pfbuild(void *arg, struct in_addr *ipa)
-{
-    register struct dpni20_s *dpni = (struct dpni20_s *)arg;
-    register unsigned short *p;
-    register unsigned char *ucp = (unsigned char *)ipa;
-    register struct OSN_PFSTRUCT *pfp = &pfilter;
-
-    p = pfp->PF_FILT;		/* Get addr of filter (length ENMAXFILTERS) */
-
-    /* First check for broadcast/multicast bit in dest address */
-    *p++ = ENF_PUSHWORD + PKSWOFF_EDEST;
-#ifdef ENF_PUSHONE			/* New feature */
-    if (htons(0x0100) == 01) {
-	*p++ = ENF_PUSHONE | ENF_AND;	/* Do AND of multicast bit */
-	*p++ = ENF_PUSHONE | ENF_COR;	/* Succeed immediately if AND won */
-    } else
-#endif
-    {
-	*p++ = ENF_PUSHLIT | ENF_AND;	/* Do AND of multicast bit */
-	*p++ = htons(0x0100);
-	*p++ = ENF_PUSHLIT | ENF_COR;	/* Succeed immediately if AND won */
-	*p++ = htons(0x0100);
-    }
-
-    /* Possibly insert check for DECNET protocol types.
-    ** Doing this check is inefficient if most of the traffic is IP.
-    ** Hopefully if the user asked for it, it's used a lot.
-    ** The following are the known types:
-    **	6001 DNA/MOP
-    **	6002 RmtCon
-    **	6003 DECnet
-    **	6004 LAT
-    **	6016 ANF-10	(T10 only; not DECNET)
-    **	9000 Loopback (?)
-    **
-    ** For the time being, filtering is done by testing for
-    **		(type & ~0x001F) == 0x6000
-    ** which accepts all types in the range 6000-601F inclusive.
-    ** 9000 is ignored.
-    */
-    if (dpni->dpni_decnet) {
-#if 0
-	/* Blunt instrument approach */
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Check for DECNET packet */
-	*p++ = ENF_PUSHLIT | ENF_COR;
-	*p++ = htons(ETHERTYPE_DECnet);		/* Win if 0x6003 */
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Check for LAT packet */
-	*p++ = ENF_PUSHLIT | ENF_COR;
-	*p++ = htons(ETHERTYPE_LAT);		/* Win if 0x6004 */
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Check for 0x6016 */
-	*p++ = ENF_PUSHLIT | ENF_COR;
-	*p++ = htons(0x6016);
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Check for 0x6001 */
-	*p++ = ENF_PUSHLIT | ENF_COR;
-	*p++ = htons(0x6001);
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Check for 0x6002 */
-	*p++ = ENF_PUSHLIT | ENF_COR;
-	*p++ = htons(0x6002);
-#else
-	/* Slightly faster, although sloppier */
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Get ethernet type */
-	*p++ = ENF_PUSHLIT | ENF_AND;
-	*p++ = htons(0xFFE0);			/* Mask out ~0x001F */
-	*p++ = ENF_PUSHLIT | ENF_COR;		/* Succeed if result 6000 */
-	*p++ = htons(0x6000);
-#endif
-    }
-
-    /* Test for an IEEE 802.3 packet with a specific dst/src LSAP.
-	Packet is 802.3 if type field is actually packet length -- in which
-	case it will be 1 <= len <= 1500 (note 1514 is max, of which header
-	uses 6+6+2=14).
-	There's seemingly no way to tell what order the ENF_LT, etc operands
-	are used in, so until that's established, use a simple masking
-	method.  1500 = 0x5dc, so use mask of 0xF800.
-
-	Dst/src LSAPs are in next two bytes (1st shortwd after len).
-    */
-    if (dpni->dpni_attrs & DPNI20F_LSAP) {
-	unsigned short lsaps = dpni->dpni_lsap;
-
-	if (lsaps <= 0xFF) {		/* If only one byte set, */
-	    lsaps |= (lsaps << 8);	/* double it up for both dest & src */
-	}
-
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Get ethernet type field */
-	*p++ = ENF_PUSHLIT | ENF_AND;
-	*p++ = htons(0xF800);			/* Unused len bits shd be 0 */
-
-	/* Element on stack is now 0 if 802.3.  Check LSAPs. */
-	*p++ = ENF_PUSHWORD + PKSWOFF_SAPS;	/* Get DSAP/SSAP word */
-	*p++ = ENF_PUSHLIT | ENF_NEQ;		/* Compare, set 0 if same */
-	*p++ = htons(lsaps);
-
-	/* Now compare result of both checks.
-	    If both succeeded, both will be 0, otherwise some bits will be set.
-	*/
-	*p++ = ENF_OR;				/* IOR the results together */
-	*p++ = ENF_PUSHZERO | ENF_COR;		/* Succeed if result 0 */
-    }
-
-    /* See if we're interested in IP (and thus ARP) packets.
-	This is assumed to be the LAST part of the filter, thus
-	it must either leave the correct result on the stack, or
-	ensure it is empty (if accepting the packet).
-     */
-    if (memcmp(dpni->dpni_ip, "\0\0\0\0", 4) != 0) {
-
-	/* Want to pass ARP replies as well, so 10 can see responses to any
-	** ARPs it sends out.
-	** NOTE!!!  ARP *requests* are not passed!  The assumption is that
-	** osn_arp_stuff() will have ensured that the host platform
-	** proxy-answers requests for our IP address.
-	*/
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Check for ARP packet */
-	*p++ = ENF_PUSHLIT | ENF_COR;
-	*p++ = htons(ETHERTYPE_ARP);		/* Win if 0x0806 */
-
-	/* If didn't pass, check for our IP address */
-	*p++ = ENF_PUSHWORD + PKSWOFF_IPDEST+1;
-	*p++ = ENF_PUSHLIT | ENF_CAND;		/* Comp low wds of IP addrs */
-	*p++ = htons((ucp[2]<<8) | ucp[3]);	/* Make net-order low word */
-
-	*p++ = ENF_PUSHWORD + PKSWOFF_IPDEST;
-	*p++ = ENF_PUSHLIT | ENF_CAND;		/* Comp high wds of IP addrs */
-	*p++ = htons((ucp[0]<<8) | ucp[1]);	/* Make net-order high word */
-
-	*p++ = ENF_PUSHWORD + PKSWOFF_ETYPE;	/* Verify IP packet */
-	*p++ = ENF_PUSHLIT | ENF_EQ;		/* Comp, leave result on stk */
-	*p++ = htons(ETHERTYPE_IP);
-    } else {
-	/* If not doing IP, fail at this point because the packet
-	    doesn't match any of the desired types.
-	*/
-	*p++ = ENF_PUSHZERO;		/* Fail - must leave 0 result on stk */
-    }
-
-    pfp->PF_FLEN = p - pfp->PF_FILT;	/* Set # of items on list */
-    pfp->PF_PRIO = 128;			/* Pick middle of 0-255 range */
-				/* "Ignored", but NIT RARPD recommends > 2 */
-    if (DBGFLG)			/* If debugging, print out resulting filter */
-	pfshow(pfp);
-    return pfp;
-}
-
-
-/* Debug auxiliary to print out packetfilter we composed.
-*/
-static void
-pfshow(struct OSN_PFSTRUCT *pf)
-{
-    int i;
-
-    fprintf(stderr,"[%s: kernel packetfilter pri %d, len %d:", progname,
-	    pf->PF_PRIO, pf->PF_FLEN);
-    for (i = 0; i < pf->PF_FLEN; ++i)
-	fprintf(stderr, " %04X", pf->PF_FILT[i]);
-    fprintf(stderr, "]\r\n");
-}
-
-#endif /* KLH10_NET_PFLT || KLH10_NET_NIT || KLH10_NET_DLPI */
-
-
-#if KLH10_NET_DLPI
-/* GROSS HACK for Solaris DLPI!!
-**	Even if the interface is dedicated, there is no way to grab packets
-** for all SAPs (ethernet types) without making the interface promiscuous!
-** So we have to have a filter on hand that can be used to get only
-** the packets that are broadcast/multicast or specifically addressed to
-** our ethernet address.  Ugh!
-*/
-
-struct OSN_PFSTRUCT *
-pfeabuild(void *arg, unsigned char *ea)
-{
-    register struct dpni20_s *dpni = (struct dpni20_s *)arg;
-    register unsigned short *p;
-    register struct OSN_PFSTRUCT *pfp = &pfilter;
-
-    p = pfp->PF_FILT;		/* Get addr of filter (length ENMAXFILTERS) */
-
-    /* First check for broadcast/multicast bit in dest address */
-    *p++ = ENF_PUSHWORD + PKSWOFF_EDEST;
-#ifdef ENF_PUSHONE			/* New feature */
-    if (htons(0x0100) == 01) {
-	*p++ = ENF_PUSHONE | ENF_AND;	/* Do AND of multicast bit */
-	*p++ = ENF_PUSHONE | ENF_COR;	/* Succeed immediately if AND won */
-    } else
-#endif
-    {
-	*p++ = ENF_PUSHLIT | ENF_AND;	/* Do AND of multicast bit */
-	*p++ = htons(0x0100);
-	*p++ = ENF_PUSHLIT | ENF_COR;	/* Succeed immediately if AND won */
-	*p++ = htons(0x0100);
-    }
-
-    /* Now check for our ethernet address, low bytes first since those
-    ** tend to vary the most.
-    ** Note stack is empty at this point.
-    */
-    *p++ = ENF_PUSHWORD + PKSWOFF_EDEST+2;	/* Comp low wds of E/N addrs */
-    *p++ = ENF_PUSHLIT | ENF_CAND;		/* Fail if not same */
-    *p++ = htons((ea[4]<<8) | ea[5]);		/*  (net-order low word) */
-
-    *p++ = ENF_PUSHWORD + PKSWOFF_EDEST+1;	/* Comp mid wds of E/N addrs */
-    *p++ = ENF_PUSHLIT | ENF_CAND;		/* Fail if not same */
-    *p++ = htons((ea[2]<<8) | ea[3]);		/*  (net-order mid word) */
-
-    *p++ = ENF_PUSHWORD + PKSWOFF_EDEST;	/* Comp hi wds of E/N addrs */
-    *p++ = ENF_PUSHLIT | ENF_CAND;		/* Fail if not same */
-    *p++ = htons((ea[0]<<8) | ea[1]);		/*  (net-order hi word) */
-
-    /* Stack is again empty at this point, which means "accept packet". */
-
-
-    pfp->PF_FLEN = p - pfp->PF_FILT;	/* Set # of items on list */
-    pfp->PF_PRIO = 128;			/* Pick middle of 0-255 range */
-				/* "Ignored", but NIT RARPD recommends > 2 */
-
-    if (DBGFLG)			/* If debugging, print out resulting filter */
-	pfshow(pfp);
-    return pfp;
-}
-#endif /* KLH10_NET_DLPI */
-
 /* BPF packetfilter initialization */
 
-#if KLH10_NET_BPF
+#if KLH10_NET_PCAP
 
 /*
 ** BPF filter program stuff.
@@ -813,10 +561,6 @@ pfeabuild(void *arg, unsigned char *ea)
       { 0x06, 0, 0, 0x00000000 },	// (005) ret #0
 */
 
-
-#define OSN_PFSTRUCT bpf_program
-#define PF_FLEN  bf_len
-#define PF_FILT  bf_insns
 
 #define BPF_PFMAX 50		/* Max instructions in BPF filter */
 struct bpf_insn    bpf_pftab[BPF_PFMAX];
@@ -874,16 +618,16 @@ struct bpf_insn bpf_jump(unsigned short code, bpf_u_int32 k,
 #define BPFI_RETFAIL() BPFI_RET(0)			/* Failure return */
 #define BPFI_RETWIN()  BPFI_RET((u_int)-1)		/* Success return */
 
-static void pfshow(struct OSN_PFSTRUCT *);
+static void pfshow(struct bpf_program *);
 
-struct OSN_PFSTRUCT *
+struct bpf_program *
 pfbuild(void *arg, struct in_addr *ipa)
 {
-    register struct dpni20_s *dpni = (struct dpni20_s *)arg;
-    register struct OSN_PFSTRUCT *pfp = &bpf_pfilter;
-    register struct bpf_insn *p;
+    struct dpni20_s *dpni = (struct dpni20_s *)arg;
+    struct bpf_program *pfp = &bpf_pfilter;
+    struct bpf_insn *p;
 
-    p = pfp->PF_FILT;		/* Point to 1st instruction in BPF program  */
+    p = pfp->bf_insns;		/* Point to 1st instruction in BPF program  */
 
     /* First check for broadcast/multicast bit in dest address */
     *p++ = BPFI_LDB(PKBOFF_EDEST);	/* Get 1st byte of dest ether addr */
@@ -991,7 +735,7 @@ pfbuild(void *arg, struct in_addr *ipa)
 	*p++ = BPFI_RETFAIL();			/* Fail */
     }
 
-    pfp->PF_FLEN = p - pfp->PF_FILT;	/* Set # of items on list */
+    pfp->bf_len = p - pfp->bf_insns;	/* Set # of items on list */
 
     if (DBGFLG)			/* If debugging, print out resulting filter */
 	pfshow(pfp);
@@ -1002,27 +746,25 @@ pfbuild(void *arg, struct in_addr *ipa)
 /* Debug auxiliary to print out packetfilter we composed.
 */
 static void
-pfshow(struct OSN_PFSTRUCT *pf)
+pfshow(struct bpf_program *pf)
 {
     int i;
 
     fprintf(stderr, "[%s: kernel packetfilter pri <>, len %d:\r\n",
 	    progname,
-	    /* pf->PF_PRIO, */ pf->PF_FLEN);
-    for (i = 0; i < pf->PF_FLEN; ++i)
+	    /* pf->PF_PRIO, */ pf->bf_len);
+    for (i = 0; i < pf->bf_len; ++i)
 	fprintf(stderr, "%04X %2d %2d %0X\r\n",
-		pf->PF_FILT[i].code,
-		pf->PF_FILT[i].jt,
-		pf->PF_FILT[i].jf,
-		pf->PF_FILT[i].k);
+		pf->bf_insns[i].code,
+		pf->bf_insns[i].jt,
+		pf->bf_insns[i].jf,
+		pf->bf_insns[i].k);
     fprintf(stderr, "]\r\n");
 }
 
-#endif /* KLH10_NET_BPF */
+#endif /* KLH10_NET_PCAP */
 
 /* LNX packetfilter initialization */
-
-#if KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE
 
 /*
   The Linux PF_PACKET interface is described to some extent
@@ -1049,13 +791,13 @@ pfshow(struct OSN_PFSTRUCT *pf)
    Returns TRUE if packet OK, FALSE if it should be dropped.
    Note that the code parallels that for pfbuild().
 */
-int lnx_filter(register struct dpni20_s *dpni,
+int lnx_filter(struct dpni20_s *dpni,
 	       unsigned char *bp,
 	       int cnt)
 {
     /* Code assumes buffer is at least shortword-aligned. */
-    register unsigned short *sp = (unsigned short *)bp;
-    register unsigned short etyp;
+    unsigned short *sp = (unsigned short *)bp;
+    unsigned short etyp;
 
     /* First check for broadcast/multicast bit in dest address */
     if (bp[PKBOFF_EDEST] & 01)
@@ -1110,32 +852,30 @@ int lnx_filter(register struct dpni20_s *dpni,
     return FALSE;
 }
 
-#endif /* KLH10_NET_LNX */
 
 
 /* ETH_SETADR - Attempt to set physical ethernet address to dpni_rqeth.
 **	If successful, reflect this by changing dpni_eth.
 */
-void eth_adrset(register struct dpni20_s *dpni)
+void eth_adrset(struct dpni20_s *dpni)
 {
 #if OSN_USE_IPONLY
-    dbprintln("\"%s\" multicast table ignored - IP-only interface",
+    dbprintln("\"%s\" ethernet address change ignored - IP-only interface",
 		  dpni->dpni_ifnam);
 #else
     unsigned char rdea[ETHER_ADRSIZ];
     char old[OSN_EASTRSIZ];
     char new[OSN_EASTRSIZ];
 
-    /* Set up for simpler output */
-    eth_adrsprint(old, dpni->dpni_eth);
-    eth_adrsprint(new, dpni->dpni_rqeth);
-
     /* Before hitting the barf below, do one last check to make sure
     ** we're not setting it to the current address.
     */
-    if (memcmp(dpni->dpni_eth, dpni->dpni_rqeth, ETHER_ADRSIZ) == 0)
+    if (ea_cmp(dpni->dpni_eth, dpni->dpni_rqeth) == 0)
 	return;			/* Succeed silently */
 
+    /* Set up for simpler output */
+    eth_adrsprint(old, dpni->dpni_eth);
+    eth_adrsprint(new, dpni->dpni_rqeth);
 
     /* Check to make sure it's OK to set our address.
     ** Only allow it if interface is dedicated; otherwise, barf so user
@@ -1159,7 +899,7 @@ void eth_adrset(register struct dpni20_s *dpni)
 	}
     }
 
-    if (!osn_ifeaset(-1, dpni->dpni_ifnam, dpni->dpni_rqeth)) {
+    if (!osn_ifeaset(&pfdata, -1, dpni->dpni_ifnam, dpni->dpni_rqeth)) {
 	error("\"%s\" E/N addr change failed, Old=%s New=%s",
 	       dpni->dpni_ifnam, old, new);
 	return;
@@ -1174,13 +914,13 @@ void eth_adrset(register struct dpni20_s *dpni)
     /* Apparently won!  Try reading it back just to be paranoid,
      * using packetfilter FD.
      */
-    if (!osn_pfeaget(pffd, dpni->dpni_ifnam, rdea)) {
+    if (!osn_pfeaget(&pfdata, dpni->dpni_ifnam, rdea)) {
 	error("Can't read \"%s\" e/n addr!", dpni->dpni_ifnam);
 	/* Proceed as if set won, sigh */
     } else {
 
 	/* See if same as requested! */
-	if (memcmp(rdea, dpni->dpni_rqeth, ETHER_ADRSIZ) != 0) {
+	if (ea_cmp(rdea, dpni->dpni_rqeth) != 0) {
 	    eth_adrsprint(old, rdea);
 	    dbprintln("New \"%s\" e/n addr mismatch! Set=%s Read=%s",
 		      dpni->dpni_ifnam, new, old);
@@ -1189,7 +929,7 @@ void eth_adrset(register struct dpni20_s *dpni)
 
 #endif
     /* Assume succeeded since call succeeded, and clobber our address! */
-    memcpy(dpni->dpni_eth, dpni->dpni_rqeth, ETHER_ADRSIZ);
+    ea_set(dpni->dpni_eth, dpni->dpni_rqeth);
 }
 
 
@@ -1204,7 +944,7 @@ void eth_adrset(register struct dpni20_s *dpni)
 ** MCAT loads.
 */
 
-void eth_mcatset(register struct dpni20_s *dpni)
+void eth_mcatset(struct dpni20_s *dpni)
 {
 #if OSN_USE_IPONLY
     dbprintln("\"%s\" multicast table ignored - IP-only interface",
@@ -1237,7 +977,7 @@ void eth_mcatset(register struct dpni20_s *dpni)
 	n = DPNI_MCAT_SIZ;
     for (i = 0; i < nmcats; ++i) {
 	for (j = 0; j < n; ++j) {
-	    if (memcmp(ethmcat[i], dpni->dpni_mcat[j], 6) == 0)
+	    if (ea_cmp(ethmcat[i], dpni->dpni_mcat[j]) == 0)
 		break;
 	}
 	if (j < n)
@@ -1249,7 +989,7 @@ void eth_mcatset(register struct dpni20_s *dpni)
 		      dpni->dpni_ifnam,
 		      eth_adrsprint(ethstr, ethmcat[i]));
 	}
-        if (!osn_ifmcset(s, dpni->dpni_ifnam, TRUE /*DEL*/, ethmcat[i])) {
+        if (!osn_ifmcset(&pfdata, s, dpni->dpni_ifnam, TRUE /*DEL*/, ethmcat[i])) {
 	    error("\"%s\" Multicast delete failed", dpni->dpni_ifnam);
 	    /* Keep going */
 	}
@@ -1260,7 +1000,7 @@ void eth_mcatset(register struct dpni20_s *dpni)
     */
     for (j = 0; j < n; ++j) {
 	for (i = 0; i < nmcats; ++i) {
-	    if (memcmp(ethmcat[i], dpni->dpni_mcat[j], 6) == 0)
+	    if (ea_cmp(ethmcat[i], dpni->dpni_mcat[j]) == 0)
 		break;
 	}
 	if (j < n)
@@ -1272,7 +1012,7 @@ void eth_mcatset(register struct dpni20_s *dpni)
 		      dpni->dpni_ifnam,
 		      eth_adrsprint(ethstr, dpni->dpni_mcat[i]));
 	}
-        if (!osn_ifmcset(s, dpni->dpni_ifnam, FALSE /*ADD*/,
+        if (!osn_ifmcset(&pfdata, s, dpni->dpni_ifnam, FALSE /*ADD*/,
 			 dpni->dpni_mcat[i])) {
 	    error("\"%s\" Multicast add failed", dpni->dpni_ifnam);
 	    /* Keep going */
@@ -1318,10 +1058,10 @@ void eth_mcatset(register struct dpni20_s *dpni)
 
 #define ARP_PKTSIZ (sizeof(struct ether_header)	+ sizeof(struct ether_arp))
 
-int arp_myreply(register unsigned char *buf, register int cnt)
+int arp_myreply(unsigned char *buf, int cnt, struct dpx_s *dpx)
 {
-    register struct ifent *ife;
-    register unsigned char *ucp;
+    struct ifent *ife;
+    unsigned char *ucp;
     struct in_addr ia;
     struct ether_arp arp;
     unsigned char pktbuf[ARP_PKTSIZ];
@@ -1338,8 +1078,7 @@ int arp_myreply(register unsigned char *buf, register int cnt)
 
     /* Found it!  ife now points to matching entry */
     if (!ife->ife_gotea) {
-	if (!osn_ifeaget(-1, ife->ife_name, ife->ife_ea,
-			 (unsigned char *)NULL)) {
+	if (!osn_ifeaget2(ife->ife_name, ife->ife_ea)) {
 	    error("ARP MyReply failed, no E/N addr for %s", ife->ife_name);
 	    return FALSE;
 	}
@@ -1362,6 +1101,7 @@ int arp_myreply(register unsigned char *buf, register int cnt)
 #endif
     ucp += ETHER_ADRSIZ;
     ea_set(ucp, (char *)&ihost_ea);	/* Set source addr to ours! */
+    ucp[5]++;		/* but modified to pass the echo check */
     ucp += ETHER_ADRSIZ;
     *ucp++ = (ETHERTYPE_ARP>>8)&0377;	/* Set high byte of type */
     *ucp++ = (ETHERTYPE_ARP   )&0377;	/* Set low byte of type */
@@ -1402,41 +1142,52 @@ int arp_myreply(register unsigned char *buf, register int cnt)
 			eth_adrsprint(ethstr, ife->ife_ea));
     }
 
-#if KLH10_NET_DLPI
-    {
-	struct strbuf data;
-	data.buf = (char *)pktbuf;
-	data.len = sizeof(pktbuf);
-	(void) putmsg(pffd, NULL, &data, 0);
-    }
-#else
+#if 1
     /* XXX
      * Why is this sent to the packet filter (= host) and not to the -10?????
      */
-    (void)write(pffd, pktbuf, sizeof(pktbuf));
-#endif
+    (void)osn_pfwrite(&pfdata, pktbuf, sizeof(pktbuf));
+
+    return FALSE;
+#else
+    /* ARP reply packet, pass to 10 via DPC.
+     * Can we do that? We're not the process which normally does that...
+     */
+    unsigned char *buff;
+    size_t max;
+
+    dp_xrdone(dpx);			/* First reply to the send command */
+
+    buff = dp_xsbuff(dpx, &max);	/* Set up buffer ptr & max count */
+
+    if (sizeof(pktbuf) <= max &&
+	    dp_xswait(dpx)) {		/* Wait until buff free, in case...
+				         * but we can't do that, since we are
+					 * not the process receiving that
+					 * signal...
+					 */
+	memcpy(buff, pktbuf, ARP_PKTSIZ);
+	dp_xsend(dpx, DPNI_RPKT, ARP_PKTSIZ);
+	if (DP_DBGFLG)
+	    dbprint("sent ARP reply to -10");
+    }
+
     return TRUE;
+#endif
 }
 
 /* ETHTOTEN - Main loop for thread pumping packets from Ethernet to 10.
 **	Reads packets from packetfilter and relays them to 10 using DPC
 **	mechanism.
 */
-/* Screwy BPF algorithm requires more bookkeeping because there's
-   no way to ensure only one packet is read at a time; the call
-   may return a buffer of several packets, each of which must
-   be returned to the 10 separately.
-   Also, we need to do buffer copying since the 10 side doesn't
-   understand the BPF header.  Later an offset could be provided?
-*/
 
 #define MAXETHERLEN 1600	/* Actually 1519 but be generous */
 
-void ethtoten(register struct dpni20_s *dpni)
+void ethtoten(struct dpni20_s *dpni)
 {
-    register struct dpx_s *dpx;
-    register int cnt;
-    register unsigned char *buff;
+    struct dpx_s *dpx;
+    int cnt;
+    unsigned char *buff;
     size_t max;
     int cmin = sizeof(struct ether_header);
     int stoploop = 50;
@@ -1453,16 +1204,6 @@ void ethtoten(register struct dpni20_s *dpni)
 
     /* Standard algorithm, one packet per read call */
     for (;;) {
-#if KLH10_NET_BPF
-	unsigned char *bp, *ep, *pp;
-	int i;
-	size_t caplen, hdrlen, datalen;
-	unsigned char tbuff[OSN_BPF_MTU];
-	size_t tmax = sizeof(tbuff);
-	cmin = (int)(sizeof(struct ether_header)+sizeof(struct bpf_hdr));
-#endif /* KLH10_NET_BPF */
-
-
 	/* Make sure that buffer is free before clobbering it */
 	dp_xswait(dpx);			/* Wait until buff free */
 
@@ -1470,23 +1211,8 @@ void ethtoten(register struct dpni20_s *dpni)
 	    dbprintln("InWait");
 
 	/* OK, now do a blocking read on packetfilter input! */
-#if KLH10_NET_DLPI
-    {
-	struct strbuf data;
-	int flagsp = 0;
+	cnt = osn_pfread(&pfdata, buff, max);
 
-	data.buf = (char *)buff;
-	data.maxlen = max;
-	data.len = 0;
-	if ((cnt = getmsg(pffd, (struct strbuf *)NULL, &data, &flagsp)) == 0)
-	    cnt = data.len;
-	/* Else cnt must be -1 as call failed */
-    }
-#elif KLH10_NET_BPF
-	cnt = read(pffd, tbuff, tmax);
-#else
-	cnt = read(pffd, buff, max);
-#endif
 	if (cnt <= cmin) {		/* Must get enough for ether header */
 
 	    /* If call timed out, should return 0 */
@@ -1505,22 +1231,6 @@ void ethtoten(register struct dpni20_s *dpni)
 	    if (errno == EINTR)		/* Ignore spurious signals */
 		continue;
 
-#if CENV_SYS_NETBSD
-	    /* NetBSD bpf is broken.
-	       See osdnet.c:osn_pfinit() comments re BIOCIMMEDIATE to
-	       understand why this crock is necessary.
-	       Always block for at least 1 sec, will wake up sooner if
-	       input arrives.
-	     */
-	    if (errno == EWOULDBLOCK) {
-		int ptimeout = (dpni->dpni_rdtmo ? dpni->dpni_rdtmo : 1);
-		struct pollfd myfd;
-		myfd.fd = pffd;
-		myfd.events = POLLIN;
-		(void) poll(&myfd, 1, ptimeout*1000);
-		continue;
-	    }
-#endif
 	    syserr(errno, "Eread = %d, errno %d", cnt, errno);
 	    if (--stoploop <= 0)
 		efatal(1, "Too many retries, aborting");
@@ -1530,21 +1240,17 @@ void ethtoten(register struct dpni20_s *dpni)
 	if (DBGFLG) {
 	    if (DBGFLG & 0x4) {
 		fprintf(stderr, "\r\n[%s: Read=%d\r\n", progname, cnt);
-#if KLH10_NET_BPF
-		dumppkt(tbuff, cnt);
-#else
 		dumppkt(buff, cnt);
-#endif
 		fprintf(stderr, "]");
 	    }
 	    else
 		dbprint("Read=%d", cnt);
 	}
-#if KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE
+
 	/* Linux has no packet filtering, thus must apply manual check to
 	   each and every packet read, unless dedicated.  Ugh!
 	*/
-	if (KLH10_NET_TAP_BRIDGE || !dpni->dpni_dedic) {
+	if (!pfdata.pf_can_filter && !dpni->dpni_dedic) {
 	    /* Sharing interface.  Check for IP, DECNET, 802.3 */
 	    if (!lnx_filter(dpni, buff, cnt)) {
 		if (DBGFLG)
@@ -1552,8 +1258,7 @@ void ethtoten(register struct dpni20_s *dpni)
 		continue;		/* Drop packet, continue reading */
 	    }
 	}
-#endif /* KLH10_NET_LNX */
-#if !KLH10_NET_BPF
+
 #if 0
 	if (DBGFLG)
 	    if (((struct ether_header *)buff)->ether_type == htons(ETHERTYPE_ARP))
@@ -1564,58 +1269,6 @@ void ethtoten(register struct dpni20_s *dpni)
 	dp_xsend(dpx, DPNI_RPKT, cnt);
 	if (DBGFLG)
 	    dbprint("sent RPKT");
-
-#else
-
-	/* Screwy BPF algorithm requires more overhead because there's
-	   no way to ensure only one packet is read at a time; the call
-	   may return a buffer of several packets, each of which must
-	   be returned to the 10 separately.
-	   Also, we need to do buffer copying since the 10 side doesn't
-	   understand the BPF header.  Later an offset could be provided?
-	*/
-
-	/* Grovel through buffer, sending each packet up to 10.
-	*/
-	bp = tbuff;
-	ep = bp + cnt;
-# define bhp(p) ((struct bpf_hdr *)(p))
-	caplen = bhp(bp)->bh_caplen;	/* Pre-fetch first BPF header */
-	datalen = bhp(bp)->bh_datalen;
-	hdrlen = bhp(bp)->bh_hdrlen;
-	for (i = 0; bp < ep; ++i) {
-	    
-	    if (caplen != datalen) {
-	        dbprint("BPF#%d trunc %ld => %ld",
-			i, (long)datalen, (long)caplen);
-		/* Continue, not much else we can do */
-	    }
-
-	    cnt = caplen;
-	    pp = bp + hdrlen;		/* Pointer to actual packet data */
-
-	    /* Point to next header now, before current one is trashed */
-	    bp += BPF_WORDALIGN(caplen + hdrlen);
-	    if (bp < ep) {
-		caplen = bhp(bp)->bh_caplen;
-		datalen = bhp(bp)->bh_datalen;
-		hdrlen = bhp(bp)->bh_hdrlen;
-	    }
-# undef bhp
-	    if (DBGFLG)
-	        dbprint("BPF pkt %d = %d", i, cnt);
-
-	    /* Copy packet data into buffer for 10, and send it */
-	    memcpy((char *)buff, (char *)pp, (size_t)cnt);
-	    dp_xsend(dpx, DPNI_RPKT, cnt);
-	    if (DBGFLG)
-		dbprint("sent RPKT");
-
-	    /* Wait until send ACKed, assume buff still OK */
-	    dp_xswait(dpx);
-	}
-#endif /* KLH10_NET_BPF */
-
     }	/* Infinite loop reading packetfilter input */
 }
 
@@ -1624,24 +1277,21 @@ void ethtoten(register struct dpni20_s *dpni)
 **	data message, sends to ethernet.
 */
 
-void tentoeth(register struct dpni20_s *dpni)
+void tentoeth(struct dpni20_s *dpni)
 {
-    register struct dpx_s *dpx;
-    register int cnt;
-    register unsigned char *buff;
+    struct dpx_s *dpx;
+    int cnt;
+    unsigned char *buff;
     size_t max;
-    register int rcnt;
-    register int doarpchk;
+    int rcnt;
+    int doarpchk;
     int stoploop = 50;
 
     /* Must check for outbound ARP requests if asked to and have
     ** at least one entry in our table of host's IP interfaces.
     */
-#if KLH10_NET_TAP_BRIDGE
-    doarpchk = 0;
-#else
-    doarpchk = (dpni->dpni_doarp & DPNI_ARPF_OCHK) && (osn_nifents() > 0);
-#endif
+    /*doarpchk = (dpni->dpni_doarp & DPNI_ARPF_OCHK) && (osn_nifents() > 0);*/
+    doarpchk = FALSE; /* arp_myreply() is broken anyway... */
 
     dpx = dp_dpxto(&dp);		/* Get ptr to "To-DP" xfer stuff */
     buff = dp_xrbuff(dpx, &max);
@@ -1670,24 +1320,15 @@ void tentoeth(register struct dpni20_s *dpni)
 		    fprintf(stderr, "]");
 		}
 		else
-		    dbprint("SPKT %d", progname, rcnt);
+		    dbprint("SPKT %d", rcnt);
 	    }
 	    if (doarpchk			/* If must check ARPs */
 	      && arp_reqcheck(buff, rcnt)	/* and this is an ARP req */
-	      && arp_myreply(buff, rcnt)) {	/* and it fits, & is hacked */
+	      && arp_myreply(buff, rcnt, dpx)) {/* and it fits, & is hacked */
 		break;				/* then drop this req pkt */
 	    }
-#if KLH10_NET_DLPI
-	    {
-		struct strbuf data;
-		data.buf = (char *)buff;
-		data.len = rcnt;
-		if ((cnt = putmsg(pffd, NULL, &data, 0)) == 0)
-		    cnt = rcnt;		/* Assume successful */
-	    }
-#else
-	    cnt = write(pffd, buff, rcnt);
-#endif	/* else KLH10_NET_DLPI */
+
+	    cnt = osn_pfwrite(&pfdata, buff, rcnt);
 	    if (cnt != rcnt) {
 		if ((cnt < 0) && (errno == EINTR)) {
 		    continue;		/* Start over, may have new cmd */
@@ -1720,6 +1361,11 @@ void tentoeth(register struct dpni20_s *dpni)
 	    dpni_restart(2);
 #endif
 	    break;
+
+	case DPNI_QUIT:
+	    if (DBGFLG)
+		dbprint("QUIT");
+	    return;
 
 	default:
 	    dbprintln("Unknown cmd %d", dp_xrcmd(dpx));

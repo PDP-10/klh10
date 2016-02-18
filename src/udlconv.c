@@ -242,6 +242,7 @@ void outlink(struct filent *fe);
 void outfile(struct filent *fe);
 
 
+int
 main(int argc, char *argv[])
 {
     register int i;
@@ -448,7 +449,7 @@ its2unixfn(register char *cp,
 {
     register int ch;
 
-    while (ch = *itsfn++) {
+    while ((ch = *itsfn++)) {
 	switch (ch) {
 	case '/':	ch = '{';	break;
 	case ' ':	ch = '~';	break;
@@ -472,7 +473,7 @@ fn6quot(register char *fn)
     register char *cp = cbuf;
     register int c;
 
-    while (c = *fnp++) {
+    while ((c = *fnp++)) {
 	switch (c) {
 	case ' ':	c = '~';	break;
 #if 0
@@ -599,7 +600,7 @@ lread(register FILE *f)
 	lp->ltyp = LT_LIST;
 	if ((head->lval.lvl = lp = lread(f)) == NIL)
 	    return head;	/* Return empty list */
-	while(lp2 = lread(f)) {
+	while ((lp2 = lread(f))) {
 	    lp->lnxt = lp2;
 	    lp = lp2;
 	}
@@ -741,8 +742,8 @@ ustrcmp(register char *s1, register char *s2)
 
     for (; *s1; ++s1, ++s2) {
 	if (*s1 != *s2) {
-	    if (res = (islower(*s1) ? toupper(*s1) : *s1)
-			- (islower(*s2) ? toupper(*s2) : *s2))
+	    if ((res = (islower(*s1) ? toupper(*s1) : *s1)
+			- (islower(*s2) ? toupper(*s2) : *s2)))
 		return res;		/* Failed */
 	}
     }

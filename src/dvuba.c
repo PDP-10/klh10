@@ -53,14 +53,12 @@ static int decosfcclossage;
 #include "kn10def.h"
 #include "kn10ops.h"
 #include "kn10dev.h"
+#include "kn10cpu.h"
 #include "dvuba.h"
 
 #ifdef RCSID
  RCSID(dvuba_c,"$Id: dvuba.c,v 2.4 2002/05/21 09:44:52 klh Exp $")
 #endif
-
-/* Imported functions */
-extern void pi_devupd(void);
 
 /* Pre-declarations */
 static void ubasta_write(struct ubctl *, h10_t);
@@ -364,7 +362,7 @@ uba_read(register struct ubctl *ub,
 {
     register struct device *d;
 
-    if (d = ub_devfind(ub, addr))
+    if ((d = ub_devfind(ub, addr)))
 	return (uint32) (*(d->dv_read))(d, addr);
 
     switch (addr) {
@@ -389,7 +387,7 @@ uba_write(register struct ubctl *ub,
 {
     register struct device *d;
 
-    if (d = ub_devfind(ub, addr)) {
+    if ((d = ub_devfind(ub, addr))) {
 	(*(d->dv_write))(d, addr, (dvureg_t)val);
 	return;
     }

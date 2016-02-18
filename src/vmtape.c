@@ -666,6 +666,10 @@ vmt_attrmount(struct vmtape *t, struct vmtattrs *ta)
 
 	return vmt_rdmount(t, ta);
     }
+
+    /* Should not get here... */
+    vmterror(t, "vmt_attrmount: Invalid tapefile mode %x", ta->vmta_mode);
+    return FALSE;
 }
 
 /* VMT_CRMOUNT - Create and mount a new virtual tape for
@@ -738,7 +742,7 @@ vmt_crmount(register struct vmtape *t,
 	goto badret;
     }
 
-    if (df = fopen(dfn, "rb")) {
+    if ((df = fopen(dfn, "rb"))) {
 	vmterror(t, "Tape data file \"%.256s\" already exists", dfn);
 	goto badret;
     }
@@ -823,7 +827,7 @@ vmt_rdmount(register struct vmtape *t,
 	/* Unknown at this point implies no explicit format spec AND
 	   no recognizable extension.
 	*/
-	if (cf = fopen(ta->vmta_path, "r")) {
+	if ((cf = fopen(ta->vmta_path, "r"))) {
 	    cfn = ta->vmta_path;
 	} else {
 	    /* Non-ex file.  If no ext in path, try all possible ctl
@@ -846,7 +850,7 @@ vmt_rdmount(register struct vmtape *t,
 			vmterror(t, "malloc failed for tape pathname");
 			return FALSE;
 		    }
-		    if (cf = fopen(cfn, "r"))
+		    if ((cf = fopen(cfn, "r")))
 			break;
 		    free(cfn);
 		}
@@ -861,7 +865,7 @@ vmt_rdmount(register struct vmtape *t,
 	/* Opened cfn with stream f, now verify it specially so if
 	   it doesn't look like a control file we can try something else.
 	*/
-	if (fmt = fmtexamine(t, cf, VMT_FMT_CTL)) {
+	if ((fmt = fmtexamine(t, cf, VMT_FMT_CTL))) {
 	    /* Looks like control file! */
 	    goto havectl;
 	}
@@ -1083,7 +1087,7 @@ genpath(struct vmtape *t,
 	blen = (s - base) - 1;		/* then replace sep-char & ext! */
     else blen = strlen(base);		/* No ext, append to whole name */
 
-    if (fn = malloc(blen+1+strlen(newext)+1)) {
+    if ((fn = malloc(blen+1+strlen(newext)+1))) {
 	memcpy(fn, base, blen);
 	s = fn + blen;
 	*s++ = OSD_PATH_EXTSEPCHAR;
@@ -1198,7 +1202,7 @@ fmtexamine(struct vmtape *t, FILE *f, int fmt)
 	    || (fmt == VMT_FMT_TPC)) {
 	    /* Check for TPC */
 	    for (i = 0; i < n; i += 2) {
-		if (cnt = VMT_TPC_COUNT(&buff[i]))
+		if ((cnt = VMT_TPC_COUNT(&buff[i])))
 		    i += (cnt&01) ? (cnt+1) : cnt;
 	    }
 	    if (i == n)		/* Verify no overrun */
@@ -1618,7 +1622,7 @@ datf_open(register struct vmtape *t,
     if (!popenquote(cp, VMTPIPECMDQUOT, sizeof(cmdbuf)-VMTPIPECMD_MAX))
 	return FALSE;			/* Couldn't quote, shouldn't happen */
 
-    if (t->mt_datf = popen(cmdbuf, (*mode == 'r') ? "r" : "w"))
+    if ((t->mt_datf = popen(cmdbuf, (*mode == 'r') ? "r" : "w")))
 	t->mt_ispipe = TRUE;
   }
 #endif /* VMTAPE_POPEN */
@@ -3030,7 +3034,7 @@ vmt_rput(register struct vmtape *t,
 	unsigned char header[8];	/* For best alignment */
 
     case VMT_FMT_TPS:
-	if (pad = (len & 01)) {		/* Must pad? */
+	if ((pad = (len & 01))) {	/* Must pad? */
 	    header[3] = 0;
 	} else {
     case VMT_FMT_TPE:
@@ -3225,16 +3229,16 @@ tdr_scan(struct vmtape *t,
     if (fileread(f, &(t->mt_contents), &fsize) <= 0) {
 	TDRERR(t, (t,"Tape-file readin failed: %ld bytes", fsize));
     } else
-      for (nline = t->mt_contents; cp = nline; t->mt_lineno++) {
+      for (nline = t->mt_contents; (cp = nline); t->mt_lineno++) {
 	/* Trim off a line */
-	if (nline = strchr(nline, '\n'))
+	if ((nline = strchr(nline, '\n')))
 	    *nline++ = '\0';	/* Truncate line, point past EOL */
 	line = cp;		/* Remember start of line */
 
 	/* Parse line */
 	indent = (*cp == ' ') || (*cp == '\t');	/* Remember if indentation */
 	while (isspace(*cp)) ++cp;	/* Flush initial whitespace */
-	if (key = strchr(cp, ';'))	/* Strip off comments here */
+	if ((key = strchr(cp, ';')))	/* Strip off comments here */
 	    *key = '\0';
 	if (!*cp) continue;		/* Ignore blank lines */
 
@@ -3437,10 +3441,10 @@ filscan(struct vmtape *t,
     vmtpos_t len, cnt, err;
     int res;
 
-    while (rs = wdscan(&cp)) {
+    while ((rs = wdscan(&cp))) {
 	char *cs, *es;
 
-	if (res = numscan(rs, &cs, &len)) {
+	if ((res = numscan(rs, &cs, &len))) {
 	    if (res > 0)
 		TDRERR(t,(t, "Reclen too large"));
 	    else if (strncasecmp(rs, "EOF", 3) == 0) {	/* Tapemark? */
@@ -3450,7 +3454,7 @@ filscan(struct vmtape *t,
 		TDRERR(t,(t, "Bad reclen syntax"));
 	}
 	if (*cs == '*') {
-	    if (res = numscan(++cs, &cs, &cnt)) {
+	    if ((res = numscan(++cs, &cs, &cnt))) {
 		if (res > 0)
 		    TDRERR(t,(t, "Reclen too large"));
 		else
@@ -3799,9 +3803,10 @@ TF-Format: raw %s\n",
 		fnam ? fnam : "<none>",
 		td->tdbytes, td->tdrecs, td->tdfils,
 		fnam ? fnam : "");
-    if (rd = td->tdrd) {
+    if ((rd = td->tdrd)) {
 	do {
 	    if (bol) {
+		/* print unsigned even though the type is actually signed */
 		fprintf(f, "%" VMTAPE_POS_FMT "u:", rd->rdloc);
 		bol = FALSE;
 	    }

@@ -44,18 +44,25 @@ buildone() {
     mkdir -p ${KLH10_HOME}
     cd bld/$BUILD
     make clean
-    make base-${model} CONFFLAGS_AUX=-DKLH10_I_CIRC=1
-    make tapedd vdkfmt wxtest enaddr
+    make base-${model} CONFFLAGS_AUX=-DKLH10_I_CIRC=1 || exit $?
+    make tapedd vdkfmt wxtest enaddr                  || exit $?
     make install
 )
 }
 
-echo "Building KL"
-buildone kl
+if [ "x$MODEL" != "x" ]
+then
+    echo "Building $MODEL"
+    buildone "$MODEL"
+else
+    echo "Building KL"
+    buildone kl || exit $?
 
-echo "Building KS"
-buildone ks
+    echo "Building KS"
+    buildone ks || exit $?
 
-echo "Building KS-ITS"
-buildone ks-its
+    echo "Building KS-ITS"
+    buildone ks-its || exit $?
+fi
 
+cd bld/$BUILD; make clean

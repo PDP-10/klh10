@@ -52,6 +52,10 @@
 #include "osdsup.h"
 #include "kn10ops.h"
 
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+
 #if CENV_SYS_UNIX
 #  include <sys/types.h>
 #  include <sys/stat.h>
@@ -61,8 +65,10 @@
 #  include <errno.h>
 #  include <time.h>		/* For struct tm, localtime() */
 
-#  if CENV_SYSF_BSDTIMEVAL
+#  if HAVE_SETITIMER
 #    include <sys/time.h>	/* BSD: For setitimer() */
+#  endif
+#  if HAVE_GETRUSAGE
 #    include <sys/resource.h>	/* BSD: For getrusage() */
 #  endif
 
@@ -119,7 +125,7 @@
 #endif /* CENV_USE_COMM_TOOLBOX */
 #endif /* CENV_SYS_MAC */
 
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
   extern char *strerror(int);	/* Not always declared in string.h */
 #endif
 
@@ -180,19 +186,19 @@ os_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return os_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#  if !CENV_SYS_XBSD		/* Already in signal.h */
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
 #  endif
 	if (0 < err &&  err <= sys_nerr)
 	    return sys_errlist[err];
     }
-#  endif
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -200,7 +206,7 @@ os_strerror(int err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 /* Controlling terminal stuff
@@ -905,7 +911,7 @@ and fits within 20 bits.
 int
 os_rtmget(register osrtm_t *art)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER /* && HAVE_GETTIMEOFDAY ; implied */
     static osrtm_t os_last_rtm = {0,0};
     if (!gettimeofday(art, (struct timezone *)NULL) == 0)
 	return FALSE;
@@ -945,7 +951,7 @@ os_vrtmget(register osrtm_t *art)
 	return TRUE;
     }
     return FALSE;
-#elif CENV_SYSF_BSDTIMEVAL
+#elif HAVE_GETRUSAGE
     /* WARNING!!!  Some systems turn out not to report getrusage runtime in a
     ** monotonically increasing way!  This can result in negative deltas
     ** from one get to the next.
@@ -974,7 +980,7 @@ os_vrtmget(register osrtm_t *art)
 void
 os_rtmsub(register osrtm_t *a, register osrtm_t *b)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     a->tv_sec -= b->tv_sec;
     if ((a->tv_usec -= b->tv_usec) < 0) {
 	--a->tv_sec;
@@ -1058,7 +1064,7 @@ os_timer(int type,
 	 register uint32 usecs,
 	 ostimer_t *ostate)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     struct itimerval itm;
 
     if (type != ITIMER_VIRTUAL)
@@ -1123,7 +1129,7 @@ os_vtimer(ossighandler_t *irtn, uint32 usecs)
 void
 os_timer_restore(ostimer_t *ostate)
 {
-#if CENV_SYSF_BSDTIMEVAL && CENV_SYSF_SIGSET
+#if HAVE_SETITIMER && HAVE_SIGACTION
     sigset_t blkset, savset;
     int ret;
 
@@ -1157,7 +1163,7 @@ os_timer_restore(ostimer_t *ostate)
 void
 os_v2rt_idle(ossighandler_t *hdlarg)
 {
-#if CENV_SYSF_BSDTIMEVAL && CENV_SYSF_SIGSET
+#if HAVE_SETITIMER && HAVE_SIGACTION
     sigset_t allmsk, oldmsk, nomsk;
     struct itimerval ntval, vtval;
     static ossighandler_t *handler = NULL;
@@ -1224,13 +1230,13 @@ os_v2rt_idle(ossighandler_t *hdlarg)
 void
 os_sleep(int secs)
 {
-#if CENV_SYSF_NANOSLEEP
+#if HAVE_NANOSLEEP
     osstm_t stm;
 
     OS_STM_SET(stm, secs);
     while (os_msleep(&stm) > 0) ;
 
-#elif CENV_SYSF_BSDTIMEVAL
+#elif HAVE_SETITIMER
     /* Must save & restore ITIMER_REAL & SIGALRM, which conflict w/sleep() */
     ostimer_t savetmr;
 
@@ -1280,7 +1286,7 @@ os_sleep(int secs)
 int
 os_msleep(osstm_t *stm)
 {
-#if CENV_SYSF_NANOSLEEP
+#if HAVE_NANOSLEEP
 
     if (nanosleep(stm, stm) == 0) {
 	stm->tv_sec = 0;	/* Make sure returns zero */
@@ -1347,7 +1353,7 @@ os_rtm_tokst(register osrtm_t *art,
     register dw10_t d;
     register w10_t w;
 
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     LRHSET(w, 017, 0507640);			/* 4,100,000. */
     d = op10xmul(w, op10utow(art->tv_sec));
     w = op10utow((int32)((art->tv_usec << 2) + (art->tv_usec / 10)));
@@ -1380,7 +1386,7 @@ os_rtm_tokst(register osrtm_t *art,
 unsigned long
 os_rtm_toqct(register osrtm_t *art)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     return ((unsigned long)(art->tv_sec * 4100000)
 		+ (art->tv_usec << 2) + (art->tv_usec/10)) >> 4;
 #elif CENV_SYS_MAC
@@ -1413,7 +1419,7 @@ See io_rdtime().
 unsigned long
 os_rtm_toklt(register osrtm_t *art)
 {
-#if CENV_SYSF_BSDTIMEVAL
+#if HAVE_SETITIMER
     return ((unsigned long)art->tv_sec * 1000000) + art->tv_usec;
 #elif CENV_SYS_MAC
     return art->lo;
@@ -1489,7 +1495,7 @@ os_tmget(register struct tm *tm, int *zone)
      *   -1  local time is 1 day behind UTC, offset -24 hours
      * -36x  local time is January 1, UTC is December 31, offset +24 hours
      */
-    if (julian = (tm->tm_yday - julian))
+    if ((julian = (tm->tm_yday - julian)))
 	zn += ((julian < 0) == (abs(julian) == 1)) ? -24*60 : 24*60;
 
     /* At this point zn contains the numer of minutes east of UTC in local
@@ -1519,7 +1525,7 @@ osux_signal(int sig, ossighandler_t *func)
 int
 osux_sigact(int sig, ossighandler_t *func, ossigact_t *ossa)
 {
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     struct sigaction act;
 
     act.sa_handler = func;
@@ -1546,7 +1552,7 @@ osux_sigact(int sig, ossighandler_t *func, ossigact_t *ossa)
 int
 osux_sigrestore(ossigact_t *ossa)
 {
-#if CENV_SYSF_SIGSET
+#if HAVE_SIGACTION
     return sigaction(ossa->ossa_sig,
 		     &ossa->ossa_sa, (struct sigaction *)NULL);
 #elif CENV_SYS_BSD
@@ -1660,20 +1666,20 @@ os_mmkill(osmm_t mm, char *ptr)
 
 /* Attempt to lock all of our process memory now and in the future.
 */
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS
+#if HAVE_MLOCKALL
 # include <sys/mman.h>
 #endif
 
 int
 os_memlock(int dolock)
 {
-#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS
+#if HAVE_MLOCKALL
     /* Both Solaris and OSF/1 have mlockall() which looks like what we want.
     ** It requires being the super-user, but don't bother to check here,
     ** just return error if it fails for any reason.
     */
     if (dolock)
-	return (mlockall(MCL_CURRENT+MCL_FUTURE) == 0);
+	return (mlockall(MCL_CURRENT|MCL_FUTURE) == 0);
     else
 	return (munlockall() == 0);
 #else

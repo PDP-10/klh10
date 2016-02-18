@@ -32,10 +32,6 @@
 #ifndef OSDNET_INCLUDED
 #define OSDNET_INCLUDED 1
 
-#ifdef RCSID
- RCSID(osdnet_h,"$Id: osdnet.h,v 2.5 2001/11/19 10:34:01 klh Exp $")
-#endif
-
 #include "klh10.h"	/* Ensure have config params */
 
 /* Determine whether only doing IP stuff, or if all ethernet interface
@@ -43,60 +39,6 @@
  */
 #ifndef OSN_USE_IPONLY
 # define OSN_USE_IPONLY 0	/* Default is to include everything */
-#endif
-
-/* Determine net ifc to compile for - NIT, DLPI, PFLT, BPF, TUN, LNX
- */
-#ifndef  KLH10_NET_BPF	/* OSF/1 Berkeley Packet Filter */
-# define KLH10_NET_BPF 0
-#endif
-#ifndef  KLH10_NET_PFLT	/* OSF/1 CMU/Stanford packetfilter */
-# define KLH10_NET_PFLT 0
-#endif
-#ifndef  KLH10_NET_NIT	/* SunOS Network Interface Tap */
-# define KLH10_NET_NIT 0
-#endif
-#ifndef  KLH10_NET_DLPI	/* Solaris Data Link Provider Interface */
-# define KLH10_NET_DLPI 0
-#endif
-#ifndef  KLH10_NET_TAP_BRIDGE	/* BSD Ethernet Tunnel device + a bridge */
-# define KLH10_NET_TAP_BRIDGE 0
-#endif
-#ifndef  KLH10_NET_TUN	/* BSD IP Tunnel device */
-# define KLH10_NET_TUN 0
-#endif
-#ifndef  KLH10_NET_LNX	/* Linux PF_PACKET interface */
-# define KLH10_NET_LNX 0
-#endif
-
-#if !(KLH10_NET_NIT || KLH10_NET_DLPI || KLH10_NET_BPF || KLH10_NET_PFLT || \
-	KLH10_NET_TUN || KLH10_NET_LNX || KLH10_NET_TAP_BRIDGE)
-    /* None explicitly specified, pick a reasonable default */
-# if ((CENV_SYS_NETBSD || CENV_SYS_FREEBSD || CENV_SYS_LINUX) && OSN_USE_IPONLY)
-#  undef  KLH10_NET_TUN
-#  define KLH10_NET_TUN 1
-# elif (CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
-/*
- * #  undef  KLH10_NET_BPF
- * #  define KLH10_NET_BPF 1
- */
-#  undef  KLH10_NET_TAP_BRIDGE
-#  define KLH10_NET_TAP_BRIDGE 1
-# elif CENV_SYS_DECOSF
-#  undef  KLH10_NET_PFLT
-#  define KLH10_NET_PFLT 1
-# elif CENV_SYS_SUN
-#  undef  KLH10_NET_NIT
-#  define KLH10_NET_NIT 1
-# elif CENV_SYS_SOLARIS
-#  undef  KLH10_NET_DLPI
-#  define KLH10_NET_DLPI 1
-# elif CENV_SYS_LINUX
-#  undef  KLH10_NET_LNX
-#  define KLH10_NET_LNX 1
-# else
-#  error "Must specify a KLH10_NET_ configuration"
-# endif
 #endif
 
 
@@ -118,47 +60,80 @@
 # define ossock_t int		/* No typedef until code revised */
 #endif /* CENV_SYS_UNIX */
 
-#if KLH10_NET_NIT
+#if HAVE_NET_IF_TUN_H && OSN_USE_IPONLY
+# include <net/if_tun.h>
+# define KLH10_NET_TUN	1
+#endif
+#if HAVE_NET_IF_TAP_H
+# include <net/if_tap.h>
+# define KLH10_NET_TAP	1
+#endif
+#if HAVE_LINUX_IF_TUN_H
+# include <linux/if_tun.h>
+# define KLH10_NET_TUN	1
+# define KLH10_NET_TAP	1
+#endif
+#if HAVE_LINUX_IF_PACKET_H
+# include <linux/if_packet.h>	/* For struct sockaddr_ll with AF_PACKET */
+#endif
+# if HAVE_NET_IF_DL_H
+# include <net/if_dl.h>		/* For sockaddr_dl with AF_LINK */
+# include <net/if_types.h>	/* For IFT_ETHER */
+#endif
+#if HAVE_LIBPCAP
+# undef BPF_MAJOR_VERSION	/* some stupid linux header defines this:
+				 * <linux_filter.h> included from
+				 * <linux/if_tun,h>; only in SOME versions.
+				 */
+# include <pcap/pcap.h>
+# include <pcap/bpf.h>
+# define KLH10_NET_PCAP 1
+#endif
+#if HAVE_GETIFADDRS
+# include <ifaddrs.h>
+#endif
+#if !defined(KLH10_NET_BRIDGE) && KLH10_NET_TAP && (CENV_SYS_XBSD || CENV_SYS_LINUX)
+# define KLH10_NET_BRIDGE 1	/* Use bridge if possible, unless disabled */
+#endif
+
+#if HAVE_NET_NIT_H
+# define KLH10_NET_NIT	1
 # include <sys/stropts.h>	/* For stream operations */
 # include <net/nit.h>		/* For NIT */
 # include <net/nit_if.h>	/* For NIT */
 # include <net/nit_pf.h>	/* For packet filtering */
 # include <net/packetfilt.h>	/* For packet filtering */
 
-#elif KLH10_NET_DLPI
+#elif HAVE_SYS_DLPI_H
+# define KLH10_NET_DLPI	1
 # include <sys/sockio.h>
 # include <sys/stropts.h>
 # include <sys/dlpi.h>
 # include <sys/pfmod.h>		/* For packet filtering */
 # include <arpa/inet.h>
 
-#elif KLH10_NET_PFLT
-# include <net/pfilt.h>
-
-#elif KLH10_NET_BPF
-# include <sys/uio.h>
-# include <net/bpf.h>
-# include <net/if_dl.h>
-# include <net/if_types.h>
-
-#elif KLH10_NET_LNX
-# include <sys/uio.h>
-# include <sys/socket.h>
-# include <features.h>    /* for the glibc version number */
-# if __GLIBC__ >= 2 && __GLIBC_MINOR >= 1
-#  include <netpacket/packet.h>
-#  include <net/ethernet.h>     /* the L2 protocols */
-# else
-#  include <asm/types.h>
-#  include <linux/if_packet.h>
-#  include <linux/if_ether.h>   /* The L2 protocols */
-# endif
-
-#elif KLH10_NET_TUN && CENV_SYS_LINUX /* [BV: tun support for Linux] */
-# include <linux/if_tun.h>
 #endif
 
-
+/* Set KLH10_NET_* values to default, if not set yet.
+ */
+#ifndef  KLH10_NET_NIT	/* SunOS Network Interface Tap */
+# define KLH10_NET_NIT 0
+#endif
+#ifndef  KLH10_NET_DLPI	/* Solaris Data Link Provider Interface */
+# define KLH10_NET_DLPI 0
+#endif
+#ifndef  KLH10_NET_TUN	/* IP Tunnel device */
+# define KLH10_NET_TUN 0
+#endif
+#ifndef  KLH10_NET_TAP /* Ethernet Tunnel device */
+# define KLH10_NET_TAP 0
+#endif
+#ifndef  KLH10_NET_BRIDGE /* Bridge (used with an Ethernet tunnel) */
+# define KLH10_NET_BRIDGE 0
+#endif
+#ifndef  KLH10_NET_PCAP	/* pretty generic libpcap interface */
+# define KLH10_NET_PCAP 0
+#endif
 #ifndef FALSE
 # define FALSE 0
 #endif
@@ -171,14 +146,6 @@
    XXX This location and the names are temporary until the OSDNET API is
    made more complete and opaque.
 */
-#if KLH10_NET_BPF
-# include <net/bpf.h>
-
-/* MTU to use for input, rounded the way BPF wants it. */
-# define OSN_BPF_MTU \
-	(BPF_WORDALIGN(1514) + BPF_WORDALIGN(sizeof(struct bpf_hdr)))
-
-#endif
 
 /* Packet filter definitions */
 
@@ -199,50 +166,15 @@
 #define PKSWOFF_IPDEST (7+(IPBOFF_DEST/2))	/* 1st (high) sw of IP dest  */
 
 
-/* Determine whether:
- *    (1) sockaddr contains sa_len (NETIF_HAS_SALEN)
- *    (2) ifconf provides physical link addrs (NETIF_HAS_ETHLINK)
- *    (3) ARP ioctls exist (NETIF_HAS_ARPIOCTL)
- *
- *			4.4BSD	DECOSF	SunOS	Solaris	Linux
- * NETIF_HAS_SALEN	yes	yes	no	no	no
- * NETIF_HAS_ETHLINK	yes	yes	no	no	no
- * NETIF_HAS_ARPIOCTL	no	yes	yes	yes	yes
- */
-#ifndef NETIF_HAS_SALEN		/* If not explicitly told, see if known OS */
-# if CENV_SYS_XBSD || CENV_SYS_DECOSF
-#  define NETIF_HAS_SALEN 1
-# elif CENV_SYS_SUN || CENV_SYS_SOLARIS || CENV_SYS_LINUX
-#  define NETIF_HAS_SALEN 0
-# endif
-#endif
-#ifndef NETIF_HAS_SALEN		/* If still not defined, try to guess */
-# ifdef AF_LINK			/* Existence of this implies we can win */
-#  define NETIF_HAS_SALEN 1
-# else
-#  define NETIF_HAS_SALEN 0
-# endif
-#endif
-
-#if NETIF_HAS_SALEN
-# ifdef AF_LINK
-#  include <net/if_dl.h>	/* For sockaddr_dl */
-# endif
-# ifdef LLADDR			/* Double-check, make sure this is defined */
-#  define NETIF_HAS_ETHLINK 1
-# else
-#  define NETIF_HAS_ETHLINK 0
-# endif
-#else
-# define NETIF_HAS_ETHLINK 0
-#endif
-
 #ifdef SIOCGARP
 # define NETIF_HAS_ARPIOCTL 1
 #else
 # define NETIF_HAS_ARPIOCTL 0
 #endif
 
+#if !HAVE_LIBPCAP && !HAVE_GETIFADDRS
+#error "Sorry, can't lookup ethernet interfaces without getifaddrs(3) or libpcap"
+#endif
 
 /* Interface table entry.
    This is needed to provide a more generic format that can
@@ -257,21 +189,25 @@ struct ifent {
 	char ife_name[IFNAMSIZ+1];	/* +1 so always null-terminated */
 	int  ife_flags;			/* IFF_ flags */
 	int  ife_mtu;			/* MTU (not really used) */
+	int  ife_gotip4;		/* TRUE if IPv4 addr set */
 	union {
 	    struct in_addr ifeu_ia;
 	    unsigned char ifeu_chr[4];
-	} ife_uip;
+	} ife_uip;			/* IPv4 address */
+	union {
+	    struct in_addr ifeu_ia;
+	    unsigned char ifeu_chr[4];
+	} ife_nm;			/* netmask */
 	int ife_gotea;			/* TRUE if E/N addr set */
 	unsigned char ife_ea[6];	/* E/N address */
-
-	struct ifreq *ife_pinet;	/* Reference pointer to inet ifreq */
-	struct ifreq *ife_plink;	/* Reference pointer to link ifreq */
-	struct ifreq *ife_pother;	/* Reference pointer to ???? ifreq */
 };
 #define ife_ipia  ife_uip.ifeu_ia		/* IP address as in_addr */
 #define ife_ipint ife_uip.ifeu_ia.s_addr	/* IP address as integer */
 #define ife_ipchr ife_uip.ifeu_chr		/* IP address as bytes */
 
+#define ife_nmia  ife_nm.ifeu_ia		/* netmask as in_addr */
+#define ife_nmint ife_nm.ifeu_ia.s_addr		/* netmask as integer */
+#define ife_nmchr ife_nm.ifeu_chr		/* netmask as bytes */
 
 /* Option arguments to iftab_init */
 #define IFTAB_IPS	0x1	/* Accept IP-bound interface */
@@ -306,14 +242,6 @@ struct ifent {
 #define ETHER_PX_TYP	12	/* Type (high byte first) */
 #define ETHER_PX_DAT 	14	/* Data bytes */
 	/* CRC comes after data, which is variable-length */
-
-#if KLH10_NET_BPF && !(CENV_SYS_SUN || CENV_SYS_NETBSD || CENV_SYS_FREEBSD)
-	/* For compatibility with SunOS definition.
-	   Needed for BPF, but most BSD-ish systems already define it??
-	   Not really sure why this is here.
-	 */
-struct ether_addr { unsigned char crud[ETHER_ADRSIZ]; };
-#endif
 
 /* Ethernet address.  Use ETHER_ADRSIZ for actual size. */
 struct eth_addr {
@@ -353,8 +281,36 @@ union ipaddr {
     unsigned char ia_octet[IP_ADRSIZ];
     struct in_addr ia_addr;
 };
+
+struct pfdata;
+struct osnpf;
+
+typedef ssize_t (*osn_pfread_f)(struct pfdata *pfdata, void *buf, size_t nbytes);
+typedef ssize_t (*osn_pfwrite_f)(struct pfdata *pfdata, const void *buf, size_t nbytes);
+typedef void (*osn_pfdeinit_f)(struct pfdata *, struct osnpf *);
+
+/*
+ * A structure that aggregates information about the packet filter variant
+ * which is in use.
+ */
+struct pfdata {
+    int		 pf_fd;		/* most but not all have a file descriptor */
+    int		 pf_meth;	/* which packet "filter" is in use */
+    void 	*pf_handle;	/* pcap has a handle */
+    int 	 pf_can_filter;	/* has a packet filter built-in and enabled */
+    int		 pf_ip4_only;	/* set TRUE for IP i/f; FALSE for ethernet i/f */
+    osn_pfread_f pf_read;	/* indirection to packet reading function */
+    osn_pfwrite_f pf_write;	/* indirection to packet writing function */
+    osn_pfdeinit_f pf_deinit;	/* indirection to closing function */
+};
+
+#define PF_METH_NONE		0
+#define PF_METH_PCAP		1
+#define PF_METH_TUN		2
+#define PF_METH_TAP		3
+#define PF_METH_VDE		4
 
-int osn_iftab_init(int);
+int osn_iftab_init(void);
 int osn_nifents(void);		/* # of entries cached by osn_iftab_init */
 
 int osn_ifsock(char *ifnam, ossock_t *);
@@ -363,16 +319,21 @@ void osn_iftab_show(FILE *f, struct ifent *ife, int nents);
 void osn_ifctab_show(FILE *f, struct ifconf *ifc);
 int osn_ifipget(int s, char *ifnam, unsigned char *ipa);
 int osn_ifnmget(int s, char *ifnam, unsigned char *ipa);
-int osn_pfeaget(int s, char *ifnam, unsigned char *eap);
-int osn_ifeaget(int s, char *ifnam, unsigned char *eap, unsigned char *def);
+int osn_pfeaget(struct pfdata *, char *ifnam, unsigned char *eap);
+int osn_ifeaget2(char *ifnam, unsigned char *eap);
 #if !OSN_USE_IPONLY
-int osn_ifeaset(int s, char *ifnam, unsigned char *newpa);
-int osn_ifmcset(int s, char *ifc, int delf, unsigned char *pa);
+int osn_ifeaset(struct pfdata *pfdata, int s, char *ifnam, unsigned char *newpa);
+int osn_ifmcset(struct pfdata *pfdata, int s, char *ifc, int delf, unsigned char *pa);
 #endif
 
 struct ifent *osn_ipdefault(void);
 struct ifent *osn_iftab_arp(struct in_addr ia);
 int osn_iftab_arpget(struct in_addr ia, unsigned char *eap);
+
+struct ifent *osn_ifcreate(char *ifnam);
+int osn_ifealookup(char *ifnam, unsigned char *eap);
+int osn_ifiplookup(char *ifnam, unsigned char *ipa);
+int osn_ifnmlookup(char *ifnam, unsigned char *ipa);
 
 #define OSN_EASTRSIZ sizeof("xx:xx:xx:xx:xx:xxZZ")
 char *eth_adrsprint(char *cp, unsigned char *ea);
@@ -380,18 +341,28 @@ char *eth_adrsprint(char *cp, unsigned char *ea);
 #define OSN_IPSTRSIZ sizeof("ddd.ddd.ddd.dddZZZZ")
 char *ip_adrsprint(char *cp, unsigned char *ip);
 
-int osn_arp_stuff(unsigned char *ipa, unsigned char *eap, int pubf);
+int osn_arp_stuff(char *ifname, unsigned char *ipa, unsigned char *eap, int pubf);
 int osn_arp_look(struct in_addr *ipa, unsigned char *eap);
 
 struct osnpf {	/* Arg struct for common initialization params */
 	char *osnpf_ifnam;	/* Interface name */
+	char *osnpf_ifmeth;	/* Which connection method to use (pcap, tun, tap, etc */
 	int osnpf_dedic;	/* TRUE if dedicated ifc, else shared */
 	int osnpf_rdtmo;	/* Read timeout, if any */
 	int osnpf_backlog;	/* Allow # backlogged packets, if any */
-	union ipaddr osnpf_ip;		/* IP address to use */
-	union ipaddr osnpf_tun;		/* INOUT: IP address of tunnel */
+	union ipaddr osnpf_ip;	/* IP address to use */
+	union ipaddr osnpf_tun;	/* INOUT: IP address host side of tunnel */
 	struct ether_addr osnpf_ea;	/* OUT: ether address of ifc */
 };
-int osn_pfinit(struct osnpf *, void *);
+
+
+/* the void * is an argument to pass on to pfbuild() */
+void osn_pfinit(struct pfdata *, struct osnpf *, void *);
+void osn_pfdeinit(struct pfdata *, struct osnpf *);
+
+ssize_t osn_pfread(struct pfdata *pfdata, void *buf, size_t nbytes);
+int osn_pfwrite(struct pfdata *pfdata, const void *buf, size_t nbytes);
+
+extern char osn_networking[];
 
 #endif /* ifndef OSDNET_INCLUDED */

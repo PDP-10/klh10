@@ -38,6 +38,7 @@
 #include "kn10dev.h"
 #include "kn10ops.h"
 #include "prmstr.h"
+#include "kn10cpu.h"
 
 #if KLH10_CPU_KS && KLH10_DEV_TM03
 # include "dvtm03.h"	/* For setting up FECOM_BOOTP with magtape params */
@@ -46,9 +47,6 @@
 #ifdef RCSID
  RCSID(kn10dev_c,"$Id: kn10dev.c,v 2.4 2001/11/10 21:28:59 klh Exp $")
 #endif
-
-/* Imported functions */
-extern void pi_devupd(void);
 
 /* NULL device routines, for handling non-existent device. */
 
@@ -745,7 +743,7 @@ dev_define(FILE *of, char *name, char *sdev, char *sdrv, char *args)
     ** Syntax is a bit peculiar, depends on # of components.
     ** If 2, 1st must be an existing device name and the 2nd a plain number.
     */
-    if (cp = strchr(sdev, '.')) {
+    if ((cp = strchr(sdev, '.'))) {
 	char dnbuf[100];
 	int i = cp - sdev;
 
@@ -1120,7 +1118,7 @@ dev_debug(FILE *of,
 #if KLH10_DEV_DP
 	    fprintf(of, "  %6s    = %d\n", def->dev_name,
 						def->dev_dv->dv_debug);
-	    if (dp = def->dev_dv->dv_dpp) {
+	    if ((dp = def->dev_dv->dv_dpp)) {
 		fprintf(of, "  %6s.dp = ", def->dev_name);
 	        if (dp->dp_adr)
 		    fprintf(of, "%d\n", dp->dp_adr->dpc_debug);
@@ -1599,7 +1597,7 @@ dev_evreg(register struct device *d,
     }
 
     /* Find new entry in evreg table */
-    if (evr = evregfree) {		/* Pluck from freelist */
+    if ((evr = evregfree)) {		/* Pluck from freelist */
 	evregfree = evr->dver_next;	/* Freelist is one-way, no prev */
     } else {
 	fprintf(stderr, "[dev_evreg: out of table entries!]\r\n");
@@ -1642,14 +1640,14 @@ dev_evreg(register struct device *d,
 	    INTF_INIT(evs->dves_intf);
 	    evs->dves_reglist = NULL;
 	    evs->dves_prev = NULL;
-	    if (evs->dves_next = evsiglist)	/* Add to head of list */
+	    if ((evs->dves_next = evsiglist))	/* Add to head of list */
 	        evsiglist->dves_prev = evs;
 	    evsiglist = evs;
 	}
 
 	/* Now add handler to list for this signal */
 	evr->dver_prev = NULL;
-	if (evr->dver_next = evs->dves_reglist)	/* Add to head of list */
+	if ((evr->dver_next = evs->dves_reglist))/* Add to head of list */
 	    evr->dver_next->dver_prev = evr;
 	evs->dves_reglist = evr;
 

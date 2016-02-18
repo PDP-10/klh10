@@ -1,4 +1,4 @@
-# KLH10 Makefile for Linux on amd64 / x86_64 / Alpha
+# KLH10 Makefile for NetBSD on amd64 / x86_64 / Alpha
 # (or any other little-endian 64-bit cpu)
 #
 #  Copyright © 2001 Kenneth L. Harrenstien
@@ -16,31 +16,52 @@
 #
 #####################################################################
 
-# Local config setup, for GNU "make"!
+# Local config setup, for BSD "make"!
 #	Recursively invokes make with right params for local platform.
 
 # Build definitions
 SRC = ../../src
-CFLAGS = -c -g3 -O3 -I. -I$(SRC)
+CFLAGS = -c -g3 -O3
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wstrict-prototypes -Wmissing-prototypes \
 		-Wmissing-declarations -Wredundant-decls
 
 # Source definitions
-CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_LINUX=1 -DKLH10_DEV_LITES=1 \
-		-DKLH10_NET_TUN=1 \
-		-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
+CENVFLAGS = -DCENV_CPU_ALPHA=1 -DCENV_SYS_NETBSD=1 -include netbsd-sucks.h \
+	    -DKLH10_NET_PCAP=1 \
+	    -DKLH10_NET_TUN=1 \
+	    -DKLH10_NET_TAP=1 \
+	    -DKLH10_NET_BRIDGE=1
 
 # Any target with no customized rule here is simply passed on to the
 # standard Makefile.  If no target is specified, "usage" is passed on
 # to generate a helpful printout.
 
-usage .DEFAULT:
+usage:
+	@make -f $(SRC)/Makefile.mk usage
+
+install:
+	@make -f $(SRC)/Makefile.mk install-unix
+
+$(.TARGETS): netbsd-sucks.h
 	@make -f $(SRC)/Makefile.mk $@ \
 	    "SRC=$(SRC)" \
 	    "CFLAGS=$(CFLAGS)" \
 	    "CFLAGS_LINT=$(CFLAGS_LINT)" \
 	    "CENVFLAGS=$(CENVFLAGS)"
 
-install:
-	make -f $(SRC)/Makefile.mk install-unix
+# This auxiliary file is needed to get around a bug in the NetBSD
+# /usr/include files.  <stdio.h> includes <sys/types.h> which includes
+# <machine/types.h> which incorrectly exposes a typedef of vaddr_t (normally
+# a kernel only type), thus conflicting with KLH10's vaddr_t.
+# By including this file ahead of any other source files (see the -include
+# in CENVFLAGS) we can nullify the typedef.
+# And while we're at it, blast paddr_t for the same reason.
+
+netbsd-sucks.h:
+	@echo '/* DO NOT EDIT - dynamically generated, see Makefile */' > $@
+	@echo "#define vaddr_t _kernel_vaddr_t" >> $@
+	@echo "#define paddr_t _kernel_paddr_t" >> $@
+	@echo "#include <sys/types.h>" >> $@
+	@echo "#undef paddr_t" >> $@
+	@echo "#undef vaddr_t" >> $@

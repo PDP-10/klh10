@@ -60,6 +60,10 @@
 #include "rcsid.h"
 #include "osdnet.h"
 
+#if HAVE_ERRNO_H
+# include <errno.h>
+#endif
+
 #ifdef RCSID
  RCSID(enaddr_c,"$Id: enaddr.c,v 2.6 2002/03/18 04:19:17 klh Exp $")
 #endif
@@ -115,50 +119,34 @@ Usage: enaddr [-v] [<ifc> [default | <ifaddr>] [+<addmcast>] [-<delmcast>]]\n\
    Set up for eventual extraction into a separate module
  */
 
-#if 1	/* ENADDR */
-# define LOG_EOL "\n"
-# undef  LOG_DP
-# define LOG_PROGNAME "enaddr"
-# define DP_DBGFLG debugf
-#else
-# define LOG_EOL "\r\n"
-# define LOG_DP dp
-# if KLH10_SIMP
-#  define LOG_PROGNAME "simp"
-# elif KLH10_DEV_DPIMP
-#  define LOG_PROGNAME "dpimp"
-# elif KLH10_DEV_DPNI20
-#  define LOG_PROGNAME "dpni20"
-# endif
-#endif
+#define LOG_EOL "\n"
+#undef  LOG_DP
+#define LOG_PROGNAME "enaddr"
+#define DP_DBGFLG debugf
 
 #if 1	/* Error and diagnostic stuff */
-
-#if CENV_SYSF_STRERROR
-# include <string.h>		/* For strerror() */
-#endif
 
 /* Error and diagnostic output */
 
 static const char *log_progname = LOG_PROGNAME;
 
-char *log_strerror(err)
+char *log_strerror(int err)
 {
     if (err == -1 && errno != err)
 	return log_strerror(errno);
-#if CENV_SYSF_STRERROR
+#if HAVE_STRERROR
     return strerror(err);
 #else
-#  if CENV_SYS_UNIX
+# if HAVE_SYS_ERRLIST
     {
-#  if !CENV_SYS_XBSD		/* Already in signal.h */
+#  if DECL_SYS_ERRLIST
 	extern int sys_nerr;
 	extern char *sys_errlist[];
 #  endif
 	if (0 < err &&  err <= sys_nerr)
 	    return sys_errlist[err];
     }
-#  endif
+# endif /* HAVE_SYS_ERRLIST */
     if (err == 0)
 	return "No error";
     else {
@@ -166,7 +154,7 @@ char *log_strerror(err)
 	sprintf(ebuf, "Unknown-error-%d", err);
 	return ebuf;
     }
-#endif /* !CENV_SYSF_STRERROR */
+#endif /* !HAVE_STRERROR */
 }
 
 
@@ -265,11 +253,13 @@ static void logfatal_ser(int num, char *fmt, ...)
 #endif /* Error and Diagnostic stuff */
 
 
+int
 main(int argc, char **argv)
 {
     int i;
     ossock_t s;
     char ebuf[32];
+    struct pfdata pfdata;
 
     if (argc < 2) {
 	printf("%s", usage);
@@ -323,10 +313,12 @@ main(int argc, char **argv)
 	}
     }
 
+    printf("Supported network interface methods:%s\n", osn_networking);
+
     /* First, show interface info if desired */
-    if (debugf) {
-	osn_iftab_init(IFTAB_ALL);
-    }
+    osn_iftab_init();
+
+    pfdata.pf_meth = PF_METH_NONE;
 
     /* Now mung interface if one given */
     if (ifc) {
@@ -337,7 +329,8 @@ main(int argc, char **argv)
 	}
 
 	/* Read the default and current MAC address */
-	(void) osn_ifeaget(s, ifc, pa_cur, pa_def);
+	(void) osn_ifealookup(ifc, pa_cur); /* pa_def not looked up */
+
 
 	/* Print the MAC addresses */
 	penetaddr(ifc, pa_cur, pa_def);
@@ -347,10 +340,11 @@ main(int argc, char **argv)
 		   ifc, sprinteth(ebuf, pa_cur), enstr);
 
 	    /* Setup the new MAC address - use default or new */
-	    (void) osn_ifeaset(s, ifc, (endef ? pa_def : pa_new));
+	    (void) osn_ifeaset(&pfdata, s, ifc, (endef ? pa_def : pa_new));
 
 	    /* Read back to confirm */
-	    (void) osn_ifeaget(s, ifc, pa_cur, pa_def);
+	    osn_iftab_init();
+	    (void) osn_ifealookup(ifc, pa_cur); /* pa_def not looked up */
 	    penetaddr(ifc, pa_cur, pa_def);
 	}
 
@@ -360,7 +354,7 @@ main(int argc, char **argv)
 		    (mcat[i].mcdel ? " Deleting" : "   Adding"),
 		    sprinteth(ebuf, mcat[i].mcaddr));
 
-	    if (!osn_ifmcset(s, ifc, mcat[i].mcdel, mcat[i].mcaddr)) {
+	    if (!osn_ifmcset(&pfdata, s, ifc, mcat[i].mcdel, mcat[i].mcaddr)) {
 		printf(" ... failed: %s", log_strerror(errno));
 		/* Continue anyway.  Note that delete can fail harmlessly
 		   if mcat address is already gone.
@@ -374,7 +368,7 @@ main(int argc, char **argv)
 	    printf("Setting promiscuous mode to %s... ",
 		   (promiscon ? "ON" : "OFF"));
 	    fflush(stdout);
-	    if (!osn_ifmcset(s, ifc, !promiscon, NULL)) {
+	    if (!osn_ifmcset(&pfdata, s, ifc, !promiscon, NULL)) {
 		printf(" failed\n");
 		/* Continue anyway */
 	    } else
@@ -429,19 +423,21 @@ static int pareth(char *cp, unsigned char *adr)
 /* Include OSDNET code, faking out unneeded packetfilter inits
  * XXX: clean this up in future OSDNET.
  */
-struct fakepf { int foo; };
-#define OSN_PFSTRUCT fakepf
 
-struct OSN_PFSTRUCT *
+#define OSN_PFSTRUCT bpf_program
+
+struct bpf_program *
 pfbuild(void *arg, struct in_addr *ipa)
 {
     return NULL;
 }
-struct OSN_PFSTRUCT *
+struct bpf_program *
 pfeabuild(void *arg, unsigned char *ea)
 {
     return NULL;
 }
+
+#define IFNAM_LEN	16	/* at least IFNAMSIZ! */
 
 #include "osdnet.c"
 

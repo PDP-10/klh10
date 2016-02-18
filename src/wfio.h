@@ -51,9 +51,12 @@ enum wftypes {
 };
 
 #if CENV_SYSF_LFS > 0
+/* wfoff_t is always signed: off_t and long are both signed. */
 typedef off_t wfoff_t;
+# define WFOFF_FMT	CENV_SYSF_LFS_FMT
 #else
 typedef long wfoff_t;
+# define WFOFF_FMT	"l"
 #endif
 
 struct wfile {

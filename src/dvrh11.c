@@ -564,7 +564,7 @@ rh11_write(struct device *d, uint18 addr, register dvureg_t val)
 
 	rh->rh_cs2 = ((rh->rh_cs2)&~RH_YDSK) | drvno;
 	rh->rh_ds = drvno;
-	if (rh->rh_dsptr = rh->rh_drive[drvno]) {
+	if ((rh->rh_dsptr = rh->rh_drive[drvno])) {
 	    rh->rh_cs2 &= ~RH_YNED;	/* Drive exists */
 	} else {
 	    rh->rh_cs2 |= RH_YNED;	/* Non-ex drive */

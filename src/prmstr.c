@@ -394,7 +394,7 @@ s_towd(char *str,
     long num;			/* Known to be at least 32 bits */
     register char *cp;
 
-    if (cp = strchr(str, ',')) {
+    if ((cp = strchr(str, ','))) {
 	*cp++ = 0;
 	if (*cp == ',') cp++;
 	if (s_tonum(str, &num))
@@ -464,7 +464,7 @@ prm_next(register struct prmstate_s *p)
 	return PRMK_DONE;	/* No more tokens, input done! */
 
     /* Split off value, if any */
-    if (p->prm_val = strchr(cp, '='))
+    if ((p->prm_val = strchr(cp, '=')))
 	*(p->prm_val)++ = '\0';
 
     /* Look up name in keyword table */
@@ -505,7 +505,7 @@ s_xkeylookup(char *cp,			/* Keyword to look up */
     k1 = k2 = NULL;
     kx1 = kx2 = PRMK_NONE;
     if (*cp) {
-      for (kidx = 0; ts = ((struct prmkey_s *)keytab)->prmk_key;
+      for (kidx = 0; (ts = ((struct prmkey_s *)keytab)->prmk_key);
 			kidx++,
 			keytab = (voidp_t)(((char *)keytab) + keysiz)) {
 	switch (s_match(cp, ts)) {
@@ -679,7 +679,7 @@ s_match(register char *s1,
 {
     register int c1, c2;
 
-    while (c1 = *s1++) {
+    while ((c1 = *s1++)) {
 	if (isupper(c1))		/* Must test with isupper cuz some */
 	    c1 = tolower(c1);		/* implementations fuck up otherwise */
 	if (isupper(c2 = *s2++))
@@ -701,7 +701,7 @@ s_dup(register char *s)
 
     if (!s)
 	return NULL;
-    if (cp = (char *)malloc(strlen(s)+1))
+    if ((cp = (char *)malloc(strlen(s)+1)))
 	strcpy(cp, s);
     return cp;
 }
