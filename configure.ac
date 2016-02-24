@@ -10,6 +10,19 @@ AC_INIT([klh10], [2.0j-Rhialto], [https://github.com/Rhialto/klh10],
 AC_CONFIG_SRCDIR([src/klh10.h])
 AC_CONFIG_HEADERS([src/config.h])
 
+# Check that we're using a build directory, and are not building in
+# between the source. It is cleaner that way.
+# Configure has already set up $srcdir to be equal to . if it detected
+# an in-tree build.
+
+if test "$srcdir" = "."
+then
+    AC_MSG_ERROR(
+[Please create a temporary (sub)directory to build in.
+You can call this configure script using a absolute or relative
+path from there.])
+fi
+
 # Filter CFLAGS; the default is something like -g -O2 and we want -g3 -O3.
 NEWCFLAGS=""
 for cf in $CFLAGS
@@ -49,7 +62,7 @@ case "${enable_bridge}" in
     yes | "") ;;
     no)  AC_DEFINE(KLH10_NET_BRIDGE, 0, [Set to 0 to disable bridge networking])
          AC_MSG_NOTICE([Compiling without bridge support]) ;;
-    *)   AC_MSG_ERROR([bad value ${enableval} for --enable-bridge]) ;;
+    *)   AC_MSG_ERROR([bad value ${enable_bridge} for --enable-bridge]) ;;
 esac
 
 # Checks for programs.
@@ -154,7 +167,7 @@ typedef char vaddr_t;
 ])
 
 # -------------------------------------------------------------------------
-# Check how to replace strerror() if needed
+# Check how to replace strerror() if needed.
 # -------------------------------------------------------------------------
 
 AC_MSG_CHECKING([whether sys_errlist exists])
@@ -201,7 +214,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 ])
 
 # -------------------------------------------------------------------------
-# Check large file support and the sizes of related types
+# Check large file support and the sizes of related types.
 # -------------------------------------------------------------------------
 
 AC_SYS_LARGEFILE
@@ -217,7 +230,7 @@ else
 fi
 
 # -------------------------------------------------------------------------
-# Output section. State which @VARIABLES@ are going to be substituted
+# Output section. State which @VARIABLES@ are going to be substituted.
 # -------------------------------------------------------------------------
 
 AH_TOP([
@@ -240,7 +253,7 @@ AC_SUBST([MAKEFILE], [Makefile])
 AC_SUBST([CENVFLAGS])
 
 # -------------------------------------------------------------------------
-# Output section. State which files are going to be constructed
+# Output section. State which files are going to be constructed.
 # -------------------------------------------------------------------------
 
 AC_CONFIG_FILES([bld-kl/Makefile:mk/top.mk:mk/top-kl.mk:src/Makefile.mk
