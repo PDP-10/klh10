@@ -239,7 +239,8 @@ static void tm_attn(struct tmdev *tm);
 static void tm_ssint(struct tmdev *tm);
 static void tm_space(struct tmdev *tm, int revf);
 static int  tm_io(struct tmdev *tm, int dirf);
-static void tm_ssel(struct tmdev *tm), tm_ssta(struct tmdev *tm);
+static void tm_ssel(struct tmdev *tm);
+static void tm_ssta(struct tmdev *tm);
 static int  tm_filbuf(struct tmdev *tm);
 static int  tm_flsbuf(struct tmdev *tm, int revf);
 static void tm_showbuf(struct tmdev *tm,
@@ -1668,9 +1669,15 @@ tm_cmddon(register struct tmdev *tm)
             ** Use the dp status, rather than the register, in case the OS
             ** happens to have another slave selected, as TOPS-20 will initially.
             */
+#if KLH10_DEV_DPTM03
+	    int mounted = tm->tm_sdptm->dptm_mol;
+#else
+	    int mounted = vmt_ismounted(&(tm->tm_vmt));	/* Get state */
+#endif /* KLH10_DEV_DPTM03 */
+
 	    fprintf(DVDBF(tm), "[%s: Tape %s]\r\n",
 		    tm->tm_dv.dv_name,
-		    (tm->tm_sdptm->dptm_mol) ? "online" : "offline");
+		    mounted ? "online" : "offline");
 	}
 	TMREG(tm, RHR_STS) |= TM_SSSC;	/* Set SSC - slave changed state */
 	tm_attn(tm);
