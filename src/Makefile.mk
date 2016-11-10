@@ -64,12 +64,13 @@ MAKE_CENV ?=
 CENVFLAGS ?=
 CONFFLAGS ?=
 CONFFLAGS_AUX ?=
+CONFFLAGS_USR ?=
 
 MAKEFILE ?= $(SRC)/Makefile.mk
 
 MAKER = make -f $(MAKEFILE) $(MAKE_CENV)
 BUILDMOD = $(CC) $(CFLAGS) $(CFLAGS_AUX) $(CPPFLAGS) \
-	$(CENVFLAGS) $(CONFFLAGS) $(CONFFLAGS_AUX)
+	$(CENVFLAGS) $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)
 
 
 ## Default if no target given to make.
@@ -111,6 +112,7 @@ showdefs:
 	@echo "CENVFLAGS = $(CENVFLAGS)"
 	@echo "CONFFLAGS = $(CONFFLAGS)"
 	@echo "CONFFLAGS_AUX = $(CONFFLAGS_AUX)"
+	@echo "CONFFLAGS_USR = $(CONFFLAGS_USR)"
 	@echo "BUILDMOD = $(BUILDMOD)"
 	@echo "KLH10_HOME = $(KLH10_HOME)"
 
@@ -336,6 +338,7 @@ base-ks-its:
 		-DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 		-DKLH10_CLIENT=\\\"MyITS\\\" \
 		$(CONFFLAGS_AUX) \
+		$(CONFFLAGS_USR) \
 		-DVMTAPE_ITSDUMP=1 "
 
 
@@ -362,7 +365,8 @@ base-ks:
 		$(DINTFLAGS) \
 		-DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 		-DKLH10_CLIENT=\\\"MyKS\\\" \
-		$(CONFFLAGS_AUX) "
+		$(CONFFLAGS_AUX) \
+		$(CONFFLAGS_USR) "
 
 # Standard setup for KL (TOPS-10 and TOPS-20)
 #
@@ -389,7 +393,8 @@ base-kl:
 		-DKLH10_CTYIO_INT=1	\
 		-DKLH10_APRID_SERIALNO=3600 \
 		-DKLH10_CLIENT=\\\"MyKL\\\" \
-		$(CONFFLAGS_AUX) "
+		$(CONFFLAGS_AUX) \
+		$(CONFFLAGS_USR) "
 
 ###
 # On Sat, 26 Dec 2009, Jean-Marc Bourguet posted:
@@ -428,7 +433,7 @@ lint-ks-its:
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX)"
+	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
 
 lint-ks:
 	$(MAKER) kn10-ks $(DPROCS_KS) $(BASE_UTILS) \
@@ -440,7 +445,7 @@ lint-ks:
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX)"
+	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
 
 lint-kl:
 	$(MAKER) kn10-kl $(DPROCS_KL) $(BASE_UTILS) uexbconv \
@@ -452,7 +457,7 @@ lint-kl:
 	    "LIBS = $(LIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX)"
+	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
 
 
 ####################################################################
@@ -480,7 +485,8 @@ port-ks:
 		-DKLH10_RTIME_SYNCH=1	\
 		-DKLH10_APRID_SERIALNO=4097 -DKLH10_DEVMAX=12 \
 		-DKLH10_CLIENT=\\\"MyKS\\\" \
-		$(CONFFLAGS_AUX) "
+		$(CONFFLAGS_AUX) \
+		$(CONFFLAGS_USR) "
 
 
 # Build KL0 with KI paging, for running diagnostics.
@@ -511,7 +517,8 @@ kl0i-sync:
 		-DKLH10_RTIME_SYNCH=1	\
 		-DKLH10_ITIME_SYNCH=1	\
 		-DKLH10_CTYIO_INT=0 \
-		$(CONFFLAGS_AUX) "
+		$(CONFFLAGS_AUX) \
+		$(CONFFLAGS_USR) "
 
 # KL0 with KI paging - Realtime & optimized, good for timing diagnostics.
 #
@@ -536,7 +543,8 @@ kl0i-rtmopt:
 		-DKLH10_RTIME_OSGET=1	\
 		-DKLH10_ITIME_INTRP=1	\
 		-DKLH10_CTYIO_INT=0 \
-		$(CONFFLAGS_AUX) "
+		$(CONFFLAGS_AUX) \
+		$(CONFFLAGS_USR) "
 
 
 ####################################################################
