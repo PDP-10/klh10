@@ -2759,6 +2759,7 @@ fc_dump(struct cmd_s *cm)
 }
 
 
+#if KLH10_DEV_LITES
 /* FC_LIGHTS - Sets console lights I/O base address
 ** Currently only allow LPT1 and LPT2 ports on PC.
 */
@@ -2784,6 +2785,7 @@ fc_lights(struct cmd_s *cm)
     }
     printf("?Bad address\n");
 }
+#endif
 
 /* Instruction printing routines */
 

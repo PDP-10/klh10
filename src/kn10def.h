@@ -235,7 +235,8 @@ typedef int     pcinc_t;	/* Type of all instruction routines */
 #if KLH10_EXTADR
 # define PC_ADDXCT(x) { register pcinc_t i__ = (x); if (i__) PC_ADD(i__); }
 #else
-# define PC_ADDXCT(x) (cpu.mr_PC += (x))	/* For now; fix up later? */
+/* # define PC_ADDXCT(x) (cpu.mr_PC += (x))	/* For now; fix up later? */
+# define PC_ADDXCT(x) { register pcinc_t i__ = (x); cpu.mr_PC += i__; } /* gcc4 fix by Roch Kusiak */
 #endif
 
 /* Macros for putting PC into a word.

@@ -27,7 +27,7 @@ CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
 		-Wmissing-declarations -Wredundant-decls
 
 # Source definitions
-CENVFLAGS = -DCENV_CPU_I386=1 -DCENV_SYS_FREEBSD=1
+CENVFLAGS = -DCENV_CPU_I686=1 -DCENV_SYS_FREEBSD=1
 
 # Any target with no customized rule here is simply passed on to the
 # standard Makefile.  If no target is specified, "usage" is passed on
@@ -39,7 +39,7 @@ usage:
 install:
 	@make -f $(SRC)/Makefile.mk install-unix
 
-$(.TARGETS):
+kn10-ks kn10-kl base-ks-its base-ks base-kl lint-ks-its lint-ks lint-kl port-ks kl0i-sync kl0i-rtmopt tapedd vdkfmt wxtest wfconv udlconv uexbconv enaddr dlmunch clean:
 	@make -f $(SRC)/Makefile.mk $@ \
 	    "SRC=$(SRC)" \
 	    "CFLAGS=$(CFLAGS)" \
