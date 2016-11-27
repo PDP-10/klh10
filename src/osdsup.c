@@ -1620,7 +1620,7 @@ os_mmcreate(register size_t memsiz,
     ** Note shmget will lose grossly if on a system where its size arg
     ** (defined as a u_int) is less than 32 bits!
     */
-    if ((shmid = shmget(IPC_PRIVATE, (u_int)memsiz, 0600)) == -1) {
+    if ((shmid = shmget(IPC_PRIVATE, (u_int)memsiz, IPC_CREAT|IPC_R|IPC_W)) == -1) {
 	fprintf(stderr, "[os_mmcreate: shmget failed for %ld bytes - %s]\n",
 			    (long)memsiz, os_strerror(errno));
 	return FALSE;
