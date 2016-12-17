@@ -1619,7 +1619,16 @@ os_mmcreate(register size_t memsiz,
     /* Create a shared mem seg.  Set perms to owner-only RW.
     ** Note shmget will lose grossly if on a system where its size arg
     ** (defined as a u_int) is less than 32 bits!
+    ** POSIX doesn't define symbolic constants for the permissions
+    ** but in http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_07_01
+    ** does define the values, which match plain file permission bits.
     */
+#ifndef IPC_R
+#define IPC_R 0400
+#endif
+#ifndef IPC_W
+#define IPC_W 0200
+#endif
     if ((shmid = shmget(IPC_PRIVATE, (u_int)memsiz, IPC_CREAT|IPC_R|IPC_W)) == -1) {
 	fprintf(stderr, "[os_mmcreate: shmget failed for %ld bytes - %s]\n",
 			    (long)memsiz, os_strerror(errno));
