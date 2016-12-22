@@ -1,3 +1,4 @@
+/configure
 bld/*/*.h
 bld/*/*.o
 bld/*/dpimp
@@ -16,4 +17,5 @@ config.status
 autom4te.cache
 new
 src/tags
+src/config.h.in
 tmp*/*
