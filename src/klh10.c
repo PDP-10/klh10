@@ -239,6 +239,8 @@ CMDDEF(cd_help,  fc_help,   CMRF_TOKS,	NULL,
 				"Basic help", "")
 CMDDEF(cd_quit,  fc_quit,   CMRF_NOARG,	NULL,
 				"Quit emulator", "")
+CMDDEF(cd_rquit, fc_rquit,  CMRF_NOARG,	NULL,
+				"Really quit!", "")
 CMDDEF(cd_load,  fc_load,   CMRF_TOKS,	"<file>",
 				"Load binary into KN10", "")
 CMDDEF(cd_dump,  fc_dump,   CMRF_TOKS,	"<file>",
@@ -330,6 +332,7 @@ KEYSBEGIN(fectbkeys)
     KEYDEF("help",	cd_help)
     KEYDEF("exit",	cd_quit)
     KEYDEF("quit",	cd_quit)
+    KEYDEF("really-quit",	cd_rquit)
     KEYDEF("load",	cd_load)
     KEYDEF("dump",	cd_dump)
     KEYDEF("go",	cd_go)
@@ -604,6 +607,14 @@ fc_quit(struct cmd_s *cm)
     mem_term();		/* Flush memory in case shared */
 
     printf("Bye!\n");
+    os_exit(0);
+}
+
+void
+fc_rquit(struct cmd_s *cm)
+{
+    dev_term();
+    mem_term();
     os_exit(0);
 }
 
