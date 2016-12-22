@@ -1,0 +1,12 @@
+language: c
+dist: trusty
+sudo: required
+install: true
+script:
+  - ./autogen.sh
+  - mkdir tmp
+  - cd tmp
+  - ../configure
+  - make base-kl
+  - cd ../run/dfkfb
+  - ../../tmp/bld-kl/kn10-kl dfkfb.ini
