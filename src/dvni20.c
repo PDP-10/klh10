@@ -789,10 +789,10 @@ ni20_reset(struct device *d)
 static void
 ni20_quit(struct ni20 *ni)
 {
-    struct dpx_s *dpx = &(ni->ni_dp.dp_adr->dpc_frdp);
+    struct dpx_s *dpx = &(ni->ni_dp.dp_adr->dpc_todp);
 
     /* Make sure we can send the message, or just skip it if not */
-    if (ni->ni_dpstate) {
+    if (ni->ni_dpstate && ni->ni_dp.dp_chpid) {
 	if (DVDEBUG(ni))
 	    fprintf(NIDBF(ni), " [Sending QUIT to NI20]");
 
@@ -802,7 +802,7 @@ ni20_quit(struct ni20 *ni)
 	}
     } else {
 	if (DVDEBUG(ni))
-	    fprintf(NIDBF(ni), "[No need to send QUIT to NI20]");
+	    fprintf(NIDBF(ni), "[No need to send QUIT to NI20; pid=%d, state=%d]", ni->ni_dp.dp_chpid, ni->ni_dpstate);
     }
 }
 
