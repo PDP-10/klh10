@@ -55,6 +55,7 @@ static int decosfcclossage;
 #include "kn10dev.h"
 #include "kn10ops.h"
 #include "dvni20.h"
+#include "cmdline.h"
 #include "prmstr.h"	/* For parameter parsing */
 
 #if KLH10_DEV_DPNI20	/* Event handling and dev sub-proc stuff! */
@@ -238,6 +239,7 @@ static w10_t ni20_datai(struct device *d);
 static int   ni20_init(struct device *d, FILE *of);
 static void  ni20_reset(struct device *d);
 static void  ni20_powoff(struct device *d);
+static int   ni20_cmd(struct device *d, FILE *of, char *cmdline);
 #if KLH10_DEV_DPNI20
 static void  ni20_evhsdon(struct device *d, struct dvevent_s *evp);
 static void  ni20_evhrwak(struct device *d, struct dvevent_s *evp);
@@ -327,22 +329,16 @@ static char *niprmtab[] = {
 static int pareth(char *cp, unsigned char *adr);
 static int parip(char *cp, unsigned char *adr);
 
-/* NI20_CONF - Parse configuration string and set defaults.
-**	At this point, device has just been created, but not yet bound
-**	or initialized.
-** NOTE that some strings are dynamically allocated!  Someday may want
-** to clean them up nicely if config fails or device is uncreated.
+/* Set defaults for all configurable parameters
 */
-
 static int
-ni20_conf(FILE *f, char *s, struct ni20 *ni)
+ni20_conf_clear(struct ni20 *ni)
 {
     int i, ret = TRUE;
     struct prmstate_s prm;
     char buff[200];
     long lval;
 
-    /* First set defaults for all configurable parameters */
     DVDEBUG(ni) = FALSE;
     ni->ni_ifnam = NULL;
     ni->ni_ifmeth = NULL;
@@ -363,6 +359,22 @@ ni20_conf(FILE *f, char *s, struct ni20 *ni)
     ni->ni_dpidly = 5;		/* Conservative 5-second timeout for T10/T20 */
     ni->ni_dpdbg = FALSE;
 #endif
+}
+
+/* NI20_CONF - Parse configuration string and set defaults.
+**	At this point, device has just been created, but not yet bound
+**	or initialized.
+** NOTE that some strings are dynamically allocated!  Someday may want
+** to clean them up nicely if config fails or device is uncreated.
+*/
+
+static int
+ni20_conf(FILE *f, char *s, struct ni20 *ni)
+{
+    int i, ret = TRUE;
+    struct prmstate_s prm;
+    char buff[200];
+    long lval;
 
     prm_init(&prm, buff, sizeof(buff),
 		s, strlen(s),
@@ -620,12 +632,14 @@ dvni20_create(FILE *f, char *s)
     ni->ni_dv.dv_coni = ni20_coni;
     ni->ni_dv.dv_datao = ni20_datao;
     ni->ni_dv.dv_datai = ni20_datai;
+    ni->ni_dv.dv_cmd = ni20_cmd;
 
     ni->ni_dv.dv_bind = NULL;		/* Not a controller!! */
     ni->ni_dv.dv_init = ni20_init;	/* Set up own post-bind init */
     ni->ni_dv.dv_reset = ni20_reset;	/* System reset (clear stuff) */
     ni->ni_dv.dv_powoff = ni20_powoff;	/* Power-off cleanup */
 
+    ni20_conf_clear(ni);		/* Set all defaults */
     if (!ni20_conf(f, s, ni))		/* Do configuration stuff */
 	return NULL;
 
@@ -769,7 +783,7 @@ ni20_reset(struct device *d)
     ni20_clear((struct ni20 *)d);
 }
 
-/* NI20_QUIT - Tells the IMP process to quit
+/* NI20_QUIT - Tells the DPNI20 process to quit
 ** and clean up resources such as networking tunnels.
 */
 static void
@@ -3442,6 +3456,172 @@ ni20_ioend(register struct device *drv,
     /* Now if no errors, check for secondary TCR and initiate it? */
 }
 #endif /* 0 */
+
+/*
+** "dev ni0 xxx" subcommands
+*/
+
+struct cmd_ni20_s {
+    struct cmd_s	ni20_cmd;
+    struct ni20		*ni20_dev;
+    FILE		*ni20_of;
+};
+
+CMDDEF(cd_ques,  fc_ques,   CMRF_NOARG,	NULL,
+				"How to get help for the DEV NIx subcommand", "")
+CMDDEF(cd_help,  fc_help,   CMRF_TOKS,	NULL,
+				"Basic help for the DEV NIx subcommands", "")
+CMDDEF(cd_init,  fc_init,  CMRF_NOARG,	NULL,
+				"Initialize the NI20 unit", "")
+CMDDEF(cd_start, fc_start,  CMRF_NOARG,	NULL,
+				"Start the NI20 unit", "")
+CMDDEF(cd_stop,  fc_stop,   CMRF_NOARG,	NULL,
+				"Stop the NI20 unit", "")
+CMDDEF(cd_powoff,fc_powoff, CMRF_NOARG,	NULL,
+				"Power the NI20 unit off", "")
+CMDDEF(cd_set,   fc_set,    CMRF_TLIN,	NULL,
+				"Dynamically change config settings (not all will work!)", "")
+#if KLH10_DEV_DPNI20
+CMDDEF(cd_dpquit,fc_dpquit, CMRF_NOARG,	NULL,
+				"Tell the Device Proc to quit", "")
+CMDDEF(cd_dpstart,fc_dpstart,CMRF_NOARG,	NULL,
+				"Start the Device Process for the NI20 unit", "")
+#endif /* KLH10_DEV_DPNI20 */
+
+KEYSBEGIN(ni20keys)
+    KEYDEF("?",		cd_ques)
+    KEYDEF("help",	cd_help)
+    KEYDEF("init",	cd_init)
+    KEYDEF("start",	cd_start)
+    KEYDEF("stop",	cd_stop)
+    KEYDEF("powoff",	cd_powoff)
+    KEYDEF("set",	cd_set)
+#if KLH10_DEV_DPNI20
+    KEYDEF("dpstart",	cd_dpstart)
+    KEYDEF("dpquit",	cd_dpquit)
+#endif /* KLH10_DEV_DPNI20 */
+KEYSEND
+
+static int
+ni20_cmd(struct device *d, FILE *of, char *cmdline)
+{
+    static struct cmd_ni20_s ni20_command;
+    static char cmdbuf[CMDBUFLEN];	/* Original command string buffer */
+
+    ni20_command.ni20_dev = (struct ni20 *)d;
+    ni20_command.ni20_of = of;
+
+    cmdinit(&ni20_command.ni20_cmd, ni20keys, "NI20> ",
+	    cmdbuf, sizeof(cmdbuf));
+    cmdlcopy(&ni20_command.ni20_cmd, cmdline);
+    cmdexec(&ni20_command.ni20_cmd);
+}
+
+
+static void
+fc_ques(struct cmd_s *cm)
+{
+    fc_gques(cm);
+}
+
+static void
+fc_help(struct cmd_s *cm)
+{
+    fc_ghelp(cm);
+}
+
+static void
+fc_init(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+
+    ni20_init(&cm->ni20_dev->ni_dv, cm->ni20_of);
+}
+
+static void
+fc_start(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+
+    ni20_start(cm->ni20_dev);
+}
+
+static void
+fc_stop(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+
+    ni20_stop(cm->ni20_dev);
+}
+
+static void
+fc_powoff(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+
+    ni20_powoff(&cm->ni20_dev->ni_dv);
+}
+
+static void
+fc_set(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+
+    ni20_conf(cm->ni20_of, cm0->cmd_arglin, cm->ni20_dev);
+}
+
+#if KLH10_DEV_DPNI20
+
+static void
+fc_dpstart(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+    struct ni20 *ni = cm->ni20_dev;
+    FILE *of = cm->ni20_of;
+
+    fprintf(of, "[starting DP \"%s\"...", ni->ni_dpname);
+
+    /* HORRIBLE UGLY HACK: for AXP OSF/1 and perhaps other systems,
+    ** the virtual-runtime timer of setitimer() remains in effect even
+    ** for the child process of a fork()!  To avoid this, we must
+    ** temporarily turn the timer off, then resume it after the fork
+    ** is safely out of the way.
+    **
+    ** Otherise, the timer would go off and the unexpected signal would
+    ** chop down the DP subproc without any warning!
+    **
+    ** Later this should be done in DPSUP.C itself, when I can figure a
+    ** good way to tell whether the code is part of the KLH10 or a DP
+    ** subproc.
+    */
+    clk_suspend();			/* Clear internal clock if one */
+    int res = dp_start(&ni->ni_dp, ni->ni_dpname);
+    clk_resume();			/* Resume internal clock if one */
+
+    if (!res) {
+	fprintf(of, " Start of DP \"%s\" failed!]\r\n",
+				ni->ni_dpname);
+    } else {
+	fprintf(of, " started!]\r\n");
+    }
+
+    /* Set state to "running", assume disabled.
+    */
+    ni->ni_state = NI20_ST_RUN;		/* Running disabled */
+    ni->ni_dpstate = TRUE;		/* Not quite matching other uses,
+					 * but required for dpquit() */
+}
+
+static void
+fc_dpquit(struct cmd_s *cm0)
+{
+    struct cmd_ni20_s *cm = (struct cmd_ni20_s *)cm0;
+
+    ni20_quit(cm->ni20_dev);
+}
+
+#endif /* KLH10_DEV_DPNI20 */
+
 
 /* Massbus Data Channel routines.
 **

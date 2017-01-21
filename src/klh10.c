@@ -56,6 +56,7 @@
 #include "wfio.h"
 #include "fecmd.h"
 #include "feload.h"
+#include "cmdline.h"
 #include "prmstr.h"
 #include "dvcty.h"	/* For cty_ functions */
 
@@ -151,87 +152,15 @@ static int cminchar(void);	/* Funct to read from file or TTY */
 
 #define CMDQCHAR '\\'	/* Quote char for token parsing */
 
-#ifndef CMDBUFLEN
-# define CMDBUFLEN 512
-#endif
-#ifndef CMDMAXARG
-# define CMDMAXARG 10
-#endif
-
-struct cmd_s {
-	int cmd_flags;		/* State flags */
-	char *cmd_prm;		/* Pointer to command prompt */
-	char *cmd_buf;		/* Pointer to start of buffer */
-	size_t cmd_blen;	/* Size of buffer */
-	int cmd_left;		/* # chars left for current cmd being input */
-	char *cmd_inp;		/* Input deposit pointer */
-	char *cmd_rdp;		/* Readout pointer */
-	size_t cmd_rleft;	/* # chars left to read  */
-
-	/* Provide all command routines with their desired arguments */
-	char *cmd_arglin;	/* Original pointer to start of args on line */
-	int cmd_argc;			/* # of tokens */
-	char *cmd_argv[CMDMAXARG+1];	/* Array of token pointers */
-	char *cmd_tdp;			/* Next free loc in token buffer */
-	size_t cmd_tleft;		/* # chars free in token buffer  */
-	char cmd_tokbuf[CMDBUFLEN+CMDMAXARG];
-
-#if 0
-	char *cmd_wbf;		/* Pointer to work buffer */
-	size_t cmd_wblen;	/* Size in chars */
-	char *cmd_wbp;		/* Current deposit ptr */
-	size_t cmd_wbleft;	/* # chars left */
-#endif
-} command;
-
-#define CMDF_ACTIVE 01	/* Activation char seen, execute accumulated cmd */
-#define CMDF_INACCUM 02	/* In accumulation phase */
-#define CMDF_NOPRM 040	/* Disable prompt */
 
 static char cmdbuf[CMDBUFLEN];	/* Original command string buffer */
 #if 0
 static char cmdwbf[CMDBUFLEN];	/* Working buffer */
 #endif
 
-struct cmkey_s {
-	char *cmk_key;
-	union cmnode *cmk_p;
-};
-struct cmrtn_s {
-	void (*cmr_vect)(struct cmd_s *);  /* Function to call */
-	int cmr_flgs;		/* Misc flags */
-	char *cmr_synt;		/* Arg syntax */
-	char *cmr_help;		/* Short one-line help */
-	char *cmr_desc;		/* Long description */
-};
-
-#define CMRF_NOARG 01	/* Command takes no args */
-#define CMRF_TOKS  010	/* Command wants whole line tokenized, via cm */
-#define CMRF_TLIN  020	/* Command wants overall line arg, via cm */
-#define CMRF_CMPTR 040	/* Command wants just cmd state ptr */
-
-union cmnode {			/* All possible nodes for a keyword */
-	struct cmrtn_s cmn_rtn;
-};
-
-
-/* Predeclarations */
-void cmdinit(struct cmd_s *, char *, char *, size_t);
-int cmdexec(struct cmd_s *);
-int cmdaccum(struct cmd_s *);
-
-struct cmkey_s *cmdkeylookup(char *, struct cmkey_s *, struct cmkey_s **);
-char *cmdlsetup(struct cmd_s *);
 static void slinlim(char *);
 
-
-/* CMDDEF is used to define top-level commands.  It does not accumulate
-**	them into a table (C is far too puny for that) but gathers together
-**	various information that a higher-level table can then point to.
-*/
-#define CMDDEF(deflab, func, flgs, argsyn, minihelp, longdesc)	\
-    static void func(struct cmd_s *);				\
-    static struct cmrtn_s deflab = { func, flgs, argsyn, minihelp, longdesc };
+static struct cmd_s command;
 
 CMDDEF(cd_ques,  fc_ques,   CMRF_NOARG,	NULL,
 				"How to get help", "")
@@ -322,10 +251,6 @@ CMDDEF(cd_lights,  fc_lights,   CMRF_TLIN,	"<hexaddr>",
 				"Set console lights I/O base address", "")
 #endif
 
-
-#define KEYSBEGIN(name)	struct cmkey_s name[] = {
-#define KEYDEF(key,nod)   { key, (union cmnode *)(&nod) },
-#define KEYSEND		  { 0, 0 } };
 
 KEYSBEGIN(fectbkeys)
     KEYDEF("?",		cd_ques)
@@ -525,7 +450,7 @@ fe_cmdloop(void)
 
 	/* Determine new prompt if necessary */
 	if (cmdpromptnew || (omode != cpu.fe.fe_mode)) {
-	    cmdinit(&command, fe_cmprompt(cpu.fe.fe_mode),
+	    cmdinit(&command, fectbkeys, fe_cmprompt(cpu.fe.fe_mode),
 		    cmdbuf, sizeof(cmdbuf));
 	    omode = cpu.fe.fe_mode;
 	    prompted = FALSE;
@@ -836,10 +761,12 @@ static int cmdargs_all(struct cmd_s *cm);
 static int cmdargs_n(struct cmd_s *cm, int n);
 
 void cmdinit(struct cmd_s *cm,
+	     struct cmkey_s *keys,
 	     char *prompt,
 	     char *ibuf,
 	     size_t ilen)
 {
+    cm->cmd_keys = keys;
     cm->cmd_flags = 0;
     cm->cmd_prm = prompt;
     cm->cmd_buf = ibuf;
@@ -959,7 +886,7 @@ cmdexec(struct cmd_s *cm)
 
     /* Have token, see if it's a command */
     stolower(cp);			/* Force lowercase for lookup */
-    argc = s_keylookup(cp, fectbkeys, sizeof(struct cmkey_s),
+    argc = s_keylookup(cp, cm->cmd_keys, sizeof(struct cmkey_s),
 		      (void *)&key, (void *)&key2);
     if (argc <= 0) {
 	printf("Unknown command: \"%s\"\n", cp);
@@ -1005,7 +932,10 @@ cmdexec(struct cmd_s *cm)
     return 1;
 }
 
-
+/*
+** Fetch a command line from the front end console, or from a command
+** file.
+*/
 char *
 cmdlsetup(struct cmd_s *cm)
 {
@@ -1048,6 +978,30 @@ cmdlsetup(struct cmd_s *cm)
     cm->cmd_inp += len;
 
     return cp;
+}
+
+/* CMDLCOPY - Copy a command line into the previously indicated buffer.
+*/
+char *
+cmdlcopy(struct cmd_s *cm, char *line)
+{
+    int len = strlen(line);
+    if (len > cm->cmd_blen) {
+	len = cm->cmd_blen - 1;
+    }
+
+    if (cpu.fe.fe_debug)
+	fprintf(stderr, "[cmdlcopy]");
+
+    strncpy(cm->cmd_buf, line, len);
+    cm->cmd_buf[len] = '\0';
+
+    cm->cmd_rdp = cm->cmd_buf;
+    cm->cmd_inp = cm->cmd_buf + len;
+    cm->cmd_rleft = len;
+    cm->cmd_left = cm->cmd_blen - len;
+
+    return cm->cmd_buf;
 }
 
 
@@ -1158,6 +1112,12 @@ fc_ques(struct cmd_s *cm)
     printf("Type \"help\" or \"help <command>\" for help.\n");
 }
 
+void
+fc_gques(struct cmd_s *cm)
+{
+    fc_ques(cm);
+}
+
 static void
 helpline(register struct cmkey_s *kp)
 {
@@ -1187,13 +1147,13 @@ fc_help(struct cmd_s *cm)
     cp = cm->cmd_argv[0];
 
     if (!cp || !*cp) {		/* If no specific arg, show everything */
-	for (kp = fectbkeys; kp->cmk_key; ++kp) {
+	for (kp = cm->cmd_keys; kp->cmk_key; ++kp) {
 	    helpline(kp);
 	}
 	return;
     }
 
-    (void) s_keylookup(cp, (voidp_t)fectbkeys, sizeof(struct cmkey_s),
+    (void) s_keylookup(cp, (voidp_t)cm->cmd_keys, sizeof(struct cmkey_s),
 				(voidp_t *)&kp, (voidp_t *)&key2);
     if (!kp) {
 	printf("Unknown command: \"%s\"\n", cp);
@@ -1207,10 +1167,16 @@ fc_help(struct cmd_s *cm)
     }
 
     /* More than one match, show each one */
-    for (kp = fectbkeys; kp->cmk_key; ++kp) {
+    for (kp = cm->cmd_keys; kp->cmk_key; ++kp) {
 	if (smatch(cp, kp->cmk_key) > 0)
 	    helpline(kp);
     }
+}
+
+void
+fc_ghelp(struct cmd_s *cm)
+{
+    fc_help(cm);
 }
 
 /* SLINLIM - Limit string to 1 line by chopping it at first EOL seen.
