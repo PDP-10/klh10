@@ -1016,6 +1016,11 @@ The parameters for the NI20 driver are:
 	address is correctly selected and is different from that of the
 	host OS.
 
+[TUNADDR=<d.d.d.d>]	Default: <none>
+	When using IFMETH=tun, this will set the host-side address of the
+	tunnel. This should possibly be the address that the inner
+	operating system uses as its default gateway.
+
 [DOARP=<boolean>]	Default: TRUE
 	Only valid for a shared interface where IPADDR= is also specified.
 	DOARP says whether the driver should attempt to support ARP itself;
