@@ -561,7 +561,7 @@ set_proc_variable(char *template, char *ifname, char *value)
 
 #endif /* CENV_SYS_LINUX */
 
-/* OSN_ARP_STUFF - stuff emulated-host ARP entry into kernel.
+/* OSN_ARP_STUFF - stuff emulated-guest ARP entry into kernel.
 **	The code assumes that if an ARP entry already exists in the
 **	kernel for the given IP address, it will be reset to this new
 **	setting rather than (eg) failing.
@@ -890,7 +890,7 @@ osn_ifeaget2(char *ifnam,	/* Interface name */
     return TRUE;
 }
 
-static struct eth_addr emhost_ea = 	/* Emulated host ether addr for tap */
+static struct eth_addr emguest_ea = 	/* Emulated guest ether addr for tap */
     { 0xf2, 0x0b, 0xa4, 0xff, 0xff, 0xff };
 
 /* OSN_PFEAGET - get physical ethernet address for an open packetfilter FD.
@@ -911,13 +911,13 @@ osn_pfeaget(struct pfdata *pfdata,	/* Packetfilter data */
 	 * irrelevant, it is on the other side of the "wire".
 	 * Our own address is something we can make up completely.
 	 */
-	if (emhost_ea.ea_octets[5] == 0xFF) {
+	if (emguest_ea.ea_octets[5] == 0xFF) {
 	    time_t t = time(NULL);
-	    emhost_ea.ea_octets[5] =  t        & 0xFE;
-	    emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
-	    emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
+	    emguest_ea.ea_octets[5] =  t        & 0xFE;
+	    emguest_ea.ea_octets[4] = (t >>  8) & 0xFF;
+	    emguest_ea.ea_octets[3] = (t >> 16) & 0xFF;
 	}
-	ea_set(eap, &emhost_ea);	/* Return the ether address */
+	ea_set(eap, &emguest_ea);	/* Return the ether address */
 
 	return TRUE;
     }
@@ -1150,7 +1150,7 @@ osn_ifeaset(struct pfdata *pfdata,	/* Packetfilter data */
     if (pfdata->pf_meth == PF_METH_TAP ||
 	pfdata->pf_meth == PF_METH_VDE) {
 
-	ea_set(&emhost_ea, newpa);
+	ea_set(&emguest_ea, newpa);
 
 	return TRUE;
     }
@@ -1872,12 +1872,12 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
        address ranges reserved for LAN-only (non-Internet) use, such as
        10.0.0.44.
        However, if planning to allow other machines to access the virtual
-       host, probably best to use an address suitable for the same LAN
+       guest, probably best to use an address suitable for the same LAN
        subnet as the hardware host.
        Unclear yet whether it works to use the host's own address; it at
        least allows the configuration to happen.
 
-       Second address is "remote" -- the one the emulated host is using.
+       Second address is "remote" -- the one the emulated guest is using.
        It should probably match the same network as the local address,
        especially if planning to connect from other machines.
 
@@ -2365,13 +2365,13 @@ osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf)
     /* Now optionally determine ethernet address.
        This amounts to what if anything we should put in the native
        host's ARP tables.
-       - If we only intend to use the net between the virtual host and
+       - If we only intend to use the net between the virtual guest and
        its hardware host, then no ARP hackery is needed.
        - However, if the intent is to allow traffic between the virtual
-       host and other machines on the LAN or Internet, then an ARP
-       entry is required.  It must advertise the virtual host's IP
+       guest and other machines on the LAN or Internet, then an ARP
+       entry is required.  It must advertise the virtual guest's IP
        address, using one of the hardware host's ethernet addresses
-       so any packets on the LAN for the virtual host will at least
+       so any packets on the LAN for the virtual guest will at least
        wind up arriving at the hardware host it's running on.
      */
 
@@ -2391,13 +2391,13 @@ osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf)
 	 * irrelevant, it is on the other side of the "wire".
 	 * Our own address is something we can make up completely.
 	 */
-	if (emhost_ea.ea_octets[5] == 0xFF) {
+	if (emguest_ea.ea_octets[5] == 0xFF) {
 	    time_t t = time(NULL);
-	    emhost_ea.ea_octets[5] =  t        & 0xFE;
-	    emhost_ea.ea_octets[4] = (t >>  8) & 0xFF;
-	    emhost_ea.ea_octets[3] = (t >> 16) & 0xFF;
+	    emguest_ea.ea_octets[5] =  t        & 0xFE;
+	    emguest_ea.ea_octets[4] = (t >>  8) & 0xFF;
+	    emguest_ea.ea_octets[3] = (t >> 16) & 0xFF;
 	}
-	ea_set(&osnpf->osnpf_ea, &emhost_ea);	/* Return the ether address */
+	ea_set(&osnpf->osnpf_ea, &emguest_ea);	/* Return the ether address */
 
 	char *ifnam = osnpf->osnpf_ifnam; /* alias for the persisting copy */
 	struct ifent *tap_ife = osn_ifcreate(ifnam);
@@ -2415,11 +2415,11 @@ osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf)
 
     if (ife) {
 	/* Need to determine ether addr of our default interface, then
-	   publish an ARP entry mapping the virtual host to the same
+	   publish an ARP entry mapping the virtual guest to the same
 	   ether addr.
 	 */
 
-	/* Use emhost_ea as set up above */
+	/* Use emguest_ea as set up above */
     } else {
 	/* ARP hackery will be handled by IP masquerading and packet forwarding. */
 #if 1 /*OSN_USE_IPONLY*/ /* TOPS-20 does not like NI20 with made up address? */

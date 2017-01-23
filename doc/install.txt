@@ -1141,7 +1141,7 @@ The parameters for the NI20 driver are:
 
 NOTES:
 
-	* Before bringing up a KN10 as a network host, you will need to carry
+	* Before bringing up a KN10 as a network node, you will need to carry
 out all the usual procedures needed to register a host on your local network.
 The fact that the "host" will be virtual rather than physical may be hard to
 explain to bureaucratic minds; you don't need to try.  Just pretend it's for
@@ -1171,7 +1171,7 @@ some mechanism in the PDP-10 OS to stop and "reload" or restart the
 NI.  On TOPS-20 this is done with the <SYSTEM>KNILDR program.
 
 	* The most common problem with a shared interface is an
-inability for the virtual host (KN10) to talk with the native host; it
+inability for the virtual guest (KN10) to talk with the native host; it
 depends on whether the native OS allows outbound ethernet packets to
 be seen by other input processes, or vice versa.  Some platforms allow
 this (OSF/1), others don't (Solaris, Linux), and some used to but were
