@@ -1902,23 +1902,35 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 #else /* not CENV_SYS_LINUX */
     {
 	/* Internal method */
-	struct ifaliasreq ifra;
-	struct ifreq ifr;
 
-	/* Delete first (only) IP address for this device, if any.
-	   Ignore errors.
-	   */
-	memset(&ifr, 0, sizeof(ifr));
-	strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
-	if (ioctl(s, SIOCDIFADDR, &ifr) < 0) {
-	    if (DP_DBGFLG)
-		syserr(errno, "osn_pfinit_tuntap SIOCDIFADDR failed; usual for new interfaces.");
+	if (tt_ctx.my_tap || pfdata->pf_ip4_only) {
+	    /*
+	     * Delete first (only) IP address for this device, if any.
+	     * Ignore errors.
+	     * Don't do this on pre-existing taps, since they may have
+	     * an address for routing, and we don't want to foil that.
+	     */
+	    struct ifreq ifr;
+
+	    memset(&ifr, 0, sizeof(ifr));
+	    strncpy(ifr.ifr_name, ifnam, sizeof(ifr.ifr_name));
+
+	    if (ioctl(s, SIOCDIFADDR, &ifr) < 0) {
+		if (DP_DBGFLG)
+		    syserr(errno, "osn_pfinit_tuntap SIOCDIFADDR failed; usual for new interfaces.");
+	    }
+	    /* Later perhaps set some address as configured by the user
+	     * on the tap device... maybe from tunaddr=1.2.3.4 which is
+	     * in iplocal. But that needs finding the broadcast address.
+	     */
 	}
 
 	if (pfdata->pf_ip4_only) {
 	    /*
 	     * Then set the point-to-point addresses for the tunnel.
 	     */
+	    struct ifaliasreq ifra;
+
 	    memset(&ifra, 0, sizeof(ifra));
 	    strncpy(ifra.ifra_name, ifnam, sizeof(ifra.ifra_name));
 	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_len = sizeof(struct sockaddr_in);
