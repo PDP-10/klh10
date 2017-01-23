@@ -1933,12 +1933,17 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
 
 	    memset(&ifra, 0, sizeof(ifra));
 	    strncpy(ifra.ifra_name, ifnam, sizeof(ifra.ifra_name));
-	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_len = sizeof(struct sockaddr_in);
-	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_family = AF_INET;
-	    ((struct sockaddr_in *)(&ifra.ifra_addr))->sin_addr   = iplocal;
-	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_len = sizeof(struct sockaddr_in);
-	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_family = AF_INET;
-	    ((struct sockaddr_in *)(&ifra.ifra_broadaddr))->sin_addr   = ipremote;
+
+	    struct sockaddr_in *a = (struct sockaddr_in *)&ifra.ifra_addr;
+	    a->sin_len = sizeof(struct sockaddr_in);
+	    a->sin_family = AF_INET;
+	    a->sin_addr = iplocal;
+
+	    a = (struct sockaddr_in *)&ifra.ifra_broadaddr;
+	    a->sin_len = sizeof(struct sockaddr_in);
+	    a->sin_family = AF_INET;
+	    a->sin_addr = ipremote;
+
 	    if (ioctl(s, SIOCAIFADDR, &ifra) < 0) {
 		esfatal(1, "osn_pfinit_tuntap SIOCAIFADDR failed");
 	    }
