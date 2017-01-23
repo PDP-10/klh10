@@ -893,6 +893,18 @@ osn_ifeaget2(char *ifnam,	/* Interface name */
 static struct eth_addr emguest_ea = 	/* Emulated guest ether addr for tap */
     { 0xf2, 0x0b, 0xa4, 0xff, 0xff, 0xff };
 
+static
+void
+init_emguest_ea(void)
+{
+    if (emguest_ea.ea_octets[5] == 0xFF) {
+	time_t t = time(NULL);
+	emguest_ea.ea_octets[5] =  t        & 0xFE;
+	emguest_ea.ea_octets[4] = (t >>  8) & 0xFF;
+	emguest_ea.ea_octets[3] = (t >> 16) & 0xFF;
+    }
+}
+
 /* OSN_PFEAGET - get physical ethernet address for an open packetfilter FD.
  *
  * Also not well documented, but generally easier to perform.
@@ -911,12 +923,7 @@ osn_pfeaget(struct pfdata *pfdata,	/* Packetfilter data */
 	 * irrelevant, it is on the other side of the "wire".
 	 * Our own address is something we can make up completely.
 	 */
-	if (emguest_ea.ea_octets[5] == 0xFF) {
-	    time_t t = time(NULL);
-	    emguest_ea.ea_octets[5] =  t        & 0xFE;
-	    emguest_ea.ea_octets[4] = (t >>  8) & 0xFF;
-	    emguest_ea.ea_octets[3] = (t >> 16) & 0xFF;
-	}
+	init_emguest_ea();
 	ea_set(eap, &emguest_ea);	/* Return the ether address */
 
 	return TRUE;
@@ -2391,12 +2398,7 @@ osn_virt_ether(struct pfdata *pfdata, struct osnpf *osnpf)
 	 * irrelevant, it is on the other side of the "wire".
 	 * Our own address is something we can make up completely.
 	 */
-	if (emguest_ea.ea_octets[5] == 0xFF) {
-	    time_t t = time(NULL);
-	    emguest_ea.ea_octets[5] =  t        & 0xFE;
-	    emguest_ea.ea_octets[4] = (t >>  8) & 0xFF;
-	    emguest_ea.ea_octets[3] = (t >> 16) & 0xFF;
-	}
+	init_emguest_ea();
 	ea_set(&osnpf->osnpf_ea, &emguest_ea);	/* Return the ether address */
 
 	char *ifnam = osnpf->osnpf_ifnam; /* alias for the persisting copy */
