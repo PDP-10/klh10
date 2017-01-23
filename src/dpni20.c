@@ -440,6 +440,8 @@ main(int argc, char **argv)
 #endif
 	progname = progname_r;	/* Reset progname to indicate identity */
 	ethtoten(dpni);		/* Child process handles input from net */
+
+	return 1;		/* Do not fall through here, ever */
     }
     progname = progname_w;	/* Reset progname to indicate identity */
     tentoeth(dpni);		/* Parent process handles output to net */
@@ -1363,6 +1365,7 @@ void tentoeth(struct dpni20_s *dpni)
 	    break;
 
 	case DPNI_QUIT:
+	    /* Attempt to quit the device process gracefully */
 	    if (DBGFLG)
 		dbprint("QUIT");
 	    return;
