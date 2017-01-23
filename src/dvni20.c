@@ -331,14 +331,9 @@ static int parip(char *cp, unsigned char *adr);
 
 /* Set defaults for all configurable parameters
 */
-static int
+static void
 ni20_conf_clear(struct ni20 *ni)
 {
-    int i, ret = TRUE;
-    struct prmstate_s prm;
-    char buff[200];
-    long lval;
-
     DVDEBUG(ni) = FALSE;
     ni->ni_ifnam = NULL;
     ni->ni_ifmeth = NULL;
