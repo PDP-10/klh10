@@ -2733,13 +2733,13 @@ fc_dump(struct cmd_s *cm)
 }
 
 
+#if KLH10_DEV_LITES
 /* FC_LIGHTS - Sets console lights I/O base address
 ** Currently only allow LPT1 and LPT2 ports on PC.
 */
 static void
 fc_lights(struct cmd_s *cm)
 {
-#if KLH10_DEV_LITES		/* Moby conditional for entire file */
     unsigned long port = 0;
     int c;
     char *sloc = cm->cmd_arglin;
@@ -2758,8 +2758,8 @@ fc_lights(struct cmd_s *cm)
 	}
     }
     printf("?Bad address\n");
-#endif /* KLH10_DEV_LITES */
 }
+#endif /* KLH10_DEV_LITES */
 
 /* Instruction printing routines */
 

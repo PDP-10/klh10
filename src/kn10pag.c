@@ -32,7 +32,9 @@
 #include "osdsup.h"
 #include "kn10def.h"
 #include "kn10ops.h"
+#if KLH10_DEV_LITES
 #include "dvlites.h"
+#endif
 #include "klh10exp.h"
 #include "kn10cpu.h"
 
@@ -1492,7 +1494,10 @@ ioinsdef(io_do_pi)
     register w10_t w;
     w = vm_read(e);		/* get lights data */
 
+#if KLH10_DEV_LITES
     lights_pgmlites(LHGET(w), RHGET(w));
+#endif
+
     return PCINC_1;
 }
 
