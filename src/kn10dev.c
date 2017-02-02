@@ -293,7 +293,7 @@ extern struct device *dvlhdh_create(FILE *f, char *s);
 extern struct device *dvdz11_init(FILE *f, char *s);
 #endif
 #if KLH10_DEV_CH11
-extern struct device *dvch11_init(FILE *f, char *s);
+extern struct device *dvch11_create(FILE *f, char *s);
 #endif
 
 /* Table binding static device driver modules with their names
@@ -329,7 +329,7 @@ static struct dvdrv_s dvdrvtab[KLH10_DEVMAX+1] = {
     { "dz11", dvdz11_init, NULL, NULL, "DZ11 dummy (Unibus)" },
 #endif
 #if KLH10_DEV_CH11
-    { "ch11", dvch11_init, NULL, NULL, "Chaosnet dummy (Unibus)" },
+    { "ch11", dvch11_create, NULL, NULL, "Chaosnet interface (Unibus)" },
 #endif
     { NULL, NULL, NULL }
 };

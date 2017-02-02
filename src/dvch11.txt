@@ -1,0 +1,111 @@
+================================
+  CHAOS is restored!
+   or
+  CH11 support for ITS in KLH10
+================================
+
+The ch11 device in KLH10 for ITS, which was originally just a dummy
+inteface to keep ITS running, is now a functional Unibus Chaosnet
+device, which tunnels Chaosnet packets over UDP.  It does not support
+SPY (promiscuous) mode, LUP (loopback), or broadcast, but ITS doesn't
+seem to use/need these.
+
+Latest update: 2005-04-23
+
+Why Chaos when we have the IMP?
+* Some ITS services use Chaos but not IP, e.g. the DIR device.
+* The IMP needs to run as root on most Unix flavors, but the UDP
+  tunnel can go over unprivileged ports.  (This can also make it avoid
+  firewalls.) 
+* It's historically interesting, and makes KLH10 more complete.
+* It's FUN!
+
+Like other KLH10 network devices, ch11 works together with a Device
+Process which communicates with the device and reads/writes network
+data over UDP.  A 4-byte protocol header is added, with only one
+defined function code yet (sending a Chaos packet).  The "original"
+Chaos trailer (destination, source, and checksum) is also added.
+
+The protocol, CHUDP, by default uses UDP port 42042, but this can be
+configured in case, e.g., that port doesn't pass through your
+firewall.
+
+The code is a (very) stripped-down version of dvlhdh.c and dpimp.c,
+and includes minimal patches to the makefile and to kn10dev.c.
+It can be downloaded via http://victor.se/bjorn/its.  I would
+appreciate if you send me an email if you do, e.g. so I have an idea
+about who to notify about updates.
+
+To configure the CH11 device, as a minimum, use
+    devdef chaos ub3  ch11 addr=764140 br=6 vec=270 myaddr=3132
+where the new parameter is "myaddr", which is the octal Chaosnet
+address of the system.  ITS seems to think the "br" param should be 6,
+not 5 as used in the old dummy device definition (see CHXCHN in ITS).
+
+It uses the generic Unibus parameters "addr", "br", "vec" etc, plus
+additional parameters:
+  chudpport=50043
+	changes the UDP port used
+  chip=3131/10.0.1.42:50011
+	defines a Chaos/IP mapping for Chaos host 3131, which should
+	be contacted at IP 10.0.1.42 at UDP port 50011.  You can use
+	hostnames in place of IP addresses, which will use the first
+	address returned by gethostbyname(), if it is an IPv4 address.
+	The port suffix is optional and defaults to 42042.  You can
+	define up to 10 such Chaos/IP mappings (without changing the
+	constants in the code). 
+
+If a CHUDP packet is received from an unknown host, a Chaos/IP mapping
+is dynamically added to the table, so return traffic can find its
+way.  This is useful e.g. if you accept connections from other ITSes
+without static IP addresses.  (There is currently no way to avoid
+potentially filling your table this way.)
+
+To make use of the interface, you need to recompile ITS after defining
+CHAOSP, MYCHAD, NINDX, and CH11P in SYSTEM;CONFIG (and following the
+instructions in distrib.its, of course).  See also BEWARE note below.
+Don't forget to compile SYSENG;@CHAOS and install as DEVICE;ATSIGN
+CHAOS.  Don't forget to keep names of your friends' ITSes in
+SYSEN2;MLDEV, SYSENG;@DEV, etc.  More notes on the web page.
+
+I would appreciate very much to get feedback and testing, especially
+from people who actually *know* how the original interface was
+supposed to act.  I've discovered many things by reading SYSTEM;CHAOS
+and by testing locally, but I can't say I know exactly how it *should*
+work...
+
+*BEWARE*:
+If you have both CHAOSP and IMPP, you run into a bug which results in
+all non-local IP packets being routed via Chaosnet... (unfortunately
+noone is listenting at Chaos address 3040).  
+The bug is caused by the IPMASK macro defined and used in
+SYSTEM;CONFIG, which results in the netmask NM%CHA being zero, which
+matches anything.  The easy fix is to change the line
+IFN CHAOSP,DEFOPT NM%CHA==<IPMASK IMPUS4>	; Set default netmask for it
+to
+IFN CHAOSP,DEFOPT NM%CHA==<IPADDR 255,255,0,0>	; Set default netmask for it
+but the real fix would be to the IPMASK macro.
+
+Ideas for future work:
+- Better routing support.
+- Use DNS to find Chaos addresses - this seems more awkward than helpful.
+- Implement loopback (not LUP, but Chaos pkts to self).  Currently
+  they are in practice dropped.  I'm not sure ITS handles this very
+  well anyway.
+- Chaos broadcast can easily be implemented by UDP broadcast, but it's
+  probably not very useful.  Another implementation would be to send
+  (individually) to all known hosts (in the CHIP table) on the same
+  subnet, but this is probably not very useful either.  (Does any ITS
+  program do broadcast?)
+- More CHUDP protocol functions?
+- Security?
+- Chaosnet library for Linux/Unix???
+
+Cheers,
+--
+Bjorn Victor                       Bjorn.Victor@it.uu.se
+Dept. of Information Technology    tel: +46 18 471 3169
+Uppsala University              mobile: +46 70 425 0239
+Box 337                            fax: +46 18 511925
+S-751 05 Uppsala, SWEDEN           web: http://user.it.uu.se/~victor
+

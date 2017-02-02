@@ -107,4 +107,9 @@ extern struct device *dvch11_init(FILE *, char *);
 
 #define UB_CH11END (UB_CHXMT+2)	/* First addr not used by CH11 regs */
 
+
+#define CHAOS_HW_TRAILERSIZE (6)	/* "hw" trailer bytes */
+#define CHAOS_HEADERSIZE (4*4)	/* chaos packet header size */
+#define CHAOS_MAXDATA 488	/* Max data bytes per packet #### incl header? */
+
 #endif /* ifndef DVCH11_INCLUDED */
