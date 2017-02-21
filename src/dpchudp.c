@@ -57,6 +57,7 @@ are completely independent.
 #include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <netdb.h>
 
 #include "klh10.h"	/* Get config params */
 
@@ -102,6 +103,8 @@ struct in_addr ihost_ip;	/* My host IP addr, net order */
 
 void chudptohost(struct dpchudp_s *);
 void hosttochudp(struct dpchudp_s *);
+unsigned char *chip_ipaddr(struct dpchudp_s *, int);
+void check_for_typos(struct dpchudp_s *);
 
 void net_init(struct dpchudp_s *);
 void dumppkt(unsigned char *, int);
@@ -288,17 +291,16 @@ main(int argc, char **argv)
     /* Make this a status (rather than debug) printout? */
     if (swstatus) {
       int i;
-      char ipbuf[OSN_IPSTRSIZ];
-
       dbprintln("ifc \"%s\" => chaos %lo",
 		dpchudp->dpchudp_ifnam, (long)myaddr);
       for (i = 0; i < dpchudp->dpchudp_chip_tlen; i++)
-	dbprintln(" chaos %6o => ip %s:%d",
+	dbprintln(" chaos %6o => %s:%d",
 		  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr,
-		  ip_adrsprint(ipbuf,
-			       (unsigned char *)&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr),
+		  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_hostname,
 		  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport);
     }
+
+    check_for_typos(dpchudp);
 
     /* Now start up a child process to handle input */
     if (DBGFLG)
@@ -542,7 +544,8 @@ chudptohost(register struct dpchudp_s *dpchudp)
 		      dbprintln("Updating CHIP entry %d for %o/%d.%d.%d.%d:%d",
 				i, chafrom, ip[0],ip[1],ip[2],ip[3], port);
 		    dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
-		    memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, ip, IP_ADRSIZ);
+		    sprintf(dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_hostname,
+			    "%d.%d.%d.%d", ip[0],ip[1],ip[2],ip[3]);
 		  }
 		  /* update timestamp */
 		  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
@@ -559,7 +562,8 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr = chafrom;
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
-	      memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, ip, IP_ADRSIZ);
+	      sprintf(dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_hostname,
+		      "%d.%d.%d.%d", ip[0],ip[1],ip[2],ip[3]);
 	      dpchudp->dpchudp_chip_tlen++;
 	    }
 #if 0
@@ -701,10 +705,11 @@ hi_lookup(struct dpchudp_s *dpchudp,
 #else
 	(chdest == dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr)
 #endif
-	&& dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr.s_addr != 0) {
+	) {
       memcpy(ipport, &dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport, sizeof(in_port_t));
-      memcpy((void *)ipa, &dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr,
-	     sizeof(struct in_addr));
+      memcpy(ipa, chip_ipaddr(dpchudp, i), sizeof(struct in_addr));
+      if (ipa->s_addr == 0)
+	continue;
       if (DBGFLG) {
 	char ipbuf[OSN_IPSTRSIZ];
 	dbprintln("found Chaos address %o at %s:%d",
@@ -792,6 +797,40 @@ hi_iproute(struct in_addr *ipa,	/* Dest IP addr to be put here */
     return FALSE;
 }
 
+unsigned char *
+chip_ipaddr (struct dpchudp_s *dpchudp, int i)
+{
+  struct dpchudp_chip *chip = &dpchudp->dpchudp_chip_tbl[i];
+  static unsigned char zeroes[] = { 0, 0, 0, 0 };
+  struct hostent *he = gethostbyname(chip->dpchudp_chip_hostname);
+
+  if (he == NULL)
+    {
+      return zeroes;
+    }
+  else if (he->h_addrtype != AF_INET || he->h_length != IP_ADRSIZ)
+    {
+      error("CH11 CHIP spec found non-IPv4 address");
+      return zeroes;
+    }
+
+  memcpy(&chip->dpchudp_chip_ipaddr, he->h_addr, IP_ADRSIZ);
+  return (unsigned char *)&chip->dpchudp_chip_ipaddr.s_addr;
+}
+
+void
+check_for_typos(struct dpchudp_s *dpchudp)
+{
+  unsigned char *ipa;
+  int i;
+  for (i = 0; i < dpchudp->dpchudp_chip_tlen; i++)
+    {
+      ipa = chip_ipaddr(dpchudp, i);
+      if (ipa[0]==0 && ipa[1]==0 && ipa[2]==0 && ipa[3]==0)
+	error("CH11 Chaos/IP mapping hostname %s invalid",
+	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_hostname);
+    }
+}
 
 /* IP_WRITE - Send IP packet out over UDP
 */

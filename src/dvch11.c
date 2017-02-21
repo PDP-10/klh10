@@ -54,16 +54,7 @@ static int decosfcclossage;
 #include "prmstr.h"	/* For parameter parsing */
 #include "dvuba.h"
 #include "dvch11.h"
-
 #include "dpchudp.h"
-
-#ifndef KLH10_CH11_USE_GETHOSTBYNAME
-# define KLH10_CH11_USE_GETHOSTBYNAME 1
-#endif
-
-#if KLH10_CH11_USE_GETHOSTBYNAME
-# include <netdb.h>
-#endif
 
 #define CHUDPBUFSIZ (DPCHUDP_MAXLEN+500)	/* Plenty of slop */
 
@@ -85,8 +76,8 @@ static int decosfcclossage;
 /* Chaos/IP mapping entry - see dpchudp_chip */
 struct ch_chip {
     unsigned int ch_chip_chaddr; /* Chaos address */
-    struct in_addr ch_chip_ipaddr; /* IP address */
   in_port_t ch_chip_ipport;	/* IP port */
+  const char *ch_chip_hostname;
 };
 
 struct ch11 {
@@ -316,8 +307,7 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 	      break;
 	    else {
 	      unsigned long cha;
-	      unsigned char ipa[IP_ADRSIZ];
-	      struct hostent *he;
+	      const char *host;
 	      in_port_t ipp = CHUDP_PORT;
 	      struct ch_chip *chip;
 	      int idx;
@@ -337,31 +327,18 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 		}
 		*c = '\0';	/* zap for IP parsing */
 	      }
-#if KLH10_CH11_USE_GETHOSTBYNAME
-	      if ((he = gethostbyname(s)) == NULL)
-#else
-	      if (!parip(s, &ipa[0])) 
-#endif
+	      host = strdup(s);
+	      if (strlen(s) > DPCHUDP_CHIP_HOSTNAME_MAX)
 		{
 		  *(--s) = '/';	/* put back slash */
 		  if (c)
 		    *c = ':';	/* and colon */
 		  break;		/* and complain */
 		}
-#if KLH10_CH11_USE_GETHOSTBYNAME
-	      if ((he->h_addrtype != AF_INET) || (he->h_length != IP_ADRSIZ)) {
-		fprintf(stderr,"CH11 CHIP spec found non-IPv4 address");
-		break;
-	      }
-#endif
 	      idx = (ch->ch_chip_tlen); /* new index */
 	      ch->ch_chip_tbl[idx].ch_chip_chaddr = cha;
 	      ch->ch_chip_tbl[idx].ch_chip_ipport = ipp;
-#if KLH10_CH11_USE_GETHOSTBYNAME
-	      memcpy(&ch->ch_chip_tbl[idx].ch_chip_ipaddr, he->h_addr, IP_ADRSIZ);
-#else
-	      memcpy(&ch->ch_chip_tbl[idx].ch_chip_ipaddr, &ipa[0], IP_ADRSIZ);
-#endif
+	      ch->ch_chip_tbl[idx].ch_chip_hostname = host;
 	      ch->ch_chip_tlen = idx+1; /* update length */
 	    }
 	    continue;
@@ -500,8 +477,6 @@ static void
 ch11_cmd_chiptable(struct ch11 *ch, FILE *of)
 {
   int n, i;
-  unsigned char *ip;
-  char ipa[4*4];
   struct tm *ltime;
   char last[128];
   struct dpchudp_chip *chip;
@@ -516,16 +491,14 @@ ch11_cmd_chiptable(struct ch11 *ch, FILE *of)
     fprintf(of,"Chaos   IP               Port    Last received\n");
     for (i = 0; i < n; i++) {
       chip = &dpc->dpchudp_chip_tbl[i];
-      ip = (unsigned char *)&chip->dpchudp_chip_ipaddr.s_addr;
-      sprintf(ipa,"%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
       if (chip->dpchudp_chip_lastrcvd != 0) {
 	ltime = localtime(&chip->dpchudp_chip_lastrcvd);
 	strftime(last, sizeof(last), "%Y-%m-%d %T", ltime);
       } else
 	strcpy(last,"[static]");
-      fprintf(of,"%6o  %-15s  %d.  %s\n",
+      fprintf(of,"%6o  %-40s  %d.  %s\n",
 	      chip->dpchudp_chip_chaddr,
-	      ipa,
+	      chip->dpchudp_chip_hostname,
 	      chip->dpchudp_chip_ipport,
 	      last);
     }
@@ -1085,8 +1058,10 @@ chudp_init(register struct ch11 *ch, FILE *of)
       memset(&dpc->dpchudp_chip_tbl[junk], 0, sizeof(struct dpchudp_chip));
       dpc->dpchudp_chip_tbl[junk].dpchudp_chip_chaddr = ch->ch_chip_tbl[junk].ch_chip_chaddr;
       dpc->dpchudp_chip_tbl[junk].dpchudp_chip_ipport = ch->ch_chip_tbl[junk].ch_chip_ipport;
-      memcpy(&dpc->dpchudp_chip_tbl[junk].dpchudp_chip_ipaddr,
-	     &ch->ch_chip_tbl[junk].ch_chip_ipaddr, sizeof(struct in_addr));
+      memset(&dpc->dpchudp_chip_tbl[junk].dpchudp_chip_ipaddr,
+	     0, sizeof(struct in_addr));
+      strcpy(dpc->dpchudp_chip_tbl[junk].dpchudp_chip_hostname,
+	     ch->ch_chip_tbl[junk].ch_chip_hostname);
     }
     dpc->dpchudp_chip_tlen = ch->ch_chip_tlen;
 

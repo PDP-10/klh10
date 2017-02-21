@@ -31,6 +31,9 @@
 #ifndef DPCHUDP_CHIP_MAX
 # define DPCHUDP_CHIP_MAX 20
 #endif
+#ifndef DPCHUDP_CHIP_HOSTNAME_MAX
+# define DPCHUDP_CHIP_HOSTNAME_MAX 100
+#endif
 
 /* If a dynamically added CHIP entry is older than this (seconds), it can get updated */
 #ifndef DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT
@@ -43,6 +46,7 @@ struct dpchudp_chip {
     struct in_addr dpchudp_chip_ipaddr; /* IP address */
   in_port_t dpchudp_chip_ipport;	/* IP port */
   time_t dpchudp_chip_lastrcvd;	/* When last received, if dynamically added */
+  char dpchudp_chip_hostname[DPCHUDP_CHIP_HOSTNAME_MAX+1];
 };
 
 /* DPCHUDP-specific stuff */
