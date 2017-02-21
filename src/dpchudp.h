@@ -29,7 +29,7 @@
 #define DPCHUDP_VERSION ((1<<10) | (0<<5) | (0))	/* 1.0.0 */
 
 #ifndef DPCHUDP_CHIP_MAX
-# define DPCHUDP_CHIP_MAX 10
+# define DPCHUDP_CHIP_MAX 20
 #endif
 
 /* If a dynamically added CHIP entry is older than this (seconds), it can get updated */

@@ -73,7 +73,7 @@ static int decosfcclossage;
 #endif
 
 #ifndef CH11_CHIP_MAX
-# define CH11_CHIP_MAX 10	/* max Chaos/IP mappings - see DPCHUDP_CHIP_MAX */
+# define CH11_CHIP_MAX 20	/* max Chaos/IP mappings - see DPCHUDP_CHIP_MAX */
 #endif
 
 #if CH11_CHIP_MAX > DPCHUDP_CHIP_MAX
