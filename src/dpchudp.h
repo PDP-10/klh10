@@ -44,6 +44,7 @@
 struct dpchudp_chip {
     unsigned int dpchudp_chip_chaddr; /* Chaos address */
     struct in_addr dpchudp_chip_ipaddr; /* IP address */
+    struct in_addr dpchudp_chip_new_ipaddr;
   in_port_t dpchudp_chip_ipport;	/* IP port */
   time_t dpchudp_chip_lastrcvd;	/* When last received, if dynamically added */
   char dpchudp_chip_hostname[DPCHUDP_CHIP_HOSTNAME_MAX+1];

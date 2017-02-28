@@ -103,6 +103,7 @@ struct in_addr ihost_ip;	/* My host IP addr, net order */
 
 void chudptohost(struct dpchudp_s *);
 void hosttochudp(struct dpchudp_s *);
+void chudp_lookup(struct dpchudp_s *);
 unsigned char *chip_ipaddr(struct dpchudp_s *, int);
 void check_for_typos(struct dpchudp_s *);
 
@@ -117,6 +118,7 @@ void ip_write(struct in_addr *ipa, in_port_t ipport, unsigned char *buf, int len
 static const char progname_i[] = "dpchudp";
 static const char progname_r[] = "dpchudp-R";
 static const char progname_w[] = "dpchudp-W";
+static const char progname_l[] = "dpchudp-L";
 static const char *progname = progname_i;
 
 static void efatal(int num, char *fmt, ...)
@@ -323,6 +325,23 @@ main(int argc, char **argv)
 	progname = progname_r;	/* Reset progname to indicate identity */
 	chudptohost(dpchudp);	/* Child process handles input */
     }
+
+    /* Start up a child process to periodically look up hostnames */
+    if (DBGFLG)
+	dbprint("Forking L process");
+    if ((chpid = fork()) < 0)
+	esfatal(1, "fork failed");
+    if (chpid == 0) {
+	/* Ensure its memory is locked too, since the lockage isn't
+	** inherited over a fork().  Don't bother warning if it fails.
+	*/
+#if CENV_SYS_DECOSF || CENV_SYS_SOLARIS || CENV_SYS_LINUX
+	(void) mlockall(MCL_CURRENT|MCL_FUTURE);
+#endif
+	progname = progname_l;	/* Reset progname to indicate identity */
+	chudp_lookup(dpchudp);
+    }
+
     progname = progname_w;	/* Reset progname to indicate identity */
 
     hosttochudp(dpchudp);		/* Parent process handles output */
@@ -581,6 +600,39 @@ chudptohost(register struct dpchudp_s *dpchudp)
     }
 }
 
+int
+chip_lookup(struct dpchudp_s *dpchudp, int i)
+{
+  struct dpchudp_chip *chip = &dpchudp->dpchudp_chip_tbl[i];
+  struct hostent *he = gethostbyname(chip->dpchudp_chip_hostname);
+
+  if (he == NULL)
+    return FALSE;
+
+  if (he->h_addrtype != AF_INET || he->h_length != IP_ADRSIZ)
+    {
+      error("CH11 CHIP spec found non-IPv4 address");
+      return FALSE;
+    }
+
+  memcpy(&chip->dpchudp_chip_new_ipaddr, he->h_addr, IP_ADRSIZ);
+  return TRUE;
+}
+
+void
+chudp_lookup(struct dpchudp_s *dpchudp)
+{
+  int i;
+
+  for (;;)
+    {
+      for (i = 0; i < dpchudp->dpchudp_chip_tlen; i++)
+	chip_lookup(dpchudp, i);
+
+      sleep (3600);
+    }
+}
+
 
 /* Send regular message from CHUDP to HOST.
 */
@@ -801,20 +853,6 @@ unsigned char *
 chip_ipaddr (struct dpchudp_s *dpchudp, int i)
 {
   struct dpchudp_chip *chip = &dpchudp->dpchudp_chip_tbl[i];
-  static unsigned char zeroes[] = { 0, 0, 0, 0 };
-  struct hostent *he = gethostbyname(chip->dpchudp_chip_hostname);
-
-  if (he == NULL)
-    {
-      return zeroes;
-    }
-  else if (he->h_addrtype != AF_INET || he->h_length != IP_ADRSIZ)
-    {
-      error("CH11 CHIP spec found non-IPv4 address");
-      return zeroes;
-    }
-
-  memcpy(&chip->dpchudp_chip_ipaddr, he->h_addr, IP_ADRSIZ);
   return (unsigned char *)&chip->dpchudp_chip_ipaddr.s_addr;
 }
 
@@ -825,8 +863,7 @@ check_for_typos(struct dpchudp_s *dpchudp)
   int i;
   for (i = 0; i < dpchudp->dpchudp_chip_tlen; i++)
     {
-      ipa = chip_ipaddr(dpchudp, i);
-      if (ipa[0]==0 && ipa[1]==0 && ipa[2]==0 && ipa[3]==0)
+      if (!chip_lookup(dpchudp, i))
 	error("CH11 Chaos/IP mapping hostname %s invalid",
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_hostname);
     }
