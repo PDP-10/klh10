@@ -300,8 +300,8 @@ tm03_conf(FILE *f, char *s, struct tmdev *tm)
     tm->tm_typ = TM_DTTM03;		/* Say formatter is TM03 for now */
     tm->tm_styp = TM_DT45;		/* Say slave is TU45 for now */
     TMREG(tm, RHR_SN) =			/* Serial Number register (BCD) */
-		  (((9    / 1000)%10) << 12)
-		| (((9    /  100)%10) <<  8)
+		  (((9900 / 1000)%10) << 12)
+		| (((9900 /  100)%10) <<  8)
 		| (((ntms /   10)%10) <<  4)
 		| (((ntms       )%10)      );
 #if KLH10_DEV_DPTM03
