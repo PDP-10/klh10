@@ -287,8 +287,8 @@ rp_conf(FILE *f, char *s, struct rpdev *rp)
     rp->rp_iswrite = TRUE;
     partyp(rp, DVRP_DEFAULT_DISK);	/* Default disk config */
     RPREG(rp, RHR_SN) =			/* Serial Number register (BCD) */
-		  (((1    / 1000)%10) << 12)
-		| (((6    /  100)%10) <<  8)
+		  (((1600 / 1000)%10) << 12)
+		| (((1600 /  100)%10) <<  8)
 		| (((nrps /   10)%10) <<  4)
 		| (((nrps       )%10)      );
     rp->rp_bufsec = 4;			/* # sectors in buffer */
