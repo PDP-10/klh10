@@ -185,7 +185,7 @@ osn_iftab_init(void)
     struct ifent *ife;
 
     /* Start out with empty table */
-    memset(&iftab[0], sizeof(iftab), 0);
+    memset(&iftab[0], 0, sizeof(iftab));
     iftab_nifs = 0;
 
 #if HAVE_GETIFADDRS
