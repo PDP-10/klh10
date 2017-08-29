@@ -58,6 +58,8 @@ are completely independent.
 #include <signal.h>
 #include <stdarg.h>
 
+#include <arpa/inet.h>
+
 #include "klh10.h"	/* Get config params */
 
 /* This must precede any other OSD includes to ensure that DECOSF gets
@@ -442,7 +444,7 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	/* OK, now do a blocking read on UDP socket! */
 	errno = 0;		/* Clear to make sure it's the actual error */
 	memset(&ip_sender, 0, sizeof(ip_sender));
-	memset(&iplen, 0, sizeof(iplen));
+	iplen = sizeof(ip_sender); /* Supply size of ip_sender, and get actual stored length */
 	cnt = recvfrom(sock, buffp, DPCHUDP_MAXLEN, 0, (struct sockaddr *)&ip_sender, &iplen);
 	if (cnt <= DPCHUDP_DATAOFFSET) {
 	    if (DBGFLG)
@@ -498,7 +500,7 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	  int chalen = ((buffp[DPCHUDP_DATAOFFSET+2] & 0xf)<<4) | buffp[DPCHUDP_DATAOFFSET+3];
 	  int datalen = (DPCHUDP_DATAOFFSET + CHAOS_HEADERSIZE + chalen);
 	  int chafrom = (buffp[cnt-4]<<8) | buffp[cnt-3];
-	  unsigned char *ip = (unsigned char *)&ip_sender.sin_addr.s_addr;
+	  char *ip = inet_ntoa(ip_sender.sin_addr);
 	  in_port_t port = ntohs(ip_sender.sin_port);
 	  time_t now = time(NULL);
 	  int i, cks;
@@ -519,9 +521,9 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	  }
 #if 0
 	  if (DBGFLG) {
-	    dbprintln("Rcv from chaos %o = ip %d.%d.%d.%d port %d., %d. bytes (datalen %d)",
+	    dbprintln("Rcv from chaos %o = ip %s port %d., %d. bytes (datalen %d)",
 		      chafrom,
-		      ip[0],ip[1],ip[2],ip[3], port,
+		      ip, port,
 		      cnt, datalen);
 	    dumppkt(buffp,cnt);
 	  }
@@ -539,10 +541,10 @@ chudptohost(register struct dpchudp_s *dpchudp)
 		      DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT) {
 		    /* Old, update it (in case he moved) */
 		    if (1 || DBGFLG)
-		      dbprintln("Updating CHIP entry %d for %o/%d.%d.%d.%d:%d",
-				i, chafrom, ip[0],ip[1],ip[2],ip[3], port);
+		      dbprintln("Updating CHIP entry %d for %o/%s:%d",
+				i, chafrom, ip, port);
 		    dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
-		    memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, ip, IP_ADRSIZ);
+		    memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, &ip_sender.sin_addr, IP_ADRSIZ);
 		  }
 		  /* update timestamp */
 		  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
@@ -554,12 +556,12 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	      /* It's OK to write here, the other fork will see it when tlen is updated */
 	      i = dpchudp->dpchudp_chip_tlen;
 	      if (1 || DBGFLG)
-		dbprintln("Adding CHIP entry %d for %o/%d.%d.%d.%d:%d",
-			  i, chafrom, ip[0],ip[1],ip[2],ip[3], port);
+		dbprintln("Adding CHIP entry %d for %o/%s:%d",
+			  i, chafrom, ip, port);
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr = chafrom;
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
 	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
-	      memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, ip, IP_ADRSIZ);
+	      memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, &ip_sender.sin_addr, IP_ADRSIZ);
 	      dpchudp->dpchudp_chip_tlen++;
 	    }
 #if 0
