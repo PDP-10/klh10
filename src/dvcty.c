@@ -182,15 +182,15 @@ cty_sin(int cnt)
     register vmptr_t vp;
     register int ch, oldch;
 
-    if ((ch = fe_ctyin()) < 0)		/* Get single char */
-	return 0;			/* None left */
-
     vp = vm_physmap(FECOM_CTYIN);
     oldch = vm_pgetrh(vp);		/* See if ready for next char */
     if (oldch & 0400)
-	fprintf(stderr, "[CTYI: %o => %o, old %o]",
-		    ch, ch | 0400, oldch);
-    else if (cpu.fe.fe_ctydebug)
+        return cnt;
+
+    if ((ch = fe_ctyin()) < 0)		/* Get single char */
+	return 0;			/* None left */
+
+    if (cpu.fe.fe_ctydebug)
 	fprintf(stderr, "[CTYI: %o]", ch);
 
     /* Drop char in FE communication area */
