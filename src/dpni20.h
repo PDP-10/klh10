@@ -34,8 +34,8 @@
 
 /* Version of DPNI20-specific shared memory structure */
 
-#define DPNI20_VERSION DPC_VERSION(1,1,2)	/* 1.1.2 */
-#define IFNAM_LEN	16	/* at least IFNAMSIZ! */
+#define DPNI20_VERSION DPC_VERSION(1,1,3)	/* 1.1.3 */
+#define IFNAM_LEN	PATH_MAX	/* at least IFNAMSIZ! */
 
 /* DPNI20-specific stuff */
 			/* C = controlling parent sets, D = Device proc sets */

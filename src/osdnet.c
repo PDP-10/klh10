@@ -845,6 +845,10 @@ osn_ifeaget2(char *ifnam,	/* Interface name */
 {
     char eastr[OSN_EASTRSIZ];
 
+    if (strlen(ifnam) >= IFNAMSIZ) {
+	efatal(1, "interface name '%s' too long (more than %d chars)", ifnam, IFNAMSIZ);
+    }
+
 #if CENV_SYS_DECOSF		/* Direct approach */
     {
 	int ownsock = FALSE;
@@ -1452,6 +1456,11 @@ osn_pfinit_pcap(struct pfdata *pfdata, struct osnpf *osnpf, void *pfarg)
 	ifnam = ife->ife_name;
     }
 
+    if (strlen(ifnam) >= IFNAMSIZ) {
+	efatal(1, "interface name '%s' (more than %d chars)", ifnam, IFNAMSIZ);
+    }
+
+
     pfdata->pf_meth = PF_METH_PCAP;
     pfdata->pf_read = osn_pfread_pcap;
     pfdata->pf_write = osn_pfwrite_pcap;
@@ -1791,6 +1800,10 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
     struct in_addr ipremote;	/* Address at remote (emulated guest) end */
     char *basename = "";
     int s;
+
+    if (strlen(osnpf->osnpf_ifnam) >= IFNAMSIZ) {
+	efatal(1, "interface name '%s' (more than %d chars)", osnpf->osnpf_ifnam, IFNAMSIZ);
+    }
 
     strncpy(tt_ctx.saved_ifnam, osnpf->osnpf_ifnam, IFNAM_LEN);
 
@@ -2214,6 +2227,10 @@ bridge_create(struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     if (!br_name) {
 	br_name = "bridge0";
 	error("Can't find name of bridge: $KLH10_NET_BRIDGE is unset. Trying with \"%s\"", br_name);
+    }
+
+    if (strlen(br_name) >= IFNAMSIZ) {
+	error("$KLH10_NET_BRIDGE too long (more than %d chars)", IFNAMSIZ);
     }
 
     if ((s = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) {
