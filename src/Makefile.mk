@@ -720,7 +720,7 @@ dvlites.o: $(SRC)/dvlites.c $(SRC)/dvlites.h $(BLDSRC)/config.h
 dvlhdh.o: $(SRC)/dvlhdh.c $(SRC)/dvlhdh.h $(BLDSRC)/config.h
 	$(BUILDMOD) $(SRC)/dvlhdh.c
 
-dvni20.o: $(SRC)/dvni20.c $(SRC)/dvni20.h $(BLDSRC)/config.h
+dvni20.o: $(SRC)/dvni20.c $(SRC)/dvni20.h $(SRC)/dpni20.h $(BLDSRC)/config.h
 	$(BUILDMOD) $(SRC)/dvni20.c
 
 dvrh11.o: $(SRC)/dvrh11.c $(SRC)/dvrh11.h $(BLDSRC)/config.h
