@@ -465,12 +465,12 @@ void net_init(struct dpni20_s *dpni)
     /* Get the IP address for the tunnel, if specified */
     memcpy((char *)&tun_ip, (char *)&dpni->dpni_tun, 4);
 
-    /* Ensure network device name, if specified, isn't too long */
-    if (dpni->dpni_ifnam[0] && (strlen(dpni->dpni_ifnam)
-		>= sizeof(ifr.ifr_name))) {
-	esfatal(0, "interface name \"%s\" too long - max %d",
-		dpni->dpni_ifnam, (int)sizeof(ifr.ifr_name));
-    }
+    /* We should ensure that network device name, if specified, isn't too long.
+    ** For some usages however, this isn't really a device name,
+    ** so we can't really check it here.
+    ** In the paths where a shorter limit holds, there should be a specific
+    ** extra check for sizeof(ifr.ifr_name), IFNAMSIZ, or equivalent.
+    **/
 
     /* Determine network device to use, if none was specified (this only
     ** works for shared devices, as dedicated ones will be "down" and
