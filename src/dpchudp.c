@@ -1,6 +1,6 @@
-/* DPCHUDP.C - Chaos over UDP process
+/* DPCHUDP.C - Chaos link implementation (over Ethernet or using UDP)
 */
-/*  Copyright © 2005 Björn Victor and Kenneth L. Harrenstien
+/*  Copyright © 2005, 2018 Björn Victor and Kenneth L. Harrenstien
 **  All Rights Reserved
 **
 **  This file may become part of the KLH10 Distribution.  Use, modification, and
@@ -14,19 +14,21 @@
 **  must be included in all copies or derivations of this software.
 */
 /* This is based on DPIMP.C, to some extent.
-   Some things are irrelevant inheritage from dpimp, and  could be cleaned up... */
+   Some things are possibly irrelevant inheritage from dpimp, and  could be cleaned up... */
 /*
 This is a program intended to be run as a child of the KLH10
 PDP-10 emulator, in order to provide a Chaosnet link-layer implementation.
 
-It can do that in two ways: [three when DTLS is implemented - but that needs a bit of work, with sessions etc]
+It can do that in two ways:
+[three when DTLS is implemented - but that needs a bit of work, with sessions etc]
 
-By implementing Chaosnet over Ethernet (protocol nr 0x0804) and handling
+Firstly, by implementing Chaosnet over Ethernet (protocol nr 0x0804) and handling
 ARP for that protocol. This uses one of the packet filtering
-implementations (or only pcap?) provided by osdnet. No routing is
-handled, that's done by ITS.
+implementations (or only pcap?) provided by osdnet. (Only EthernetII
+headers are supported, not 802.3.)
+No routing is handled, that's done by ITS.
 
-It can also do it by using a Chaos-over-UDP tunnel.
+Secondly, it can do it by using a Chaos-over-UDP tunnel.
 Given a Chaos packet and a mapping between Chaosnet and IP addresses,
 it simply sends the packet encapsulated in a UDP datagram.
 
@@ -50,7 +52,7 @@ where D1,D2 are the destination Chaos address (subnet, address)
             *note* that this is (currently) the standard Internet
             checksum, not the original Chaosnet checksum
 
-	"Messages" to and from the IMP are sent over the standard DP
+	"Messages" to and from the CH11 are sent over the standard DP
 shared memory mechanism; these are composed of 8-bit bytes in exactly
 the same order as if a CH11 was sending or receiving them.  Packets to
 and from the NET are CHUDP packets.
@@ -74,7 +76,7 @@ are completely independent.
 /* This must precede any other OSD includes to ensure that DECOSF gets
    the right flavor sockaddr (sigh)
 */
-//#define OSN_USE_IPONLY 1	/* Only need IP stuff */ 
+#define OSN_USE_IPONLY 0	/* Need more than IP stuff */ 
 #include "osdnet.h"		/* OSD net defs, shared with DPNI20 and DPIMP */
 
 #include <sys/resource.h>	/* For setpriority() */
@@ -98,6 +100,7 @@ int myaddr;			/* My chaos address */
 struct in_addr ihost_ip;	/* My host IP addr, net order */
 
 /* Chaos ARP list */
+// @@@@ implement something to show the table
 #define CHARP_MAX 16
 #define CHARP_MAX_AGE (60*5)	// ARP cache limit
 struct charp_ent {
@@ -377,8 +380,7 @@ main(int argc, char **argv)
 */
 void net_init_pf(struct dpchudp_s *dpchudp)
 {
-  // from dpni20.c
-  // add default chaos bridge?
+  // based on dpni20.c
   /* Set up packet filter.  This also returns in "ihost_ea"
      the ethernet address for the selected interface.
   */
@@ -462,13 +464,12 @@ net_init(register struct dpchudp_s *dpchudp)
 #endif
     /* Set up appropriate net fd.
     */
-    if (strcmp(dpchudp->dpchudp_ifmeth, "chudp") != 0) {
-      dpchudp->dpchudp_ifmeth_chudp = 0;
-      net_init_pf(dpchudp);
-    }
-    else { // CHUDP case
-      dpchudp->dpchudp_ifmeth_chudp = 1;
+    if (dpchudp->dpchudp_ifmeth_chudp) {
+      // CHUDP case
       net_init_chudp(dpchudp);
+    } else {
+      // Ethernet case
+      net_init_pf(dpchudp);
     }
 }
 

@@ -214,6 +214,7 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
     struct prmstate_s prm;
     char buff[200];
     long lval;
+    int chudp_params_set = 0;
 
     /* First set defaults for all configurable parameters
 	Unfortunately there's currently no way to access the UBA # that
@@ -297,6 +298,7 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 	  continue;
 
 	case CH11P_CHUPORT:
+	  chudp_params_set = 1;
 	  if (!prm.prm_val || !s_todnum(prm.prm_val, &lval))
 	    break;
 	  if ((lval < 1) || (lval >= 0xffff)) {
@@ -307,6 +309,7 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 	  continue;
 
 	case CH11P_CHIP:
+	  chudp_params_set = 1;
 	  if (ch->ch_chip_tlen >= CH11_CHIP_MAX) {
 	    fprintf(f,"CH11 Chaos/IP table full\n");
 	    break;
@@ -437,6 +440,20 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 	fprintf(f,
 	    "CH11 param \"myaddr\" must be set\n");
 	return FALSE;
+    }
+    if (ch->ch_ifmeth) {
+      if ((strcasecmp(ch->ch_ifmeth,"chudp") != 0) &&
+	  (strcasecmp(ch->ch_ifmeth,"pcap") != 0)) {
+	fprintf(f,"CH11 param \"ifmeth\" only supports \"chudp\" and \"pcap\" for now\n");
+	return FALSE;
+      }
+    } else if (chudp_params_set) {
+      // backwards compat
+      fprintf(f, "CH11 assuming \"chudp\" interface method\n");
+      ch->ch_ifmeth = s_dup("chudp");
+    } else {
+      fprintf(f, "CH11 does not know which interface method to use, none specified?\n");
+      return FALSE;
     }
 
     return ret;
@@ -1086,8 +1103,11 @@ chudp_init(register struct ch11 *ch, FILE *of)
     else
 	dpc->dpchudp_ifnam[0] = '\0';	/* No specific interface */
 
-    if (ch->ch_ifmeth)			/* Pass on interface access method */
+    if (ch->ch_ifmeth) {	/* Pass on interface access method */
 	strncpy(dpc->dpchudp_ifmeth, ch->ch_ifmeth, sizeof(dpc->dpchudp_ifmeth)-1);
+	if (strcasecmp(dpc->dpchudp_ifmeth, "chudp") == 0)
+	  dpc->dpchudp_ifmeth_chudp = 1;
+    }
     else
 	dpc->dpchudp_ifmeth[0] = '\0';	/* No specific access method */
 
