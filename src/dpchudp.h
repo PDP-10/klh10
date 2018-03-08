@@ -25,13 +25,15 @@
 #endif
 
 /* Version of DPCHUDP-specific shared memory structure */
+#define DPCHUDP_VERSION DPC_VERSION(2,0,0)	/* 2.0.0 */
 
-#define DPCHUDP_VERSION ((1<<10) | (0<<5) | (0))	/* 1.0.0 */
+#define IFNAM_LEN	PATH_MAX	/* at least IFNAMSIZ! */
 
 #ifndef DPCHUDP_CHIP_MAX
 # define DPCHUDP_CHIP_MAX 10
 #endif
 
+// @@@@ consider ARP age limit
 /* If a dynamically added CHIP entry is older than this (seconds), it can get updated */
 #ifndef DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT
 # define DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT (60*5)
@@ -52,8 +54,11 @@ struct dpchudp_s {
     struct dpc_s dpchudp_dpc;	/* CD Standard DPC portion */
     int dpchudp_ver;		/* C  Version of shared struct */
     int dpchudp_attrs;		/* C  Attribute flags */
-    char dpchudp_ifnam[16];	/* CD Interface name if any */
-    unsigned int dpchudp_myaddr;
+    char dpchudp_ifnam[IFNAM_LEN];	/* CD Interface name if any */
+    char dpchudp_ifmeth[16];	/* C  Interface method */
+    int dpchudp_ifmeth_chudp;	/* C  Interface method is CHUDP? */
+    unsigned short dpchudp_myaddr;  /* C  my Chaos address  */
+    unsigned char dpchudp_eth[6];	/* CD Ethernet address of interface */
   /* probably not used */
     int dpchudp_inoff;		/* C Offset in buffer of input (I->H) data */
     int dpchudp_outoff;		/* D Offset in buffer of output (H->I) data */
@@ -83,6 +88,16 @@ struct chudp_header {
 /* Protocol function codes */
 #define CHUDP_PKT 1		/* Chaosnet packet */
 
+#ifndef ETHERTYPE_CHAOS
+# define ETHERTYPE_CHAOS 0x0804
+#endif
+// old names for new, new names for old?
+#ifndef ARPOP_RREQUEST
+#define ARPOP_RREQUEST ARPOP_REVREQUEST // 3	/* request protocol address given hardware */
+#endif
+#ifndef ARPOP_RREPLY
+#define ARPOP_RREPLY ARPOP_REVREPLY // 4	/* response giving protocol address */
+#endif
 
 #include "dvch11.h"
 #define DPCHUDP_DATAOFFSET (sizeof(struct chudp_header))

@@ -16,8 +16,17 @@
 /* This is based on DPIMP.C, to some extent.
    Some things are irrelevant inheritage from dpimp, and  could be cleaned up... */
 /*
-	This is a program intended to be run as a child of the KLH10
-PDP-10 emulator, in order to provide a Chaos-over-UDP tunnel.
+This is a program intended to be run as a child of the KLH10
+PDP-10 emulator, in order to provide a Chaosnet link-layer implementation.
+
+It can do that in two ways: [three when DTLS is implemented - but that needs a bit of work, with sessions etc]
+
+By implementing Chaosnet over Ethernet (protocol nr 0x0804) and handling
+ARP for that protocol. This uses one of the packet filtering
+implementations (or only pcap?) provided by osdnet. No routing is
+handled, that's done by ITS.
+
+It can also do it by using a Chaos-over-UDP tunnel.
 Given a Chaos packet and a mapping between Chaosnet and IP addresses,
 it simply sends the packet encapsulated in a UDP datagram.
 
@@ -65,7 +74,7 @@ are completely independent.
 /* This must precede any other OSD includes to ensure that DECOSF gets
    the right flavor sockaddr (sigh)
 */
-#define OSN_USE_IPONLY 1	/* Only need IP stuff */ 
+//#define OSN_USE_IPONLY 1	/* Only need IP stuff */ 
 #include "osdnet.h"		/* OSD net defs, shared with DPNI20 and DPIMP */
 
 #include <sys/resource.h>	/* For setpriority() */
@@ -81,16 +90,27 @@ struct dp_s dp;			/* Device-Process struct for DP ops */
 int cpupid;			/* PID of superior CPU process */
 int chpid;			/* PID of child (R proc) */
 int swstatus = TRUE;
-int sock;			/* UDP socket */
-
+int chudpsock;			/* UDP socket */
+struct osnpf npf;
+struct pfdata pfdata;		/* Packet-Filter state */
 
 int myaddr;			/* My chaos address */
 struct in_addr ihost_ip;	/* My host IP addr, net order */
 
-/* FROM HERE: replace 
-   "dpchudp" for "dpimp",
-   "chudp" for "imp", 
-*/
+/* Chaos ARP list */
+#define CHARP_MAX 16
+#define CHARP_MAX_AGE (60*5)	// ARP cache limit
+struct charp_ent {
+  u_char charp_eaddr[ETHER_ADDR_LEN];
+  u_short charp_chaddr;
+  time_t charp_age;
+};
+
+struct charp_ent charp_list[CHARP_MAX];
+int charp_len;
+
+#define ARP_PKTSIZ (sizeof(struct ether_header)	+ sizeof(struct ether_arp))
+static u_char eth_brd[ETHER_ADDR_LEN] = {255,255,255,255,255,255};
 
 /* Debug flag reference.  Use DBGFLG within functions that have "dpchudp";
  * all others must use DP_DBGFLG.  Both refer to the same location.
@@ -107,8 +127,15 @@ void hosttochudp(struct dpchudp_s *);
 
 void net_init(struct dpchudp_s *);
 void dumppkt(unsigned char *, int);
-void ihl_hhsend(register struct dpchudp_s *dpchudp, int cnt, register unsigned char *pp);
+void ihl_hhsend(register struct dpchudp_s *dpchudp, int cnt, register unsigned char *pp, size_t off);
 void ip_write(struct in_addr *ipa, in_port_t ipport, unsigned char *buf, int len, struct dpchudp_s *dpchudp);
+int hi_iproute(struct in_addr *ipa, in_port_t *ipport, unsigned char *lp, int cnt, struct dpchudp_s *dpchudp);
+
+char *ch_adrsprint(char *cp, unsigned char *ca);
+void send_chaos_arp_reply(u_short dest_chaddr, u_char *dest_eth);
+void send_chaos_arp_request(u_short chaddr);
+void send_chaos_packet(unsigned char *ea, unsigned char *buf, int cnt);
+u_char *find_arp_entry(u_short daddr);
 
 
 /* Error and diagnostic output */
@@ -197,6 +224,21 @@ static void syserr(int num, char *fmt, ...)
 }
 
 int initdebug = 0;
+
+void
+htons_buf(u_short *ibuf, u_short *obuf, int len)
+{
+  int i;
+  for (i = 0; i < len; i += 2)
+    *obuf++ = htons(*ibuf++);
+}
+void
+ntohs_buf(u_short *ibuf, u_short *obuf, int len)
+{
+  int i;
+  for (i = 0; i < len; i += 2)
+    *obuf++ = ntohs(*ibuf++);
+}
 
 int
 main(int argc, char **argv)
@@ -333,6 +375,69 @@ main(int argc, char **argv)
 /* NET_INIT - Initialize net-related variables,
 **	given network interface we'll use.
 */
+void net_init_pf(struct dpchudp_s *dpchudp)
+{
+  // from dpni20.c
+  // add default chaos bridge?
+  /* Set up packet filter.  This also returns in "ihost_ea"
+     the ethernet address for the selected interface.
+  */
+
+  npf.osnpf_ifnam = dpchudp->dpchudp_ifnam;
+  npf.osnpf_ifmeth = dpchudp->dpchudp_ifmeth;
+  npf.osnpf_dedic = dpchudp->dpchudp_dedic;
+  //npf.osnpf_rdtmo = dpchudp->dpchudp_rdtmo;
+  npf.osnpf_backlog = dpchudp->dpchudp_backlog;
+  //npf.osnpf_ip.ia_addr = ehost_ip;
+  //npf.osnpf_tun.ia_addr = tun_ip;
+
+
+  /* Ether addr is both a potential arg and a returned value;
+     the packetfilter open may use and/or change it.
+  */
+  if (memcmp(dpchudp->dpchudp_eth,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) {
+    // we need the ea for the pf, so find it already here
+    /* Now get our interface's ethernet address. */
+    (void) osn_ifealookup(npf.osnpf_ifnam, (unsigned char *) &npf.osnpf_ea);
+  } else
+    ea_set(&npf.osnpf_ea, dpchudp->dpchudp_eth);	/* Set requested ea if any */
+  if (DP_DBGFLG) {
+    char eastr[OSN_EASTRSIZ];
+
+    dbprintln("EN addr for \"%s\" = %s",
+	      npf.osnpf_ifnam, eth_adrsprint(eastr, (unsigned char *)&npf.osnpf_ea));
+  }
+  ea_set(dpchudp->dpchudp_eth, (char *)&npf.osnpf_ea);	/* Copy ether addr (so pfbuild can use it)*/
+  // pfdata, osnpf, pfarg; pfbuild(pfarg, ehost_ip)
+  osn_pfinit(&pfdata, &npf, (void *)dpchudp);	/* Will abort if fails */
+  ea_set(dpchudp->dpchudp_eth, &npf.osnpf_ea);		/* Copy actual ea */
+
+  /* Now set any return info values in shared struct.
+   */
+#if 0 // already done above
+  ea_set(dpchudp->dpchudp_eth, (char *)&ihost_ea);	/* Copy ether addr */
+#endif
+}
+
+void net_init_chudp(struct dpchudp_s *dpchudp)
+{
+  struct sockaddr_in mysin;
+
+  if ((chudpsock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    efatal(1,"socket failed: %s", dp_strerror(errno));
+
+  mysin.sin_family = AF_INET;
+  mysin.sin_port = htons(dpchudp->dpchudp_port);
+  mysin.sin_addr.s_addr = INADDR_ANY;
+#if 0
+  if (dpchudp->dpchudp_ifnam[0] && ihost_ip.s_addr != 0)
+    mysin.sin_addr.s_addr = ihost_ip.s_addr;
+#endif
+
+  if (bind(chudpsock, (struct sockaddr *)&mysin, sizeof(mysin)) < 0)
+    efatal(1,"bind failed: %s", dp_strerror(errno));
+}
+
 void
 net_init(register struct dpchudp_s *dpchudp)
 {
@@ -351,29 +456,20 @@ net_init(register struct dpchudp_s *dpchudp)
     */
     if (dpchudp->dpchudp_ifnam[0]) {
       /* Find host's IP address for this interface */
-      if (!osn_ifipget(-1, dpchudp->dpchudp_ifnam, (unsigned char *)&ihost_ip)) {
+      if (!osn_ifipget(-1, dpchudp->dpchudp_ifnam, (unsigned char *)&ihost_ip))
 	efatal(1,"osn_ifipget failed for \"%s\"", dpchudp->dpchudp_ifnam);
     }
 #endif
     /* Set up appropriate net fd.
     */
-  {
-    struct sockaddr_in mysin;
-
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-      efatal(1,"socket failed: %s", dp_strerror(errno));
-
-    mysin.sin_family = AF_INET;
-    mysin.sin_port = htons(dpchudp->dpchudp_port);
-    mysin.sin_addr.s_addr = INADDR_ANY;
-#if 0
-    if (dpchudp->dpchudp_ifnam[0] && ihost_ip.s_addr != 0)
-      mysin.sin_addr.s_addr = ihost_ip.s_addr;
-#endif
-
-    if (bind(sock, (struct sockaddr *)&mysin, sizeof(mysin)) < 0)
-      efatal(1,"bind failed: %s", dp_strerror(errno));
-  }
+    if (strcmp(dpchudp->dpchudp_ifmeth, "chudp") != 0) {
+      dpchudp->dpchudp_ifmeth_chudp = 0;
+      net_init_pf(dpchudp);
+    }
+    else { // CHUDP case
+      dpchudp->dpchudp_ifmeth_chudp = 1;
+      net_init_chudp(dpchudp);
+    }
 }
 
 /* CHUDPTOHOST - Child-process main loop for pumping packets from CHUDP to HOST.
@@ -410,17 +506,298 @@ ch_checksum(const unsigned char *addr, int count)
   return (~sum) & 0xffff;
 }
 
+void describe_arp_pkt(struct arphdr *arp, unsigned char *buffp) {
+  char ethstr[OSN_EASTRSIZ];
+  char prostr[OSN_IPSTRSIZ];
+
+  dbprintln("ARP message received, protocol 0x%04x (%s)",
+	    ntohs(arp->ar_pro), (arp->ar_pro == htons(ETHERTYPE_IP) ? "IPv4" :
+				 (arp->ar_pro == htons(ETHERTYPE_CHAOS) ? "Chaos" : "?")));
+  dbprintln(" HW addr len %d\n Proto addr len %d\n ARP command %d (%s)",
+	    arp->ar_hln, arp->ar_pln, ntohs(arp->ar_op),
+	    arp->ar_op == htons(ARPOP_REQUEST) ? "Request" :
+	    (arp->ar_op == htons(ARPOP_REPLY) ? "Reply" :
+	     (arp->ar_op == htons(ARPOP_RREQUEST) ? "Reverse request" :
+	      (arp->ar_op == htons(ARPOP_RREPLY) ? "Reverse reply" : "?"))));
+  dbprintln(" src: HW %s proto %s", eth_adrsprint(ethstr, &buffp[sizeof(struct arphdr)]),
+	    (arp->ar_pro == htons(ETHERTYPE_IP) ?
+	     ip_adrsprint(prostr, &buffp[sizeof(struct arphdr)+arp->ar_hln]) :
+	     (arp->ar_pro == htons(ETHERTYPE_CHAOS) ?
+	      ch_adrsprint(prostr, &buffp[sizeof(struct arphdr)+arp->ar_hln]) :
+	      "?whatevs?")));
+  dbprintln(" dst: HW %s proto %s", eth_adrsprint(ethstr, &buffp[sizeof(struct arphdr)+arp->ar_hln+arp->ar_pln]),
+	    (arp->ar_pro == htons(ETHERTYPE_IP) ?
+	     ip_adrsprint(prostr, &buffp[sizeof(struct arphdr)+arp->ar_hln+arp->ar_pln+arp->ar_hln]) :
+	     (arp->ar_pro == htons(ETHERTYPE_CHAOS) ?
+	      ch_adrsprint(prostr, &buffp[sizeof(struct arphdr)+arp->ar_hln+arp->ar_pln+arp->ar_hln]) :
+	      "?whatevs?")));
+}
+
+void chudptohost_pf_arp(struct dpchudp_s *dpchudp, unsigned char *buffp, int cnt)
+{
+  struct arphdr *arp = (struct arphdr *)buffp;
+  if (DBGFLG) describe_arp_pkt(arp, buffp);
+
+  if (arp->ar_pro != htons(ETHERTYPE_CHAOS)) {
+    if (DBGFLG)
+      dbprintln("unexpected ARP protocol %#x received", ntohs(arp->ar_pro));
+    return;
+  }
+
+  u_short schad = ntohs((buffp[sizeof(struct arphdr)+arp->ar_hln]<<8) |
+			buffp[sizeof(struct arphdr)+arp->ar_hln+1]);
+  u_char *sead = &buffp[sizeof(struct arphdr)];
+  u_short dchad =  ntohs((buffp[sizeof(struct arphdr)+arp->ar_hln+arp->ar_hln+arp->ar_pln]<<8) |
+			 buffp[sizeof(struct arphdr)+arp->ar_hln+arp->ar_hln+arp->ar_pln+1]);
+  if (arp->ar_op == htons(ARPOP_REQUEST)) {
+    if (dchad == dpchudp->dpchudp_myaddr) {
+      if (DBGFLG) dbprintln("ARP: Sending reply for %#o (me) to %#o", dchad, schad);
+      send_chaos_arp_reply(schad, sead); /* Yep. */
+    }
+    return;
+  }
+  /* Now see if we should add this to our Chaos ARP list */
+  int i, found = 0;
+  for (i = 0; i < charp_len && i < CHARP_MAX; i++)
+    if (charp_list[i].charp_chaddr == schad) {
+      found = 1;
+      charp_list[i].charp_age = time(NULL);  // update age
+      if (memcmp(&charp_list[i].charp_eaddr, sead, ETHER_ADDR_LEN) != 0) {
+	memcpy(&charp_list[i].charp_eaddr, sead, ETHER_ADDR_LEN);
+	if (DBGFLG) {
+	  dbprintln("ARP: Changed MAC addr for %#o", schad);
+	  // print_arp_table();
+	}
+      } else
+	if (DBGFLG) {
+	  dbprintln("ARP: Updated age for %#o", schad);
+	  // print_arp_table();
+	}
+      break;
+    }
+  /* It's not in the list already, is there room? */
+  // @@@@ should reuse outdated entries
+  if (!found) {
+    if (charp_len < CHARP_MAX) {
+      if (DBGFLG) dbprintln("ARP: Adding new entry for Chaos %#o", schad);
+      charp_list[charp_len].charp_chaddr = schad;
+      charp_list[charp_len].charp_age = time(NULL);
+      memcpy(&charp_list[(charp_len)++].charp_eaddr, sead, ETHER_ADDR_LEN);
+      // if (verbose) print_arp_table();
+    } else {
+      dbprintln("ARP: table full! Please increase size from %d and/or implement GC", CHARP_MAX);
+    }
+  }
+}
+
+void chudptohost_pf(struct dpchudp_s *dpchudp, unsigned char *buffp)
+{
+  register int cnt;
+
+  /* OK, now do a blocking read on packetfilter input! */
+  cnt = osn_pfread(&pfdata, buffp, DPCHUDP_MAXLEN);
+
+  if (((struct ether_header *)buffp)->ether_type == htons(ETHERTYPE_ARP)) {
+    if (DBGFLG)
+      dbprintln("Got ARP");
+    chudptohost_pf_arp(dpchudp, buffp, cnt);
+
+    return;
+  } else if (((struct ether_header *)buffp)->ether_type == htons(ETHERTYPE_CHAOS)) {
+    if (cnt <= sizeof(sizeof(struct ether_header))) { /* Must get enough for ether header */
+
+#if 0
+      /* If call timed out, should return 0 */
+      if (cnt == 0 && dpchudp->dpchudp_rdtmo)
+	return;		/* Just try again */
+#endif
+      if (DBGFLG)
+	dbprintln("ERead=%d, Err=%d", cnt, errno);
+
+      if (cnt >= 0) {
+	dbprintln("Eread = %d, %s", cnt,
+		  (cnt > 0) ? "no ether data" : "no packet");
+	return;
+      }
+
+      /* System call error of some kind */
+      if (errno == EINTR)		/* Ignore spurious signals */
+	return;
+
+      syserr(errno, "Eread = %d, errno %d", cnt, errno);
+      return;		/* For now... */
+    }
+    if (DBGFLG)
+      dbprintln("Read=%d", cnt);
+
+#define PKBOFF_PKPAYLOAD (PKBOFF_ETYPE+2)
+    // byte swap
+    ntohs_buf((u_short *)&buffp[PKBOFF_PKPAYLOAD], (u_short *)&buffp[PKBOFF_PKPAYLOAD], cnt-PKBOFF_PKPAYLOAD);
+    ihl_hhsend(dpchudp, cnt, buffp, PKBOFF_PKPAYLOAD);
+
+    return;
+  } else {
+    if (DBGFLG)
+      fprintf(stderr,"[dpchudp-R: unexpected ether type %#x]\r\n",
+	      ntohs(((struct ether_header *)buffp)->ether_type));
+    return;		/* get another pkt */
+  }
+}
+
+void chudptohost_chudp(struct dpchudp_s *dpchudp, unsigned char *buffp)
+{
+  struct sockaddr_in ip_sender;
+  socklen_t iplen;
+  register int cnt;
+
+  /* OK, now do a blocking read on UDP socket! */
+  errno = 0;		/* Clear to make sure it's the actual error */
+  memset(&ip_sender, 0, sizeof(ip_sender));
+  iplen = sizeof(ip_sender); /* Supply size of ip_sender, and get actual stored length */
+  cnt = recvfrom(chudpsock, buffp, DPCHUDP_MAXLEN, 0, (struct sockaddr *)&ip_sender, &iplen);
+  // buff now has a CHUDP pkt
+  if (cnt <= DPCHUDP_DATAOFFSET) {
+    if (DBGFLG)
+      fprintf(stderr, "[dpchudp-R: ERead=%d, Err=%d]\r\n",
+	      cnt, errno);
+
+    if (cnt < 0 && (errno == EINTR))	/* Ignore spurious signals */
+      return;
+
+    /* Error of some kind */
+    fprintf(stderr, "[dpchudp-R: Eread = %d, ", cnt);
+    if (cnt < 0) {
+      fprintf(stderr, "errno %d = %s]\r\n",
+	      errno, dp_strerror(errno));
+    } else if (cnt > 0)
+      fprintf(stderr, "no chudp data]\r\n");
+    else fprintf(stderr, "no packet]\r\n");
+
+    return;		/* For now... */
+  }
+  if (DBGFLG) {
+    if (DBGFLG & 0x4) {
+      fprintf(stderr, "\r\n[dpchudp-R: Read=%d\r\n", cnt);
+      dumppkt(buffp, cnt);
+      fprintf(stderr, "]");
+    }
+    else
+      fprintf(stderr, "[dpchudp-R: Read=%d]", cnt);
+  }
+
+  /* Have packet, now dispatch it to host */
+
+  if (((struct chudp_header *)buffp)->chudp_version != CHUDP_VERSION) {
+    if (DBGFLG) 
+      error("wrong protocol version %d",
+	    ((struct chudp_header *)buffp)->chudp_version);
+    return;
+  }
+  switch (((struct chudp_header *)buffp)->chudp_function) {
+  case CHUDP_PKT:
+    break;		/* deliver it */
+  default:
+    error("Unknown CHUDP function: %0X",
+	  ((struct chudp_header *)buffp)->chudp_function);
+    return;
+  }
+
+  /* Check who it's from, update Chaos/IP mapping */
+  {
+    /* check that the packet is complete:
+       4 bytes CHUDP header, Chaos header, add Chaos pkt length, plus 6 bytes trailer */
+    int chalen = ((buffp[DPCHUDP_DATAOFFSET+2] & 0xf)<<4) | buffp[DPCHUDP_DATAOFFSET+3];
+    int datalen = (DPCHUDP_DATAOFFSET + CHAOS_HEADERSIZE + chalen);
+    int chafrom = (buffp[cnt-4]<<8) | buffp[cnt-3];
+    char *ip = inet_ntoa(ip_sender.sin_addr);
+    in_port_t port = ntohs(ip_sender.sin_port);
+    time_t now = time(NULL);
+    int i, cks;
+    if ((cks = ch_checksum(buffp+DPCHUDP_DATAOFFSET,cnt-DPCHUDP_DATAOFFSET)) != 0) {
+      if (1 || DBGFLG)
+	dbprintln("Bad checksum 0x%x",cks);
+      /* #### must free buffer first(?) */
+      /* 	    return; */
+    }
+    if (cnt < datalen + CHAOS_HW_TRAILERSIZE) {	/* may have a byte of padding */
+      if (1 || DBGFLG) {
+	dbprintln("Rcvd bad length: %d. < %d. (expected), chaos data %d bytes, errno %d",
+		  cnt, datalen + CHAOS_HW_TRAILERSIZE, chalen, errno);
+	dumppkt(buffp, cnt);
+      }
+      /* #### must free buffer first(?) */
+      /* 	    return; */
+    }
+    if (dpchudp->dpchudp_ifmeth_chudp) {
+#if 0
+      if (DBGFLG) {
+	dbprintln("Rcv from chaos %o = ip %s port %d., %d. bytes (datalen %d)",
+		  chafrom,
+		  ip, port,
+		  cnt, datalen);
+	dumppkt(buffp,cnt);
+      }
+#endif
+      /* #### remove cks when buffer freed instead */
+      if ((cks == 0) && (chafrom != myaddr) && (dpchudp->dpchudp_chip_tlen < DPCHUDP_CHIP_MAX)) {
+	/* Space available, see if we need to add this */
+	/* Look for old entries: if one is found which is either
+	   static (from config file) or sufficiently fresh,
+	   keep it and update the freshness (if not static) */
+	for (i = 0; i < dpchudp->dpchudp_chip_tlen; i++)
+	  if (chafrom == dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr) {
+	    if (dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd != 0) {
+	      if (now - dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd >
+		  DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT) {
+		/* Old, update it (in case he moved) */
+		if (1 || DBGFLG)
+		  dbprintln("Updating CHIP entry %d for %o/%s:%d",
+			    i, chafrom, ip, port);
+		dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
+		memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, &ip_sender.sin_addr, IP_ADRSIZ);
+	      }
+	      /* update timestamp */
+	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
+	    }
+	    chafrom = -1;	/* Not it shouldn't be added */
+	    break;
+	  }
+	if (chafrom > 0) {
+	  /* It's OK to write here, the other fork will see it when tlen is updated */
+	  i = dpchudp->dpchudp_chip_tlen;
+	  if (1 || DBGFLG)
+	    dbprintln("Adding CHIP entry %d for %o/%s:%d",
+		      i, chafrom, ip, port);
+	  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr = chafrom;
+	  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
+	  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
+	  memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, &ip_sender.sin_addr, IP_ADRSIZ);
+	  dpchudp->dpchudp_chip_tlen++;
+	}
+#if 0
+	else if (0 && DBGFLG) {
+	  dbprintln("Already know chaos %o",chafrom);
+	}
+#endif
+      }
+      else if ((dpchudp->dpchudp_chip_tlen >= DPCHUDP_CHIP_MAX) && DBGFLG) {
+	dbprintln("CHIP table full - cannot add %o", chafrom);
+      }
+    }
+  }
+
+  ihl_hhsend(dpchudp, cnt, buffp, DPCHUDP_DATAOFFSET);
+}
+
+
 void
 chudptohost(register struct dpchudp_s *dpchudp)
 {
     register struct dpx_s *dpx = dp_dpxfr(&dp);
-    register int cnt;
     unsigned char *inibuf;
     unsigned char *buffp;
     size_t max;
     int stoploop = 50;
-    struct sockaddr_in ip_sender;
-    socklen_t iplen;
 
     inibuf = dp_xsbuff(dpx, &max);	/* Get initial buffer ptr */
 
@@ -441,141 +818,14 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	/* Set up buffer and initialize offsets */
 	buffp = inibuf;
 
-	/* OK, now do a blocking read on UDP socket! */
-	errno = 0;		/* Clear to make sure it's the actual error */
-	memset(&ip_sender, 0, sizeof(ip_sender));
-	iplen = sizeof(ip_sender); /* Supply size of ip_sender, and get actual stored length */
-	cnt = recvfrom(sock, buffp, DPCHUDP_MAXLEN, 0, (struct sockaddr *)&ip_sender, &iplen);
-	if (cnt <= DPCHUDP_DATAOFFSET) {
-	    if (DBGFLG)
-		fprintf(stderr, "[dpchudp-R: ERead=%d, Err=%d]\r\n",
-					cnt, errno);
-
-	    if (cnt < 0 && (errno == EINTR))	/* Ignore spurious signals */
-		continue;
-
-	    /* Error of some kind */
-	    fprintf(stderr, "[dpchudp-R: Eread = %d, ", cnt);
-	    if (cnt < 0) {
-		if (--stoploop <= 0)
-		    efatal(1, "Too many retries, aborting]");
-		fprintf(stderr, "errno %d = %s]\r\n",
-				errno, dp_strerror(errno));
-	    } else if (cnt > 0)
-		fprintf(stderr, "no chudp data]\r\n");
-	    else fprintf(stderr, "no packet]\r\n");
-
-	    continue;		/* For now... */
+	if (!dpchudp->dpchudp_ifmeth_chudp) {
+	  // non-CHUDP case (Ethernet)
+	  chudptohost_pf(dpchudp, buffp);
+	} else { // CHUDP case
+	  chudptohost_chudp(dpchudp, buffp);
 	}
-	if (DBGFLG) {
-	    if (DBGFLG & 0x4) {
-		fprintf(stderr, "\r\n[dpchudp-R: Read=%d\r\n", cnt);
-		dumppkt(buffp, cnt);
-		fprintf(stderr, "]");
-	    }
-	    else
-		fprintf(stderr, "[dpchudp-R: Read=%d]", cnt);
-	}
-
-	/* Have packet, now dispatch it to host */
-
-	if (((struct chudp_header *)buffp)->chudp_version != CHUDP_VERSION) {
-	  if (DBGFLG) 
-	    error("wrong protocol version %d",
-		    ((struct chudp_header *)buffp)->chudp_version);
-	  continue;
-	}
-	switch (((struct chudp_header *)buffp)->chudp_function) {
-	case CHUDP_PKT:
-	  break;		/* deliver it */
-	default:
-	  error("Unknown CHUDP function: %0X",
-		((struct chudp_header *)buffp)->chudp_function);
-	  continue;
-	}
-	/* Check who it's from, update Chaos/IP mapping */
-	{
-	  /* check that the packet is complete:
-	     4 bytes CHUDP header, Chaos header, add Chaos pkt length, plus 6 bytes trailer */
-	  int chalen = ((buffp[DPCHUDP_DATAOFFSET+2] & 0xf)<<4) | buffp[DPCHUDP_DATAOFFSET+3];
-	  int datalen = (DPCHUDP_DATAOFFSET + CHAOS_HEADERSIZE + chalen);
-	  int chafrom = (buffp[cnt-4]<<8) | buffp[cnt-3];
-	  char *ip = inet_ntoa(ip_sender.sin_addr);
-	  in_port_t port = ntohs(ip_sender.sin_port);
-	  time_t now = time(NULL);
-	  int i, cks;
-	  if ((cks = ch_checksum(buffp+DPCHUDP_DATAOFFSET,cnt-DPCHUDP_DATAOFFSET)) != 0) {
-	    if (1 || DBGFLG)
-	      dbprintln("Bad checksum 0x%x",cks);
-	    /* #### must free buffer first(?) */
-/* 	    return; */
-	  }
-	  if (cnt < datalen + CHAOS_HW_TRAILERSIZE) {	/* may have a byte of padding */
-	    if (1 || DBGFLG) {
-	      dbprintln("Rcvd bad length: %d. < %d. (expected), chaos data %d bytes, errno %d",
-			cnt, datalen + CHAOS_HW_TRAILERSIZE, chalen, errno);
-	      dumppkt(buffp, cnt);
-	    }
-	    /* #### must free buffer first(?) */
-/* 	    return; */
-	  }
-#if 0
-	  if (DBGFLG) {
-	    dbprintln("Rcv from chaos %o = ip %s port %d., %d. bytes (datalen %d)",
-		      chafrom,
-		      ip, port,
-		      cnt, datalen);
-	    dumppkt(buffp,cnt);
-	  }
-#endif
-	  /* #### remove cks when buffer freed instead */
-	  if ((cks == 0) && (chafrom != myaddr) && (dpchudp->dpchudp_chip_tlen < DPCHUDP_CHIP_MAX)) {
-	    /* Space available, see if we need to add this */
-	    /* Look for old entries: if one is found which is either
-	       static (from config file) or sufficiently fresh,
-	       keep it and update the freshness (if not static) */
-	    for (i = 0; i < dpchudp->dpchudp_chip_tlen; i++)
-	      if (chafrom == dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr) {
-		if (dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd != 0) {
-		  if (now - dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd >
-		      DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT) {
-		    /* Old, update it (in case he moved) */
-		    if (1 || DBGFLG)
-		      dbprintln("Updating CHIP entry %d for %o/%s:%d",
-				i, chafrom, ip, port);
-		    dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
-		    memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, &ip_sender.sin_addr, IP_ADRSIZ);
-		  }
-		  /* update timestamp */
-		  dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
-		}
-		chafrom = -1;	/* Not it shouldn't be added */
-		break;
-	      }
-	    if (chafrom > 0) {
-	      /* It's OK to write here, the other fork will see it when tlen is updated */
-	      i = dpchudp->dpchudp_chip_tlen;
-	      if (1 || DBGFLG)
-		dbprintln("Adding CHIP entry %d for %o/%s:%d",
-			  i, chafrom, ip, port);
-	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_chaddr = chafrom;
-	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipport = port;
-	      dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_lastrcvd = now;
-	      memcpy(&dpchudp->dpchudp_chip_tbl[i].dpchudp_chip_ipaddr, &ip_sender.sin_addr, IP_ADRSIZ);
-	      dpchudp->dpchudp_chip_tlen++;
-	    }
-#if 0
-	    else if (0 && DBGFLG) {
-	      dbprintln("Already know chaos %o",chafrom);
-	    }
-#endif
-	  }
-	  else if ((dpchudp->dpchudp_chip_tlen >= DPCHUDP_CHIP_MAX) && DBGFLG) {
-	    dbprintln("CHIP table full - cannot add %o", chafrom);
-	  }
-	}
-
-	ihl_hhsend(dpchudp, cnt, buffp);
+	if (--stoploop <= 0)
+	  efatal(1, "Too many retries, aborting");
     }
 }
 
@@ -586,20 +836,20 @@ chudptohost(register struct dpchudp_s *dpchudp)
 void
 ihl_hhsend(register struct dpchudp_s *dpchudp,
 	   int cnt,
-	   register unsigned char *pp)
+	   register unsigned char *pp,
+	   size_t off)
 	/* "pp" is packet data ptr, has room for header preceding */
 {
 
     /* Send up to host!  Assume we're already in shared buffer. */
 
     register struct dpx_s *dpx = dp_dpxfr(&dp);
-    size_t off = DPCHUDP_DATAOFFSET;
 
     dpchudp->dpchudp_inoff = off; /* Tell host what offset is */
     dp_xsend(dpx, DPCHUDP_RPKT, cnt-off);
 
     if (DBGFLG)
-	fprintf(stderr, "[dpchudp-R: sent RPKT %d+%d]", (int)off, cnt-off);
+      fprintf(stderr, "[dpchudp-R: sent RPKT %d+%d]", (int)off, (int)(cnt-off));
 
 }
 
@@ -659,30 +909,52 @@ hosttochudp(register struct dpchudp_s *dpchudp)
 
 	/* Come here to handle output packet */
 #if 1
-	{
-	  int chlen = ((buff[DPCHUDP_DATAOFFSET+2] & 0xf) << 4) | buff[DPCHUDP_DATAOFFSET+3];
-	  if ((chlen + CHAOS_HEADERSIZE + DPCHUDP_DATAOFFSET + CHAOS_HW_TRAILERSIZE) > rcnt) {
-	    if (1 || DBGFLG)
-	      dbprintln("NOT sending less than packet: pkt len %d, expected %d (Chaos data len %d)",
-			rcnt, (chlen + CHAOS_HEADERSIZE + DPCHUDP_DATAOFFSET + CHAOS_HW_TRAILERSIZE),
-			chlen);
-	    dp_xrdone(dpx);	/* ack it to dvch11, but */
-	    return;		/* #### don't send it! */
-	  }
+	int chlen = ((buff[DPCHUDP_DATAOFFSET+2] & 0xf) << 4) | buff[DPCHUDP_DATAOFFSET+3];
+
+	if ((chlen + CHAOS_HEADERSIZE + DPCHUDP_DATAOFFSET + CHAOS_HW_TRAILERSIZE) > rcnt) {
+	  if (1 || DBGFLG)
+	    dbprintln("NOT sending less than packet: pkt len %d, expected %d (Chaos data len %d)",
+		      rcnt, (chlen + CHAOS_HEADERSIZE + DPCHUDP_DATAOFFSET + CHAOS_HW_TRAILERSIZE),
+		      chlen);
+	  dp_xrdone(dpx);	/* ack it to dvch11, but */
+	  return;		/* don't send it! */
 	}
 #endif
-	
-	/* find IP destination given chaos packet  */
-	if (hi_iproute(&ipdest, &ipport, &buff[DPCHUDP_DATAOFFSET], rcnt - DPCHUDP_DATAOFFSET,dpchudp)) {
-	  ip_write(&ipdest, ipport, buff, rcnt, dpchudp);
+	if (!dpchudp->dpchudp_ifmeth_chudp) {
+	  // Ethernet case
+	  u_char *ch = &buff[DPCHUDP_DATAOFFSET];
+	  u_short dchad = (buff[4+DPCHUDP_DATAOFFSET]<<8)|buff[5+DPCHUDP_DATAOFFSET];
+	  // byte swap for network
+	  htons_buf((u_short *)ch, (u_short *)ch, chlen);
+
+	  if (dchad == 0) {		/* broadcast */
+	    if (DBGFLG) dbprintln("Broadcasting on ether");
+	    send_chaos_packet((u_char *)&eth_brd, &buff[DPCHUDP_DATAOFFSET], rcnt-DPCHUDP_DATAOFFSET);
+	  } else {
+	    u_char *eaddr = find_arp_entry(dchad);
+	    if (eaddr != NULL) {
+	      if (DBGFLG) dbprintln("Sending on ether to %#o", dchad);
+	      send_chaos_packet(eaddr, &buff[DPCHUDP_DATAOFFSET], rcnt-DPCHUDP_DATAOFFSET);
+	    } else {
+	      if (DBGFLG) dbprintln("Don't know %#o, sending ARP request", dchad);
+	      send_chaos_arp_request(dchad);
+	      // Chaos sender will retransmit, surely.
+	    }
+	  }
+	} else {
+	  // CHUDP case
+	  /* find IP destination given chaos packet  */
+	  if (hi_iproute(&ipdest, &ipport, &buff[DPCHUDP_DATAOFFSET], rcnt - DPCHUDP_DATAOFFSET,dpchudp)) {
+	    ip_write(&ipdest, ipport, buff, rcnt, dpchudp);
+	  }
 	}
 
-	/* Command done, tell 10 we're done with it */
-	if (DBGFLG)
+	  /* Command done, tell 10 we're done with it */
+	  if (DBGFLG)
 	    fprintf(stderr, "[dpchudp-W: CmdDone]");
 
-	dp_xrdone(dpx);
-    }
+	  dp_xrdone(dpx);
+	}
 }
 
 int
@@ -810,9 +1082,255 @@ ip_write(struct in_addr *ipa, in_port_t ipport, unsigned char *buf, int len, str
   sin.sin_port = htons(ipport);
   memcpy((void *)&sin.sin_addr, ipa, sizeof(struct in_addr));
 
-  if (sendto(sock, buf, len, 0, (struct sockaddr *) &sin, (socklen_t) (sizeof(sin))) != len) {
+  if (sendto(chudpsock, buf, len, 0, (struct sockaddr *) &sin, (socklen_t) (sizeof(sin))) != len) {
     error("sendto failed - %s", dp_strerror(errno));
   }
+}
+
+/* **** Chaos-over-Ethernet functions **** [based on cbridge + dpni20] */
+
+void
+send_chaos_packet(unsigned char *ea, unsigned char *buf, int cnt)
+{
+  unsigned char pktbuf[ARP_PKTSIZ];
+  struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
+  u_char *my_ea = dpc->dpchudp_eth;
+
+  // construct ether header
+  ea_set(&pktbuf[0], ea);	/* dest ea */
+  ea_set(&pktbuf[ETHER_ADDR_LEN], my_ea);  /* src ea */
+  memset(&pktbuf[ETHER_ADDR_LEN*2], htons(ETHERTYPE_CHAOS), 2); /* pkt type */
+
+  memcpy(&pktbuf[ETHER_ADDR_LEN*2+2], buf, cnt);
+  (void) osn_pfwrite(&pfdata, pktbuf, cnt+ETHER_ADDR_LEN*2+2);
+}
+
+#if KLH10_NET_PCAP
+
+#define BPF_MTU CH_PK_MAXLEN // (BPF_WORDALIGN(1514) + BPF_WORDALIGN(sizeof(struct bpf_hdr)))
+
+// See dpimp.c
+/* Packet byte offsets for interesting fields (in network order) */
+#define PKBOFF_EDEST 0		/* 1st shortword of Ethernet destination */
+#define PKBOFF_ETYPE 12		/* Shortwd offset to Ethernet packet type */
+#define PKBOFF_ARP_PTYPE (sizeof(struct ether_header)+sizeof(u_short))  /* ARP protocol type */
+
+/* BPF simple Loads */
+#define BPFI_LD(a)  bpf_stmt(BPF_LD+BPF_W+BPF_ABS,(a))	/* Load word  P[a:4] */
+#define BPFI_LDH(a) bpf_stmt(BPF_LD+BPF_H+BPF_ABS,(a))	/* Load short P[a:2] */
+#define BPFI_LDB(a) bpf_stmt(BPF_LD+BPF_B+BPF_ABS,(a))	/* Load byte  P[a:1] */
+
+/* BPF Jumps and skips */
+#define BPFI_J(op,k,t,f) bpf_jump(BPF_JMP+(op)+BPF_K,(k),(t),(f))
+#define BPFI_JEQ(k,n) BPFI_J(BPF_JEQ,(k),(n),0)		/* Jump if A == K */
+#define BPFI_JNE(k,n) BPFI_J(BPF_JEQ,(k),0,(n))		/* Jump if A != K */
+#define BPFI_JGT(k,n) BPFI_J(BPF_JGT,(k),(n),0)		/* Jump if A >  K */
+#define BPFI_JLE(k,n) BPFI_J(BPF_JGT,(k),0,(n))		/* Jump if A <= K */
+#define BPFI_JGE(k,n) BPFI_J(BPF_JGE,(k),(n),0)		/* Jump if A >= K */
+#define BPFI_JLT(k,n) BPFI_J(BPF_JGE,(k),0,(n))		/* Jump if A <  K */
+#define BPFI_JDO(k,n) BPFI_J(BPF_JSET,(k),(n),0)	/* Jump if   A & K */
+#define BPFI_JDZ(k,n) BPFI_J(BPF_JSET,(k),0,(n))	/* Jump if !(A & K) */
+
+#define BPFI_CAME(k) BPFI_JEQ((k),1)		/* Skip if A == K */
+#define BPFI_CAMN(k) BPFI_JNE((k),1)		/* Skip if A != K */
+#define BPFI_CAMG(k) BPFI_JGT((k),1)		/* Skip if A >  K */
+#define BPFI_CAMLE(k) BPFI_JLE((k),1)		/* Skip if A <= K */
+#define BPFI_CAMGE(k) BPFI_JGE((k),1)		/* Skip if A >= K */
+#define BPFI_CAML(k) BPFI_JLT((k),1)		/* Skip if A <  K */
+#define BPFI_TDNN(k) BPFI_JDO((k),1)		/* Skip if   A & K */
+#define BPFI_TDNE(k) BPFI_JDZ((k),1)		/* Skip if !(A & K) */
+
+/* BPF Returns */
+#define BPFI_RET(n) bpf_stmt(BPF_RET+BPF_K, (n))	/* Return N bytes */
+#define BPFI_RETFAIL() BPFI_RET(0)			/* Failure return */
+#define BPFI_RETWIN()  BPFI_RET((u_int)-1)		/* Success return */
+
+// My addition
+#define BPFI_SKIP(n) BPFI_J(BPF_JA,0,(n),(n))  /* skip n instructions */
+
+struct bpf_insn bpf_stmt(unsigned short code, bpf_u_int32 k)
+{
+    struct bpf_insn ret;
+    ret.code = code;
+    ret.jt = 0;
+    ret.jf = 0;
+    ret.k = k;
+    return ret;
+}
+struct bpf_insn bpf_jump(unsigned short code, bpf_u_int32 k,
+			 unsigned char jt, unsigned char jf)
+{
+    struct bpf_insn ret;
+    ret.code = code;
+    ret.jt = jt;
+    ret.jf = jf;
+    ret.k = k;
+    return ret;
+}
+
+// Here is the BPF program, simple
+#define BPF_PFMAX 50
+struct bpf_insn bpf_pftab[BPF_PFMAX];
+struct bpf_program bpf_pfilter = {0, bpf_pftab};
+
+static void pfshow(struct bpf_program *pf);
+
+// this gets called from osn_pfinit
+// make a filter for both Chaos and ARP (for Chaos), have the read method handle ARP
+struct bpf_program *
+pfbuild(void *arg, struct in_addr *ipa)
+{
+  struct dpchudp_s *dpc = (struct dpchudp_s *)arg;
+  struct bpf_program *pfp = &bpf_pfilter;
+  struct bpf_insn *p = pfp->bf_insns;
+
+  // if etype == arp && arp_ptype == chaos then win
+  // if etype == chaos && (edest == myeth || edest == broadcast) then win
+
+  // Check the ethernet type field
+  *p++ = BPFI_LDH(PKBOFF_ETYPE); /* Load ethernet type field */
+  *p++ = BPFI_CAME(ETHERTYPE_ARP); /* Skip if ARP */
+  *p++ = BPFI_SKIP(4);	/* nope, go on below*/
+  // For ARP, check the protocol type
+  *p++ = BPFI_LDH(PKBOFF_ARP_PTYPE); /* Check the ARP type */
+  *p++ = BPFI_CAME(ETHERTYPE_CHAOS);
+  *p++ = BPFI_RETFAIL();	/* Not Chaos, ignore */
+  // Never mind about destination here, if we get other ARP info that's nice?
+  *p++ = BPFI_RETWIN();
+  // Not ARP, check for CHAOS
+  *p++ = BPFI_CAME(ETHERTYPE_CHAOS); /* Skip if CHAOS */
+  *p++ = BPFI_RETFAIL();	/* Not Chaos, ignore */
+  // For Ethernet pkts, also filter for our own address or broadcast,
+  // in case someone else makes the interface promiscuous
+  u_char *myea = (u_char *)&dpc->dpchudp_eth;
+  u_short ea1 = (myea[0]<<8)|myea[1];
+  u_long ea2 = (((myea[2]<<8)|myea[3])<<8|myea[4])<<8 | myea[5];
+  *p++ = BPFI_LD(PKBOFF_EDEST+2);	/* last word of Ether dest */
+  *p++ = BPFI_CAME(ea2);
+  *p++ = BPFI_SKIP(3); /* no match, skip forward and check for broadcast */
+  *p++ = BPFI_LDH(PKBOFF_EDEST);  /* get first part of dest addr */
+  *p++ = BPFI_CAMN(ea1);
+  *p++ = BPFI_RETWIN();		/* match both, win! */
+  *p++ = BPFI_LD(PKBOFF_EDEST+2);	/* 1st word of Ether dest again */
+  *p++ = BPFI_CAME(0xffffffff);	/* last hword is broadcast? */
+  *p++ = BPFI_RETFAIL();
+  *p++ = BPFI_LDH(PKBOFF_EDEST);  /* get first part of dest addr */
+  *p++ = BPFI_CAME(0xffff);
+  *p++ = BPFI_RETFAIL();	/* nope */
+  *p++ = BPFI_RETWIN();		/* win */
+
+    pfp->bf_len = p - pfp->bf_insns;	/* Set # of items on list */
+
+    if (DP_DBGFLG)			/* If debugging, print out resulting filter */
+	pfshow(pfp);
+    return pfp;
+}
+
+
+// from dpni20
+/* Debug auxiliary to print out packetfilter we composed.
+*/
+static void
+pfshow(struct bpf_program *pf)
+{
+    int i;
+
+    fprintf(stderr, "[%s: kernel packetfilter pri <>, len %d:\r\n",
+	    progname,
+	    /* pf->PF_PRIO, */ pf->bf_len);
+    for (i = 0; i < pf->bf_len; ++i)
+	fprintf(stderr, "%04X %2d %2d %0X\r\n",
+		pf->bf_insns[i].code,
+		pf->bf_insns[i].jt,
+		pf->bf_insns[i].jf,
+		pf->bf_insns[i].k);
+    fprintf(stderr, "]\r\n");
+}
+
+#endif /* KLH10_NET_PCAP */
+
+/* **** Chaosnet ARP functions **** */
+
+void init_arp_table()
+{
+  memset((char *)charp_list, 0, sizeof(struct charp_ent)*CHARP_MAX);
+  charp_len = 0;
+}
+
+u_char *find_arp_entry(u_short daddr)
+{
+  int i;
+  struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
+  u_short my_chaddr = dpc->dpchudp_myaddr;
+
+  if (DP_DBGFLG) dbprintln("Looking for ARP entry for %#o, ARP table len %d", daddr, charp_len);
+  if (daddr == my_chaddr) {
+    dbprintln("#### Looking up ARP for my own address, BUG!");
+    return NULL;
+  }
+  
+  for (i = 0; i < charp_len && i < CHARP_MAX; i++)
+    if (charp_list[i].charp_chaddr == daddr) {
+      if ((charp_list[i].charp_age != 0)
+	  && ((time(NULL) - charp_list[i].charp_age) > CHARP_MAX_AGE)) {
+	if (DP_DBGFLG) dbprintln("Found ARP entry for %#o but it is too old (%lu s)",
+				 daddr, (time(NULL) - charp_list[i].charp_age));
+	return NULL;
+      }
+      if (DP_DBGFLG) dbprintln("Found ARP entry for %#o", daddr);
+      return charp_list[i].charp_eaddr;
+    }
+  return NULL;
+}
+
+
+// from cbridge, rewritten reading arp_myreply from dpni20
+void
+send_chaos_arp_pkt(u_short atyp, u_short dest_chaddr, u_char *dest_eth)
+{
+  unsigned char pktbuf[ARP_PKTSIZ];
+  struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
+  u_short my_chaddr = dpc->dpchudp_myaddr;
+  u_char req[sizeof(struct arphdr)+(ETHER_ADDR_LEN+2)*2];
+  struct arphdr *arp = (struct arphdr *)&req;
+
+  // first ethernet header
+  memcpy(&pktbuf[0], dest_eth, ETHER_ADDR_LEN);  /* dest ether */
+  ea_set(&pktbuf[ETHER_ADDR_LEN], dpc->dpchudp_eth);  /* source ether = me */
+  memset(&pktbuf[ETHER_ADDR_LEN*2], htons(ETHERTYPE_ARP), 2);  /* ether pkt type */
+
+  // now arp pkt
+  memset(&req, 0, sizeof(req));
+  arp->ar_hrd = htons(ARPHRD_ETHER); /* Want ethernet address */
+  arp->ar_pro = htons(ETHERTYPE_CHAOS);	/* of a Chaosnet address */
+  arp->ar_hln = ETHER_ADDR_LEN;
+  arp->ar_pln = sizeof(dest_chaddr);
+  arp->ar_op = htons(atyp);
+  memcpy(&req[sizeof(struct arphdr)], dpc->dpchudp_eth, ETHER_ADDR_LEN);	/* my ether */
+  memcpy(&req[sizeof(struct arphdr)+ETHER_ADDR_LEN], &my_chaddr, sizeof(my_chaddr)); /* my chaos */
+  /* his ether */
+  if (atyp == ARPOP_REPLY)
+    memcpy(&req[sizeof(struct arphdr)+ETHER_ADDR_LEN+2], dest_eth, ETHER_ADDR_LEN);
+  /* his chaos */
+  memcpy(&req[sizeof(struct arphdr)+ETHER_ADDR_LEN+2+ETHER_ADDR_LEN], &dest_chaddr, sizeof(my_chaddr));
+
+  // and merge them
+  memcpy(&pktbuf[ETHER_ADDR_LEN*2+2], req, sizeof(req));
+  
+  // and send it
+  osn_pfwrite(&pfdata, pktbuf, sizeof(pktbuf));
+}
+
+void
+send_chaos_arp_request(u_short chaddr)
+{
+  send_chaos_arp_pkt(ARPOP_REQUEST, chaddr, (u_char *)&eth_brd);
+}
+
+void
+send_chaos_arp_reply(u_short dest_chaddr, u_char *dest_eth)
+{
+  send_chaos_arp_pkt(ARPOP_REPLY, dest_chaddr, dest_eth);
 }
 
 
@@ -896,11 +1414,18 @@ dumppkt(unsigned char *ucp, int cnt)
 }
 
 
+char *
+ch_adrsprint(char *cp, unsigned char *ca)
+{
+  sprintf(cp, "%#o", ca[0]<<8 || ca[1]);
+  return cp;
+}
+
 /* Add OSDNET shared code here */
 
 /* OSDNET is overkill and assumes a lot of packet filter defs,
    which we're not at all interested in providing */
-#if 0
+#if 1
 # include "osdnet.c"
 #else
 char *

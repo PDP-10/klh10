@@ -108,10 +108,11 @@ struct ch11 {
 
     /* Misc config info not set elsewhere */
     char *ch_ifnam;	/* Native platform's interface name */
+    char *ch_ifmeth;	/* Native platform's interface access method */
     int ch_dedic;	/* TRUE if interface dedicated (else shared) */
     int ch_backlog;	/* Max # input msgs to queue up in kernel */
     unsigned int ch_myaddr;	/* My Chaos address */
-  in_port_t ch_chudp_port;	/* CHUDP port to use */
+    in_port_t ch_chudp_port;	/* CHUDP port to use */
 
     /* DP stuff */
     char *ch_dpname;	/* Pointer to dev process pathname */
@@ -180,8 +181,9 @@ static int  chudp_outxfer(struct ch11 *ch);
 \
     prmdef(CH11P_MYADDR, "myaddr"),/* My Chaosnet address */\
     prmdef(CH11P_CHUPORT, "chudpport"),	/* CHUDP port to use */\
-    prmdef(CH11P_CHIP, "chip") /* Chaos/IP mapping */
-
+    prmdef(CH11P_CHIP, "chip"), /* Chaos/IP mapping */\
+\
+    prmdef(CH11P_IFMETH, "ifmeth")  /* Interface method (chudp, pcap, etc) */
 
 enum {
 # define prmdef(i,s) i
@@ -286,7 +288,8 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 	case CH11P_MYADDR:	/* Parse as octal number */
 	  if (!prm.prm_val || !s_tonum(prm.prm_val, &lval))
 	    break;
-	  if ((lval < 1) || (lval >= 0xffff)) {
+	  if (((lval & 0xff00) == 0) || ((lval & 0xff) == 0) || (lval >= 0xffff)) {
+	    // subnet part must be nonzero, host part too, also max 16 bit
 	    fprintf(f, "CH11 MYADDR must be a valid Chaosnet address\n");
 	    ret = FALSE;
 	  } else
@@ -402,6 +405,12 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
 	    if (!prm.prm_val)
 		break;
 	    ch->ch_dpname = s_dup(prm.prm_val);
+	    continue;
+
+	case CH11P_IFMETH:		/* Parse as simple string */
+	    if (!prm.prm_val)
+		break;
+	    ch->ch_ifmeth = s_dup(prm.prm_val);
 	    continue;
 
 	}
@@ -1052,7 +1061,7 @@ chudp_init(register struct ch11 *ch, FILE *of)
     if (!dp_init(&ch->ch_dp, sizeof(struct dpchudp_s),
 			DP_XT_MSIG, SIGUSR1, (size_t)CHUDPBUFSIZ,	   /* in */
 			DP_XT_MSIG, SIGUSR1, (size_t)CHUDPBUFSIZ)) { /* out */
-	if (of) fprintf(of, "CHUDP subproc init failed!\n");
+	if (of) fprintf(of, "CH11 subproc init failed!\n");
 	return FALSE;
     }
     ch->ch_sbuf = dp_xsbuff(&(ch->ch_dp.dp_adr->dpc_todp), &junk);
@@ -1077,9 +1086,14 @@ chudp_init(register struct ch11 *ch, FILE *of)
     else
 	dpc->dpchudp_ifnam[0] = '\0';	/* No specific interface */
 
+    if (ch->ch_ifmeth)			/* Pass on interface access method */
+	strncpy(dpc->dpchudp_ifmeth, ch->ch_ifmeth, sizeof(dpc->dpchudp_ifmeth)-1);
+    else
+	dpc->dpchudp_ifmeth[0] = '\0';	/* No specific access method */
+
     dpc->dpchudp_myaddr = ch->ch_myaddr; /* Set our Chaos address */
+
     dpc->dpchudp_port = ch->ch_chudp_port;
-    
     /* copy chip table */
     for (junk = 0; junk < ch->ch_chip_tlen; junk++) {
       memset(&dpc->dpchudp_chip_tbl[junk], 0, sizeof(struct dpchudp_chip));
@@ -1096,7 +1110,7 @@ chudp_init(register struct ch11 *ch, FILE *of)
     ev.dvev_arg.eva_int = SIGUSR1;
     ev.dvev_arg2.eva_ip = &(ch->ch_dp.dp_adr->dpc_todp.dpx_donflg);
     if (!(*ch->ch_dv.dv_evreg)((struct device *)ch, ch_evhsdon, &ev)) {
-	if (of) fprintf(of, "CHUDP event reg failed!\n");
+	if (of) fprintf(of, "CH11 event reg failed!\n");
 	return FALSE;
     }
 
@@ -1104,7 +1118,7 @@ chudp_init(register struct ch11 *ch, FILE *of)
     ev.dvev_arg.eva_int = SIGUSR1;
     ev.dvev_arg2.eva_ip = &(ch->ch_dp.dp_adr->dpc_frdp.dpx_wakflg);
     if (!(*ch->ch_dv.dv_evreg)((struct device *)ch, ch_evhrwak, &ev)) {
-	if (of) fprintf(of, "CHUDP event reg failed!\n");
+	if (of) fprintf(of, "CH11 event reg failed!\n");
 	return FALSE;
     }
     return TRUE;
@@ -1160,7 +1174,7 @@ static void
 chudp_stop(register struct ch11 *ch)
 {
     if (DVDEBUG(ch))
-	fprintf(DVDBF(ch), "[CHUDP: stopping...");
+	fprintf(DVDBF(ch), "[CH11: stopping...");
 
     dp_stop(&ch->ch_dp, 1);	/* Say to kill and wait 1 sec for synch */
 
@@ -1176,7 +1190,7 @@ static void
 chudp_kill(register struct ch11 *ch)
 {
     if (DVDEBUG(ch))
-	fprintf(DVDBF(ch), "[CHUDP kill]\r\n");
+	fprintf(DVDBF(ch), "[CH11 kill]\r\n");
 
     ch->ch_dpstate = FALSE;
     (*ch->ch_dv.dv_evreg)(	/* Flush all event handlers for device */
@@ -1243,7 +1257,7 @@ chudp_outxfer(register struct ch11 *ch)
     /* Make sure we can output message and fail if not */
     if (!dp_xstest(dpx)) {
       if (DVDEBUG(ch))
-	fprintf(DVDBF(ch), "[CHUDP: DP out blocked]\r\n");
+	fprintf(DVDBF(ch), "[CH11: DP out blocked]\r\n");
       return 0;
     }
 
@@ -1273,7 +1287,7 @@ chudp_outxfer(register struct ch11 *ch)
     dp_xsend(dpx, DPCHUDP_SPKT, (size_t)cnt + DPCHUDP_DATAOFFSET);
 
     if (DVDEBUG(ch))
-      fprintf(DVDBF(ch), "[CHUDP: Out %d]\r\n", cnt);
+      fprintf(DVDBF(ch), "[CH11: Out %d]\r\n", cnt);
 
     return 1;
 }
@@ -1292,13 +1306,13 @@ chudp_incheck(register struct ch11 *ch)
 
 	case DPCHUDP_RPKT:		/* Input packet ready! */
 	    if (DVDEBUG(ch))
-		fprintf(DVDBF(ch), "[CHUDP: inbuf %ld]\r\n",
+		fprintf(DVDBF(ch), "[CH11: inbuf %ld]\r\n",
 			    (long) dp_xrcnt(dpx));
 	    return 1;
 
 	default:
 	    if (DVDEBUG(ch))
-		fprintf(DVDBF(ch), "[CHUDP: R %d flushed]", dp_xrcmd(dpx));
+		fprintf(DVDBF(ch), "[CH11: R %d flushed]", dp_xrcmd(dpx));
 	    dp_xrdone(dpx);			/* just ACK it */
 	    return 0;
 	}
@@ -1331,7 +1345,7 @@ chudp_inxfer(register struct ch11 *ch)
     pp = ch->ch_rbuf + dpc->dpchudp_inoff;
 
     if (DVDEBUG(ch))
-	fprintf(DVDBF(ch), "[CHUDP: In %d]\r\n", cnt);
+	fprintf(DVDBF(ch), "[CH11: In %d]\r\n", cnt);
     if (DVDEBUG(ch) & DVDBF_DATSHO)	/* Show data? */
 	showpkt(DVDBF(ch), "PKTIN ", pp, cnt);
 
@@ -1346,13 +1360,13 @@ chudp_inxfer(register struct ch11 *ch)
     /* check hw trailer: dest, checksum */
     if ((((pp[cnt-6]<<8) | pp[cnt-5]) != ch->ch_myaddr)) {
       if (DVDEBUG(ch))
-	fprintf(DVDBF(ch), "[CHUDP: not for my address: destination %o]\r\n",
+	fprintf(DVDBF(ch), "[CH11: not for my address: destination %o]\r\n",
 		((pp[cnt-6]<<8) | pp[cnt-5]));
     } else {
       cks = ch_checksum(pp,cnt);
       if (cks != 0) {
 	if (DVDEBUG(ch))
-	  fprintf(DVDBF(ch), "[CHUDP: bad checksum 0x%x]\r\n", cks);
+	  fprintf(DVDBF(ch), "[CH11: bad checksum 0x%x]\r\n", cks);
 #if 1 /* 0 for testing */
 	REG(ch) |= CH_ERR;
 #endif
