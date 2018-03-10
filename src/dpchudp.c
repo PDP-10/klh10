@@ -400,7 +400,11 @@ void net_init_pf(struct dpchudp_s *dpchudp)
   if (memcmp(dpchudp->dpchudp_eth,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) {
     // we need the ea for the pf, so find it already here
     /* Now get our interface's ethernet address. */
-    (void) osn_ifealookup(npf.osnpf_ifnam, (unsigned char *) &npf.osnpf_ea);
+    if (osn_ifealookup(npf.osnpf_ifnam, (unsigned char *) &npf.osnpf_ea) == 0) {
+      dbprintln("Can't find EA for \"%s\"", npf.osnpf_ifnam);
+    } else {
+      dbprintln("Found EA for \"%s\"", npf.osnpf_ifnam);
+    }
   } else
     ea_set(&npf.osnpf_ea, dpchudp->dpchudp_eth);	/* Set requested ea if any */
   if (DP_DBGFLG) {
