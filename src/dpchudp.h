@@ -33,7 +33,16 @@
 # define DPCHUDP_CHIP_MAX 10
 #endif
 
-// @@@@ consider ARP age limit
+/* Chaos ARP list */
+// @@@@ implement something to show the table
+#define CHARP_MAX 16
+#define CHARP_MAX_AGE (60*5)	// ARP cache limit
+struct charp_ent {
+  u_char charp_eaddr[ETHER_ADDR_LEN];
+  u_short charp_chaddr;
+  time_t charp_age;
+};
+
 /* If a dynamically added CHIP entry is older than this (seconds), it can get updated */
 #ifndef DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT
 # define DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT (60*5)
@@ -68,6 +77,9 @@ struct dpchudp_s {
   /* Chaos/IP mapping */
   int dpchudp_chip_tlen;	/* C table length */
   struct dpchudp_chip dpchudp_chip_tbl[DPCHUDP_CHIP_MAX];
+  // ARP table
+  struct charp_ent charp_list[CHARP_MAX];  /* D arp table */
+  int charp_len;		/* D arp table length */
 };
 
 
@@ -101,7 +113,8 @@ struct chudp_header {
 
 #include "dvch11.h"
 #define DPCHUDP_DATAOFFSET (sizeof(struct chudp_header))
-#define DPCHUDP_MAXLEN (CHAOS_MAXDATA+DPCHUDP_DATAOFFSET+42) /* some slack */
+// room for CHUDP header + Chaos header + max Chaos data + Chaos hw trailer
+#define DPCHUDP_MAXLEN (DPCHUDP_DATAOFFSET+CHAOS_HEADERSIZE+CHAOS_MAXDATA+CHAOS_HW_TRAILERSIZE+42) /* some slack */
 
 #ifndef DPCHUDP_DO_ROUTING
 # define DPCHUDP_DO_ROUTING 1

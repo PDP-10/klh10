@@ -558,6 +558,28 @@ ch11_cmd_chiptable(struct ch11 *ch, FILE *of)
   }
 }
 
+void ch11_cmd_print_arp_table(struct ch11 *ch, FILE *of)
+{
+  int i;
+  struct dpchudp_s *dpc = (struct dpchudp_s *)ch->ch_dp.dp_adr;
+  if (dpc->charp_len > 0) {
+    fprintf(of,"Chaos ARP table:\r\n"
+	    "Chaos\tEther\t\t\tAge (s)\r\n");
+    for (i = 0; i < dpc->charp_len; i++)
+      fprintf(of,"%#o\t\%02X:%02X:%02X:%02X:%02X:%02X\t%lu\r\n",
+	      dpc->charp_list[i].charp_chaddr,
+	      dpc->charp_list[i].charp_eaddr[0],
+	      dpc->charp_list[i].charp_eaddr[1],
+	      dpc->charp_list[i].charp_eaddr[2],
+	      dpc->charp_list[i].charp_eaddr[3],
+	      dpc->charp_list[i].charp_eaddr[4],
+	      dpc->charp_list[i].charp_eaddr[5],
+	      (time(NULL) - dpc->charp_list[i].charp_age));
+  } else
+    fprintf(of,"Chaos ARP table empty\r\n");
+}
+
+
 static void
 ch11_cmd_status(struct ch11 *ch, FILE *of)
 {
@@ -612,6 +634,8 @@ ch11_cmd(register struct device *d, FILE *of, char *cmd)
       cmd++;
   if (*cmd && (strcmp(cmd,"chiptable") == 0)) 
     ch11_cmd_chiptable(ch, of);
+  else if (*cmd && (strcmp(cmd,"arptable") == 0))
+    ch11_cmd_print_arp_table(ch, of);
   else if (*cmd && (strcmp(cmd,"status") == 0))
     ch11_cmd_status(ch, of);
   else if (*cmd && strncmp(cmd,"dpdebug",strlen("dpdebug")) == 0) {
@@ -626,11 +650,12 @@ ch11_cmd(register struct device *d, FILE *of, char *cmd)
   }
   else if (*cmd) {
       fprintf(of,"Unknown command \"%s\"\n", cmd);
-      fprintf(of,"Commands:\n \"chiptable\" to show the Chaos/IP table\n \"status\" to show device status\n \"dpdebug x\" to set dpchudp debug level to x\n");
+      fprintf(of,"Commands:\n \"chiptable\" to show the Chaos/IP table\n \"arptable\" to show the Chaos ARP table\n \"status\" to show device status\n \"dpdebug x\" to set dpchudp debug level to x\n");
   } else
-    /* No command, do both */
+    /* No command, do all */
     ch11_cmd_status(ch, of);
     ch11_cmd_chiptable(ch, of);
+    ch11_cmd_print_arp_table(ch, of);
   return TRUE;
 }
 
@@ -949,8 +974,10 @@ static void
 ch_oint(register struct ch11 *ch)
 {
     if (REG(ch) & CH_TEN) {
+#if 0 // too much noise
 	if (DVDEBUG(ch))
 	    fprintf(DVDBF(ch), "[CH11: output int]\r\n");
+#endif
 	ch->ch_opireq = TRUE;
 	(*ch->ch_dv.dv_pifun)(&ch->ch_dv,	/* Put up interrupt */
 				(int)ch->ch_dv.dv_brlev);
@@ -1039,6 +1066,7 @@ ch_odone(register struct ch11 *ch)
 
 /* Utility routine */
 
+#if 0
 static void
 showpkt(FILE *f, char *id, unsigned char *buf, int cnt)
 {
@@ -1061,6 +1089,70 @@ showpkt(FILE *f, char *id, unsigned char *buf, int cnt)
 	fprintf(f, "%s\r\n", linbuf);
     }
 }
+#else
+static char
+  *ch_opc[] = { "NIL",
+	     "RFC", "OPN", "CLS", "FWD", "ANS", "SNS", "STS", "RUT",
+	     "LOS", "LSN", "MNT", "EOF", "UNC", "BRD" };
+static char *
+ch_opcode(int op)
+  {
+    char buf[7];
+    if (op < 017 && op > 0)
+      return ch_opc[op];
+    else if (op == 0200)
+      return "DAT";
+    else if (op == 0300)
+      return "DWD";
+    else
+      return "bogus";
+  }
+static void
+showpkt(FILE *f, char *id, unsigned char *ucp, int cnt)
+{
+  int i, row;
+
+  fprintf(stderr,"%s pkt dump\r\n", id);
+  fprintf(stderr,"Opcode: %o (%s), unused: %o\r\nFC: %d., Nbytes %d.\r\n",
+	  ucp[0], ch_opcode(ucp[0]),
+	  ucp[1], ucp[2]>>4, ((ucp[2]&0xf)<<4) | ucp[3]);
+  fprintf(stderr,"Dest host: %o, index %o\r\nSource host: %o, index %o\r\n",
+	  (ucp[4]<<8)|ucp[5], (ucp[6]<<8)|ucp[7], 
+	  (ucp[8]<<8)|ucp[9], (ucp[10]<<8)|ucp[11]);
+  fprintf(stderr,"Packet #%o\r\nAck #%o\r\n",
+	  (ucp[12]<<8)|ucp[13], (ucp[14]<<8)|ucp[15]);
+  fprintf(stderr,"Data:\r\n");
+
+  /* Skip headers */
+  ucp += CHAOS_HEADERSIZE;
+  /* Show only data portion */
+  cnt -= CHAOS_HEADERSIZE+CHAOS_HW_TRAILERSIZE;
+
+  for (row = 0; row*8 < cnt; row++) {
+    for (i = 0; (i < 8) && (i+row*8 < cnt); i++) {
+      fprintf(stderr, "  %02x", ucp[i+row*8]);
+      fprintf(stderr, "%02x", ucp[(++i)+row*8]);
+    }
+    fprintf(stderr, " (hex)\r\n");
+#if 1
+    for (i = 0; (i < 8) && (i+row*8 < cnt); i++) {
+      fprintf(stderr, "  %2c", ucp[i+row*8]);
+      fprintf(stderr, "%2c", ucp[(++i)+row*8]);
+    }
+    fprintf(stderr, " (chars)\r\n");
+    for (i = 0; (i < 8) && (i+row*8 < cnt); i++) {
+      fprintf(stderr, "  %2c", ucp[i+1+row*8]);
+      fprintf(stderr, "%2c", ucp[(i++)+row*8]);
+    }
+    fprintf(stderr, " (11-chars)\r\n");
+#endif
+  }
+  /* Now show trailer */
+  fprintf(stderr,"HW trailer:\r\n  Dest: %o\r\n  Source: %o\r\n  Checksum: 0x%x\r\n",
+	  (ucp[cnt]<<8)|ucp[cnt+1],(ucp[cnt+2]<<8)|ucp[cnt+3],(ucp[cnt+4]<<8)|ucp[cnt+5]);
+}
+
+#endif
 
 
 static void ch_evhrwak(struct device *d, struct dvevent_s *evp);
@@ -1378,13 +1470,22 @@ chudp_inxfer(register struct ch11 *ch)
     ch->ch_iptr = pp;
 
     /* check hw trailer: dest, checksum */
-    if ((((pp[cnt-6]<<8) | pp[cnt-5]) != ch->ch_myaddr)) {
+    u_short chlen = ((pp[2] & 0xf) << 4) | pp[3];
+    u_short trdest = ((pp[cnt-6]<<8) | pp[cnt-5]);
+    u_short hddest = (pp[4] << 8) | pp[5];
+    u_short cksm = (pp[cnt-2]<<8) | pp[cnt-1];
+    if (DVDEBUG(ch) && (CHAOS_HEADERSIZE + chlen + CHAOS_HW_TRAILERSIZE != cnt)) {
+      fprintf(DVDBF(ch), "[CH11: expected len %d+%d+%d = %d, got %d]\r\n",
+	      CHAOS_HEADERSIZE , chlen , CHAOS_HW_TRAILERSIZE,
+	      CHAOS_HEADERSIZE + chlen + CHAOS_HW_TRAILERSIZE, cnt);
+    }
+    // be conservative in what you generate, and liberal in what you accept
+    if ((trdest != 0) && (trdest != ch->ch_myaddr) && (hddest != 0) && (hddest != ch->ch_myaddr)) {
       if (DVDEBUG(ch))
-	fprintf(DVDBF(ch), "[CH11: not for my address: destination %o]\r\n",
-		((pp[cnt-6]<<8) | pp[cnt-5]));
+	fprintf(DVDBF(ch), "[CH11: not for my address: trailer dest %#o, header dest %#o]\r\n", trdest, hddest);
     } else {
       cks = ch_checksum(pp,cnt);
-      if (cks != 0) {
+      if ((cksm != 0) && (cks != 0)) {
 	if (DVDEBUG(ch))
 	  fprintf(DVDBF(ch), "[CH11: bad checksum 0x%x]\r\n", cks);
 #if 1 /* 0 for testing */

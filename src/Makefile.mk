@@ -555,7 +555,7 @@ dpchudp.o: $(SRC)/dpchudp.c $(SRC)/dpchudp.h $(SRC)/dpsup.h
 	$(BUILDMOD) $(SRC)/dpchudp.c
 
 dpchudp: dpchudp.o dpsup.o
-	$(LINKER) $(LDFLAGS) $(LDOUTF) dpchudp dpchudp.o dpsup.o $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) dpchudp dpchudp.o dpsup.o $(LIBS) $(NETLIBS)
 
 
 ####################################################################
@@ -699,7 +699,7 @@ dpsup.o: $(SRC)/dpsup.c $(SRC)/dpsup.h \
 	    $(SRC)/osdsup.h $(SRC)/word10.h $(BLDSRC)/config.h
 	$(BUILDMOD) $(SRC)/dpsup.c
 
-dvch11.o: $(SRC)/dvch11.c $(SRC)/dvch11.h $(BLDSRC)/config.h
+dvch11.o: $(SRC)/dvch11.c $(SRC)/dvch11.h $(SRC)/dpchudp.h $(BLDSRC)/config.h
 	$(BUILDMOD) $(SRC)/dvch11.c
 
 dvcty.o: $(SRC)/dvcty.c $(SRC)/dvcty.h $(BLDSRC)/config.h

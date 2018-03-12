@@ -99,18 +99,6 @@ struct pfdata pfdata;		/* Packet-Filter state */
 int myaddr;			/* My chaos address */
 struct in_addr ihost_ip;	/* My host IP addr, net order */
 
-/* Chaos ARP list */
-// @@@@ implement something to show the table
-#define CHARP_MAX 16
-#define CHARP_MAX_AGE (60*5)	// ARP cache limit
-struct charp_ent {
-  u_char charp_eaddr[ETHER_ADDR_LEN];
-  u_short charp_chaddr;
-  time_t charp_age;
-};
-
-struct charp_ent charp_list[CHARP_MAX];
-int charp_len;
 
 #define ARP_PKTSIZ (sizeof(struct ether_header)	+ sizeof(struct ether_arp))
 static u_char eth_brd[ETHER_ADDR_LEN] = {255,255,255,255,255,255};
@@ -130,6 +118,8 @@ void hosttochudp(struct dpchudp_s *);
 
 void net_init(struct dpchudp_s *);
 void dumppkt(unsigned char *, int);
+void dumppkt_raw(unsigned char *ucp, int cnt);
+
 void ihl_hhsend(register struct dpchudp_s *dpchudp, int cnt, register unsigned char *pp, size_t off);
 void ip_write(struct in_addr *ipa, in_port_t ipport, unsigned char *buf, int len, struct dpchudp_s *dpchudp);
 int hi_iproute(struct in_addr *ipa, in_port_t *ipport, unsigned char *lp, int cnt, struct dpchudp_s *dpchudp);
@@ -139,6 +129,7 @@ void send_chaos_arp_reply(u_short dest_chaddr, u_char *dest_eth);
 void send_chaos_arp_request(u_short chaddr);
 void send_chaos_packet(unsigned char *ea, unsigned char *buf, int cnt);
 u_char *find_arp_entry(u_short daddr);
+void print_arp_table(void);
 
 
 /* Error and diagnostic output */
@@ -378,6 +369,8 @@ main(int argc, char **argv)
 /* NET_INIT - Initialize net-related variables,
 **	given network interface we'll use.
 */
+struct ifent *osn_iflookup(char *ifnam);
+
 void net_init_pf(struct dpchudp_s *dpchudp)
 {
   // based on dpni20.c
@@ -394,16 +387,37 @@ void net_init_pf(struct dpchudp_s *dpchudp)
   //npf.osnpf_tun.ia_addr = tun_ip;
 
 
+  (void)osn_iftab_init();
+
+  // finding the interface (and its ethernet address) is necessary for the more clever packet filter,
+  // which isn't enabled for now, so...
+  if (npf.osnpf_ifnam == NULL || npf.osnpf_ifnam[0] == '\0') {
+    // requires ip4 address, but better than nothing?
+    struct ifent *ife = osn_ipdefault();
+    if (ife && (strlen(ife->ife_name) < sizeof(npf.osnpf_ifnam))) {
+      dbprintln("Using default interface '%s'", ife->ife_name);
+      strcpy(npf.osnpf_ifnam, ife->ife_name);
+    } else
+      if (DBGFLG) dbprintln("Can't find default interface.");
+  } else
+    if (DBGFLG) dbprintln("Interface '%s' specified.", npf.osnpf_ifnam);
+
   /* Ether addr is both a potential arg and a returned value;
      the packetfilter open may use and/or change it.
   */
-  if (memcmp(dpchudp->dpchudp_eth,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) {
+  if ((memcmp(dpchudp->dpchudp_eth,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) &&
+      npf.osnpf_ifnam != NULL && npf.osnpf_ifnam[0] != '\0') {
     // we need the ea for the pf, so find it already here
     /* Now get our interface's ethernet address. */
     if (osn_ifealookup(npf.osnpf_ifnam, (unsigned char *) &npf.osnpf_ea) == 0) {
+      struct ifent *ife = (struct ifent *)osn_iflookup(npf.osnpf_ifnam);
       dbprintln("Can't find EA for \"%s\"", npf.osnpf_ifnam);
+      if (ife) {
+	dbprintln("Found interface '%s', ea %s", ife->ife_name, (ife->ife_ea != NULL && memcmp(ife->ife_ea,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) ? "found" : "not found");
+      } else
+	dbprintln("Can't find interface '%s'!", npf.osnpf_ifnam);
     } else {
-      dbprintln("Found EA for \"%s\"", npf.osnpf_ifnam);
+      if (DP_DBGFLG) dbprintln("Found EA for \"%s\"", npf.osnpf_ifnam);
     }
   } else
     ea_set(&npf.osnpf_ea, dpchudp->dpchudp_eth);	/* Set requested ea if any */
@@ -511,14 +525,24 @@ ch_checksum(const unsigned char *addr, int count)
   return (~sum) & 0xffff;
 }
 
-void describe_arp_pkt(struct arphdr *arp, unsigned char *buffp) {
+void describe_eth_pkt_hdr(unsigned char *buffp)
+{
+  char ethstr[OSN_EASTRSIZ];
+  dbprintln("Ether header:");
+  dbprintln(" dest %s", eth_adrsprint(ethstr, buffp));
+  dbprintln(" src  %s", eth_adrsprint(ethstr, &buffp[ETHER_ADDR_LEN]));
+  dbprintln(" prot %#x", (buffp[ETHER_ADDR_LEN*2] << 8) || buffp[ETHER_ADDR_LEN*2+1]);
+}
+
+void describe_arp_pkt(struct arphdr *arp, unsigned char *buffp) 
+{
   char ethstr[OSN_EASTRSIZ];
   char prostr[OSN_IPSTRSIZ];
 
-  dbprintln("ARP message received, protocol 0x%04x (%s)",
+  dbprintln("ARP message, protocol 0x%04x (%s)",
 	    ntohs(arp->ar_pro), (arp->ar_pro == htons(ETHERTYPE_IP) ? "IPv4" :
 				 (arp->ar_pro == htons(ETHERTYPE_CHAOS) ? "Chaos" : "?")));
-  dbprintln(" HW addr len %d\n Proto addr len %d\n ARP command %d (%s)",
+  dbprintln(" HW addr len %d\r\n Proto addr len %d\r\n ARP command %d (%s)",
 	    arp->ar_hln, arp->ar_pln, ntohs(arp->ar_op),
 	    arp->ar_op == htons(ARPOP_REQUEST) ? "Request" :
 	    (arp->ar_op == htons(ARPOP_REPLY) ? "Reply" :
@@ -563,12 +587,12 @@ void chudptohost_pf_arp(struct dpchudp_s *dpchudp, unsigned char *buffp, int cnt
   }
   /* Now see if we should add this to our Chaos ARP list */
   int i, found = 0;
-  for (i = 0; i < charp_len && i < CHARP_MAX; i++)
-    if (charp_list[i].charp_chaddr == schad) {
+  for (i = 0; i < dpchudp->charp_len && i < CHARP_MAX; i++)
+    if (dpchudp->charp_list[i].charp_chaddr == schad) {
       found = 1;
-      charp_list[i].charp_age = time(NULL);  // update age
-      if (memcmp(&charp_list[i].charp_eaddr, sead, ETHER_ADDR_LEN) != 0) {
-	memcpy(&charp_list[i].charp_eaddr, sead, ETHER_ADDR_LEN);
+      dpchudp->charp_list[i].charp_age = time(NULL);  // update age
+      if (memcmp(&dpchudp->charp_list[i].charp_eaddr, sead, ETHER_ADDR_LEN) != 0) {
+	memcpy(&dpchudp->charp_list[i].charp_eaddr, sead, ETHER_ADDR_LEN);
 	if (DBGFLG) {
 	  dbprintln("ARP: Changed MAC addr for %#o", schad);
 	  // print_arp_table();
@@ -583,12 +607,13 @@ void chudptohost_pf_arp(struct dpchudp_s *dpchudp, unsigned char *buffp, int cnt
   /* It's not in the list already, is there room? */
   // @@@@ should reuse outdated entries
   if (!found) {
-    if (charp_len < CHARP_MAX) {
+    if (dpchudp->charp_len < CHARP_MAX) {
       if (DBGFLG) dbprintln("ARP: Adding new entry for Chaos %#o", schad);
-      charp_list[charp_len].charp_chaddr = schad;
-      charp_list[charp_len].charp_age = time(NULL);
-      memcpy(&charp_list[(charp_len)++].charp_eaddr, sead, ETHER_ADDR_LEN);
-      // if (verbose) print_arp_table();
+      dpchudp->charp_list[dpchudp->charp_len].charp_chaddr = schad;
+      dpchudp->charp_list[dpchudp->charp_len].charp_age = time(NULL);
+      memcpy(&dpchudp->charp_list[dpchudp->charp_len].charp_eaddr, sead, ETHER_ADDR_LEN);
+      dpchudp->charp_len++;
+      if (DBGFLG) print_arp_table();
     } else {
       dbprintln("ARP: table full! Please increase size from %d and/or implement GC", CHARP_MAX);
     }
@@ -602,10 +627,16 @@ void chudptohost_pf(struct dpchudp_s *dpchudp, unsigned char *buffp)
   /* OK, now do a blocking read on packetfilter input! */
   cnt = osn_pfread(&pfdata, buffp, DPCHUDP_MAXLEN);
 
+  if (DBGFLG)
+    dbprintln("Read=%d", cnt);
+
+  if (cnt == 0)
+    return;
+
   if (((struct ether_header *)buffp)->ether_type == htons(ETHERTYPE_ARP)) {
     if (DBGFLG)
       dbprintln("Got ARP");
-    chudptohost_pf_arp(dpchudp, buffp, cnt);
+    chudptohost_pf_arp(dpchudp, buffp+(sizeof(struct ether_header)), cnt-sizeof(struct ether_header));
 
     return;
   } else if (((struct ether_header *)buffp)->ether_type == htons(ETHERTYPE_CHAOS)) {
@@ -632,19 +663,29 @@ void chudptohost_pf(struct dpchudp_s *dpchudp, unsigned char *buffp)
       syserr(errno, "Eread = %d, errno %d", cnt, errno);
       return;		/* For now... */
     }
-    if (DBGFLG)
-      dbprintln("Read=%d", cnt);
 
 #define PKBOFF_PKPAYLOAD (PKBOFF_ETYPE+2)
+    u_char *pp = buffp+sizeof(struct ether_header);
+    int pcnt = cnt - sizeof(struct ether_header);
+
+    if (DBGFLG) {
+      dbprintln("Read Chaos pkt len %d", pcnt);
+    }
+
     // byte swap
-    ntohs_buf((u_short *)&buffp[PKBOFF_PKPAYLOAD], (u_short *)&buffp[PKBOFF_PKPAYLOAD], cnt-PKBOFF_PKPAYLOAD);
-    ihl_hhsend(dpchudp, cnt, buffp, PKBOFF_PKPAYLOAD);
+    ntohs_buf((u_short *)pp, (u_short *)pp, pcnt);
+    if (DBGFLG & 0x2) {
+      dumppkt(pp-4,pcnt+4);	/* mod CHUDP hdr */
+    }
+    // "assume we're already in shared buffer" (so buffp arg is not used)
+    ihl_hhsend(dpchudp, cnt, buffp, sizeof(struct ether_header));
 
     return;
   } else {
-    if (DBGFLG)
-      fprintf(stderr,"[dpchudp-R: unexpected ether type %#x]\r\n",
-	      ntohs(((struct ether_header *)buffp)->ether_type));
+    if (DBGFLG) {
+      dbprintln("unexpected ether type %#x", ntohs(((struct ether_header *)buffp)->ether_type));
+      (void) dumppkt_raw(buffp, (cnt > 8*8) ? 8*8 : cnt);
+    }
     return;		/* get another pkt */
   }
 }
@@ -829,8 +870,10 @@ chudptohost(register struct dpchudp_s *dpchudp)
 	} else { // CHUDP case
 	  chudptohost_chudp(dpchudp, buffp);
 	}
+#if 0
 	if (--stoploop <= 0)
 	  efatal(1, "Too many retries, aborting");
+#endif
     }
 }
 
@@ -913,7 +956,6 @@ hosttochudp(register struct dpchudp_s *dpchudp)
 	}
 
 	/* Come here to handle output packet */
-#if 1
 	int chlen = ((buff[DPCHUDP_DATAOFFSET+2] & 0xf) << 4) | buff[DPCHUDP_DATAOFFSET+3];
 
 	if ((chlen + CHAOS_HEADERSIZE + DPCHUDP_DATAOFFSET + CHAOS_HW_TRAILERSIZE) > rcnt) {
@@ -922,23 +964,21 @@ hosttochudp(register struct dpchudp_s *dpchudp)
 		      rcnt, (chlen + CHAOS_HEADERSIZE + DPCHUDP_DATAOFFSET + CHAOS_HW_TRAILERSIZE),
 		      chlen);
 	  dp_xrdone(dpx);	/* ack it to dvch11, but */
-	  return;		/* don't send it! */
+	  continue;		/* don't send it! */
 	}
-#endif
+
 	if (!dpchudp->dpchudp_ifmeth_chudp) {
 	  // Ethernet case
 	  u_char *ch = &buff[DPCHUDP_DATAOFFSET];
 	  u_short dchad = (buff[4+DPCHUDP_DATAOFFSET]<<8)|buff[5+DPCHUDP_DATAOFFSET];
-	  // byte swap for network
-	  htons_buf((u_short *)ch, (u_short *)ch, chlen);
 
 	  if (dchad == 0) {		/* broadcast */
-	    if (DBGFLG) dbprintln("Broadcasting on ether");
+	    if (DBGFLG & 020) dbprintln("Broadcasting on ether");
 	    send_chaos_packet((u_char *)&eth_brd, &buff[DPCHUDP_DATAOFFSET], rcnt-DPCHUDP_DATAOFFSET);
 	  } else {
 	    u_char *eaddr = find_arp_entry(dchad);
 	    if (eaddr != NULL) {
-	      if (DBGFLG) dbprintln("Sending on ether to %#o", dchad);
+	      if (DBGFLG & 020) dbprintln("Sending on ether to %#o", dchad);
 	      send_chaos_packet(eaddr, &buff[DPCHUDP_DATAOFFSET], rcnt-DPCHUDP_DATAOFFSET);
 	    } else {
 	      if (DBGFLG) dbprintln("Don't know %#o, sending ARP request", dchad);
@@ -954,12 +994,12 @@ hosttochudp(register struct dpchudp_s *dpchudp)
 	  }
 	}
 
-	  /* Command done, tell 10 we're done with it */
-	  if (DBGFLG)
-	    fprintf(stderr, "[dpchudp-W: CmdDone]");
+	/* Command done, tell 10 we're done with it */
+	if (DBGFLG)
+	  fprintf(stderr, "[dpchudp-W: CmdDone]");
 
-	  dp_xrdone(dpx);
-	}
+	dp_xrdone(dpx);
+    }
 }
 
 int
@@ -1100,13 +1140,17 @@ send_chaos_packet(unsigned char *ea, unsigned char *buf, int cnt)
   unsigned char pktbuf[ARP_PKTSIZ];
   struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
   u_char *my_ea = dpc->dpchudp_eth;
+  u_short chatyp = htons(ETHERTYPE_CHAOS);
 
   // construct ether header
   ea_set(&pktbuf[0], ea);	/* dest ea */
   ea_set(&pktbuf[ETHER_ADDR_LEN], my_ea);  /* src ea */
-  memset(&pktbuf[ETHER_ADDR_LEN*2], htons(ETHERTYPE_CHAOS), 2); /* pkt type */
+  memcpy(&pktbuf[ETHER_ADDR_LEN*2], &chatyp, 2); /* pkt type */
 
   memcpy(&pktbuf[ETHER_ADDR_LEN*2+2], buf, cnt);
+
+  // byte swap for network
+  htons_buf((u_short *)&pktbuf[ETHER_ADDR_LEN*2+2], (u_short *)&pktbuf[ETHER_ADDR_LEN*2+2], cnt);
   (void) osn_pfwrite(&pfdata, pktbuf, cnt+ETHER_ADDR_LEN*2+2);
 }
 
@@ -1193,6 +1237,19 @@ pfbuild(void *arg, struct in_addr *ipa)
   // if etype == chaos && (edest == myeth || edest == broadcast) then win
 
   // Check the ethernet type field
+#if 1 // simplistic, only checks types, not addresses
+  *p++ = BPFI_LDH(PKBOFF_ETYPE); /* Load ethernet type field */
+  *p++ = BPFI_CAMN(ETHERTYPE_CHAOS); /* Win if CHAOS */
+  *p++ = BPFI_RETWIN();
+  *p++ = BPFI_CAME(ETHERTYPE_ARP); /* Skip if ARP */
+  *p++ = BPFI_RETFAIL();	/* Not ARP, ignore */
+  // For ARP, check the protocol type
+  *p++ = BPFI_LDH(PKBOFF_ARP_PTYPE); /* Check the ARP type */
+  *p++ = BPFI_CAME(ETHERTYPE_CHAOS);
+  *p++ = BPFI_RETFAIL();	/* Not Chaos, ignore */
+  // Never mind about destination here, if we get other ARP info that's nice?
+  *p++ = BPFI_RETWIN();
+#else // the chaosnet checking doesn't work as is.
   *p++ = BPFI_LDH(PKBOFF_ETYPE); /* Load ethernet type field */
   *p++ = BPFI_CAME(ETHERTYPE_ARP); /* Skip if ARP */
   *p++ = BPFI_SKIP(4);	/* nope, go on below*/
@@ -1222,6 +1279,7 @@ pfbuild(void *arg, struct in_addr *ipa)
   *p++ = BPFI_LDH(PKBOFF_EDEST);  /* get first part of dest addr */
   *p++ = BPFI_CAME(0xffff);
   *p++ = BPFI_RETFAIL();	/* nope */
+#endif
   *p++ = BPFI_RETWIN();		/* win */
 
     pfp->bf_len = p - pfp->bf_insns;	/* Set # of items on list */
@@ -1258,8 +1316,29 @@ pfshow(struct bpf_program *pf)
 
 void init_arp_table()
 {
-  memset((char *)charp_list, 0, sizeof(struct charp_ent)*CHARP_MAX);
-  charp_len = 0;
+  struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
+  memset((char *)dpc->charp_list, 0, sizeof(struct charp_ent)*CHARP_MAX);
+  dpc->charp_len = 0;
+}
+
+void print_arp_table()
+{
+  int i;
+  struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
+  if (dpc->charp_len > 0) {
+    printf("Chaos ARP table:\r\n"
+	   "Chaos\tEther\t\t\tAge (s)\r\n");
+    for (i = 0; i < dpc->charp_len; i++)
+      printf("%#o\t\%02X:%02X:%02X:%02X:%02X:%02X\t%lu\r\n",
+	     dpc->charp_list[i].charp_chaddr,
+	     dpc->charp_list[i].charp_eaddr[0],
+	     dpc->charp_list[i].charp_eaddr[1],
+	     dpc->charp_list[i].charp_eaddr[2],
+	     dpc->charp_list[i].charp_eaddr[3],
+	     dpc->charp_list[i].charp_eaddr[4],
+	     dpc->charp_list[i].charp_eaddr[5],
+	     (time(NULL) - dpc->charp_list[i].charp_age));
+  }
 }
 
 u_char *find_arp_entry(u_short daddr)
@@ -1268,23 +1347,24 @@ u_char *find_arp_entry(u_short daddr)
   struct dpchudp_s *dpc = (struct dpchudp_s *)dp.dp_adr;
   u_short my_chaddr = dpc->dpchudp_myaddr;
 
-  if (DP_DBGFLG) dbprintln("Looking for ARP entry for %#o, ARP table len %d", daddr, charp_len);
+  if (DP_DBGFLG) dbprintln("Looking for ARP entry for %#o, ARP table len %d", daddr, dpc->charp_len);
   if (daddr == my_chaddr) {
     dbprintln("#### Looking up ARP for my own address, BUG!");
     return NULL;
   }
-  
-  for (i = 0; i < charp_len && i < CHARP_MAX; i++)
-    if (charp_list[i].charp_chaddr == daddr) {
-      if ((charp_list[i].charp_age != 0)
-	  && ((time(NULL) - charp_list[i].charp_age) > CHARP_MAX_AGE)) {
+  for (i = 0; i < dpc->charp_len && i < CHARP_MAX; i++)
+    if (dpc->charp_list[i].charp_chaddr == daddr) {
+      if ((dpc->charp_list[i].charp_age != 0)
+	  && ((time(NULL) - dpc->charp_list[i].charp_age) > CHARP_MAX_AGE)) {
 	if (DP_DBGFLG) dbprintln("Found ARP entry for %#o but it is too old (%lu s)",
-				 daddr, (time(NULL) - charp_list[i].charp_age));
+				 daddr, (time(NULL) - dpc->charp_list[i].charp_age));
 	return NULL;
       }
-      if (DP_DBGFLG) dbprintln("Found ARP entry for %#o", daddr);
-      return charp_list[i].charp_eaddr;
+      if (DP_DBGFLG & 040) dbprintln("Found ARP entry for %#o", daddr);
+      return dpc->charp_list[i].charp_eaddr;
     }
+  if (DP_DBGFLG)
+    print_arp_table();
   return NULL;
 }
 
@@ -1298,11 +1378,12 @@ send_chaos_arp_pkt(u_short atyp, u_short dest_chaddr, u_char *dest_eth)
   u_short my_chaddr = dpc->dpchudp_myaddr;
   u_char req[sizeof(struct arphdr)+(ETHER_ADDR_LEN+2)*2];
   struct arphdr *arp = (struct arphdr *)&req;
+  u_short arptyp = htons(ETHERTYPE_ARP);
 
   // first ethernet header
   memcpy(&pktbuf[0], dest_eth, ETHER_ADDR_LEN);  /* dest ether */
   ea_set(&pktbuf[ETHER_ADDR_LEN], dpc->dpchudp_eth);  /* source ether = me */
-  memset(&pktbuf[ETHER_ADDR_LEN*2], htons(ETHERTYPE_ARP), 2);  /* ether pkt type */
+  memcpy(&pktbuf[ETHER_ADDR_LEN*2], &arptyp, 2);  /* ether pkt type */
 
   // now arp pkt
   memset(&req, 0, sizeof(req));
@@ -1321,7 +1402,14 @@ send_chaos_arp_pkt(u_short atyp, u_short dest_chaddr, u_char *dest_eth)
 
   // and merge them
   memcpy(&pktbuf[ETHER_ADDR_LEN*2+2], req, sizeof(req));
-  
+
+  if (DP_DBGFLG) {
+    dbprintln("Sending ARP pkt");
+    describe_eth_pkt_hdr(pktbuf);
+    describe_arp_pkt(arp, req);
+    //describe_arp_pkt((struct arphdr *)&pktbuf[0], &pktbuf[ETHER_ADDR_LEN*2+2]);
+  }
+
   // and send it
   osn_pfwrite(&pfdata, pktbuf, sizeof(pktbuf));
 }
@@ -1373,10 +1461,24 @@ ch_opcode(int op)
       return "bogus";
   }
 
+char *
+ch_char(unsigned char x, char *buf) {
+  if (x < 32)
+    sprintf(buf,"^%c", x+64);
+  else if (x == 127)
+    sprintf(buf,"^?");
+  else if (x < 127)
+    sprintf(buf,"%2c",x);
+  else
+    sprintf(buf,"%2x",x);
+  return buf;
+}
+
 void
 dumppkt(unsigned char *ucp, int cnt)
 {
   int i, row;
+  char b1[3],b2[3];
 
     fprintf(stderr,"CHUDP version %d, function %d\r\n", ucp[0], ucp[1]);
     fprintf(stderr,"Opcode: %o (%s), unused: %o\r\nFC: %o, Nbytes %o\r\n",
@@ -1400,15 +1502,15 @@ dumppkt(unsigned char *ucp, int cnt)
 	fprintf(stderr, "%02x", ucp[(++i)+row*8]);
       }
       fprintf(stderr, " (hex)\r\n");
-#if 0
+#if 1
       for (i = 0; (i < 8) && (i+row*8 < cnt); i++) {
-	fprintf(stderr, "  %2c", ucp[i+row*8]);
-	fprintf(stderr, "%2c", ucp[(++i)+row*8]);
+	fprintf(stderr, "  %2s", ch_char(ucp[i+row*8], (char *)&b1));
+	fprintf(stderr, "%2s", ch_char(ucp[(++i)+row*8], (char *)&b2));
       }
       fprintf(stderr, " (chars)\r\n");
       for (i = 0; (i < 8) && (i+row*8 < cnt); i++) {
-	fprintf(stderr, "  %2c", ucp[i+1+row*8]);
-	fprintf(stderr, "%2c", ucp[(i++)+row*8]);
+	fprintf(stderr, "  %2s", ch_char(ucp[i+1+row*8], (char *)&b1));
+	fprintf(stderr, "%2s", ch_char(ucp[(i++)+row*8], (char *)&b2));
       }
       fprintf(stderr, " (11-chars)\r\n");
 #endif
@@ -1422,7 +1524,7 @@ dumppkt(unsigned char *ucp, int cnt)
 char *
 ch_adrsprint(char *cp, unsigned char *ca)
 {
-  sprintf(cp, "%#o", ca[0]<<8 || ca[1]);
+  sprintf(cp, "%#o", (ca[0]<<8) | ca[1]);
   return cp;
 }
 
