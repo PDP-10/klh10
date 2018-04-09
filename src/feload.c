@@ -25,6 +25,8 @@
 /*	Loads executables into physical memory.
 */
 
+#include "cenv.h"
+
 #include <stdio.h>
 #include <stdlib.h>	/* Malloc and friends */
 #include <string.h>
