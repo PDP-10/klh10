@@ -1330,9 +1330,10 @@ DZ11 (TTY MUX): (KS only)
 	that this device will respond to IO instructions addressed to it,
 	but no TTY I/O actually happens.
 
-CH11 (CHAOSNET): (KS only)
+CH11 (CHAOSNET): (KS only, for ITS only)
 
-	This is another dummy device, only for ITS.
+	This is a Chaosnet device which can use Chaosnet on Ethernet
+	or tunnelling Chaosnet in UDP. See src/dvch11.txt.
 	As for the DZ11, the generic Unibus parameters must be provided.
 
 HOST (Native Host): (KL & KS)
