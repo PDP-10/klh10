@@ -87,7 +87,7 @@ are completely independent.
 #include <sys/resource.h>	/* For setpriority() */
 #include <sys/mman.h>		/* For mlockall() */
 
-#include "dpchudp.h"	/* DPCHAOS specific defs, grabs DPSUP if needed */
+#include "dpchaos.h"	/* DPCHAOS specific defs, grabs DPSUP if needed */
 
 
 /* Globals */

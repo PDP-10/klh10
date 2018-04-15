@@ -55,7 +55,7 @@ static int decosfcclossage;
 #include "dvuba.h"
 #include "dvch11.h"
 
-#include "dpchudp.h"
+#include "dpchaos.h"
 
 #ifndef KLH10_CH11_USE_GETHOSTBYNAME
 # define KLH10_CH11_USE_GETHOSTBYNAME 1

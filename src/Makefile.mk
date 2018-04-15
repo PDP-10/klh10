@@ -199,7 +199,7 @@ OFILES_KS = klh10.o prmstr.o fecmd.o feload.o wfio.o osdsup.o \
 
 DPROCS_KL = dprpxx dptm03 dpni20
 DPROCS_KS = dprpxx dptm03
-DPROCS_KSITS = dprpxx dptm03 dpimp dpchudp
+DPROCS_KSITS = dprpxx dptm03 dpimp dpchaos
 
 
 # Base utility programs, independent of KN10
@@ -290,8 +290,8 @@ install:
 		mv ${KLH10_HOME}/dpni20 ${KLH10_HOME}/flushed; fi
 	@if [ -x ${KLH10_HOME}/dpimp  ]; then \
 		mv ${KLH10_HOME}/dpimp  ${KLH10_HOME}/flushed; fi
-	@if [ -x ${KLH10_HOME}/dpchudp ]; then \
-		mv ${KLH10_HOME}/dpchudp ${KLH10_HOME}/flushed; fi
+	@if [ -x ${KLH10_HOME}/dpchaos ]; then \
+		mv ${KLH10_HOME}/dpchaos ${KLH10_HOME}/flushed; fi
 	@if [ -x kn10-ks  ]; then cp -p kn10-ks  ${KLH10_HOME}/; fi
 	@if [ -x kn10-ks-its ]; then cp -p kn10-ks-its ${KLH10_HOME}/; fi
 	@if [ -x kn10-kl  ]; then cp -p kn10-kl  ${KLH10_HOME}/; fi
@@ -299,7 +299,7 @@ install:
 	@if [ -x dptm03   ]; then cp -p dptm03   ${KLH10_HOME}/; fi
 	@if [ -x dpni20   ]; then cp -p dpni20   ${KLH10_HOME}/; fi
 	@if [ -x dpimp    ]; then cp -p dpimp    ${KLH10_HOME}/; fi
-	@if [ -x dpchudp  ]; then cp -p dpchudp  ${KLH10_HOME}/; fi
+	@if [ -x dpchaos  ]; then cp -p dpchaos  ${KLH10_HOME}/; fi
 	@if [ -x enaddr   ]; then cp -p enaddr   ${KLH10_HOME}/; fi
 	@if [ -x tapedd   ]; then cp -p tapedd   ${KLH10_HOME}/; fi
 	@if [ -x udlconv  ]; then cp -p udlconv  ${KLH10_HOME}/; fi
@@ -551,11 +551,11 @@ kl0i-rtmopt:
 
 # --------- CHUDP subprocess (ITS KS only; counterpart for dvch11)
 #
-dpchudp.o: $(SRC)/dpchudp.c $(SRC)/dpchudp.h $(SRC)/dpsup.h
-	$(BUILDMOD) $(SRC)/dpchudp.c
+dpchaos.o: $(SRC)/dpchaos.c $(SRC)/dpchaos.h $(SRC)/dpsup.h
+	$(BUILDMOD) $(SRC)/dpchaos.c
 
-dpchudp: dpchudp.o dpsup.o
-	$(LINKER) $(LDFLAGS) $(LDOUTF) dpchudp dpchudp.o dpsup.o $(LIBS) $(NETLIBS)
+dpchaos: dpchaos.o dpsup.o
+	$(LINKER) $(LDFLAGS) $(LDOUTF) dpchaos dpchaos.o dpsup.o $(LIBS) $(NETLIBS)
 
 
 ####################################################################
@@ -699,7 +699,7 @@ dpsup.o: $(SRC)/dpsup.c $(SRC)/dpsup.h \
 	    $(SRC)/osdsup.h $(SRC)/word10.h $(BLDSRC)/config.h
 	$(BUILDMOD) $(SRC)/dpsup.c
 
-dvch11.o: $(SRC)/dvch11.c $(SRC)/dvch11.h $(SRC)/dpchudp.h $(BLDSRC)/config.h
+dvch11.o: $(SRC)/dvch11.c $(SRC)/dvch11.h $(SRC)/dpchaos.h $(BLDSRC)/config.h
 	$(BUILDMOD) $(SRC)/dvch11.c
 
 dvcty.o: $(SRC)/dvcty.c $(SRC)/dvcty.h $(BLDSRC)/config.h
