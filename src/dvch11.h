@@ -37,11 +37,11 @@ extern struct device *dvch11_init(FILE *, char *);
 
 /* CH11 addresses & assignments for KS10:
  CH11	Address		Vector	UBA#	BR-Level
-  #1	0764140		0270	3	4 or 5 (dunno which)
+  #1	0764140		0270	3	4 or 5 (dunno which) [6, according to CHXCHN in ITS]
  etc(?)	(some)		0230
 */
 
-#define UB_CH11_BR  5
+#define UB_CH11_BR  6		/* See CHXCHN in ITS */
 #define	UB_CH11_VEC 0270	/* CH11 Interrupt Vector */
 #define	UB_CH11 0764140		/* CH11 Unibus Address (on UBA #3) */
 
