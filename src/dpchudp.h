@@ -1,4 +1,4 @@
-/* DPCHUDP.H - Definitions for CHUDP process
+/* DPCHAOS.H - Definitions for CHAOS process
 */
 /*  Copyright © 2005 Björn Victor and Kenneth L. Harrenstien
 **  All Rights Reserved
@@ -14,8 +14,8 @@
 **  must be included in all copies or derivations of this software.
 */
 
-#ifndef DPCHUDP_INCLUDED
-#define DPCHUDP_INCLUDED 1
+#ifndef DPCHAOS_INCLUDED
+#define DPCHAOS_INCLUDED 1
 
 #ifndef DPSUP_INCLUDED
 # include "dpsup.h"
@@ -24,13 +24,13 @@
 # include "osdnet.h"
 #endif
 
-/* Version of DPCHUDP-specific shared memory structure */
-#define DPCHUDP_VERSION DPC_VERSION(2,0,0)	/* 2.0.0 */
+/* Version of DPCHAOS-specific shared memory structure */
+#define DPCHAOS_VERSION DPC_VERSION(2,0,0)	/* 2.0.0 */
 
 #define IFNAM_LEN	PATH_MAX	/* at least IFNAMSIZ! */
 
-#ifndef DPCHUDP_CHIP_MAX
-# define DPCHUDP_CHIP_MAX 10
+#ifndef DPCHAOS_CHIP_MAX
+# define DPCHAOS_CHIP_MAX 10
 #endif
 
 /* Chaos ARP list */
@@ -44,39 +44,39 @@ struct charp_ent {
 };
 
 /* If a dynamically added CHIP entry is older than this (seconds), it can get updated */
-#ifndef DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT
-# define DPCHUDP_CHIP_DYNAMIC_AGE_LIMIT (60*5)
+#ifndef DPCHAOS_CHIP_DYNAMIC_AGE_LIMIT
+# define DPCHAOS_CHIP_DYNAMIC_AGE_LIMIT (60*5)
 #endif
 
 /* Chaos/IP mapping entry - see ch_chip */
-struct dpchudp_chip {
-    unsigned int dpchudp_chip_chaddr; /* Chaos address */
-    struct in_addr dpchudp_chip_ipaddr; /* IP address */
-  in_port_t dpchudp_chip_ipport;	/* IP port */
-  time_t dpchudp_chip_lastrcvd;	/* When last received, if dynamically added */
+struct dpchaos_chip {
+    unsigned int dpchaos_chip_chaddr; /* Chaos address */
+    struct in_addr dpchaos_chip_ipaddr; /* IP address */
+  in_port_t dpchaos_chip_ipport;	/* IP port */
+  time_t dpchaos_chip_lastrcvd;	/* When last received, if dynamically added */
 };
 
-/* DPCHUDP-specific stuff */
+/* DPCHAOS-specific stuff */
 			/* C = controlling parent sets, D = Device proc sets */
 			/*       If both, 1st letter indicates inital setter */
-struct dpchudp_s {
-    struct dpc_s dpchudp_dpc;	/* CD Standard DPC portion */
-    int dpchudp_ver;		/* C  Version of shared struct */
-    int dpchudp_attrs;		/* C  Attribute flags */
-    char dpchudp_ifnam[IFNAM_LEN];	/* CD Interface name if any */
-    char dpchudp_ifmeth[16];	/* C  Interface method */
-    int dpchudp_ifmeth_chudp;	/* C  Interface method is CHUDP? */
-    unsigned short dpchudp_myaddr;  /* C  my Chaos address  */
-    unsigned char dpchudp_eth[6];	/* CD Ethernet address of interface */
+struct dpchaos_s {
+    struct dpc_s dpchaos_dpc;	/* CD Standard DPC portion */
+    int dpchaos_ver;		/* C  Version of shared struct */
+    int dpchaos_attrs;		/* C  Attribute flags */
+    char dpchaos_ifnam[IFNAM_LEN];	/* CD Interface name if any */
+    char dpchaos_ifmeth[16];	/* C  Interface method */
+    int dpchaos_ifmeth_chudp;	/* C  Interface method is CHUDP? */
+    unsigned short dpchaos_myaddr;  /* C  my Chaos address  */
+    unsigned char dpchaos_eth[6];	/* CD Ethernet address of interface */
   /* probably not used */
-    int dpchudp_inoff;		/* C Offset in buffer of input (I->H) data */
-    int dpchudp_outoff;		/* D Offset in buffer of output (H->I) data */
-    int dpchudp_backlog;	/* C Max sys backlog of rcvd packets */
-    int dpchudp_dedic;		/* C TRUE if dedicated ifc, else shared */
-  in_port_t dpchudp_port;	/* C port for CHUDP protocol */
+    int dpchaos_inoff;		/* C Offset in buffer of input (I->H) data */
+    int dpchaos_outoff;		/* D Offset in buffer of output (H->I) data */
+    int dpchaos_backlog;	/* C Max sys backlog of rcvd packets */
+    int dpchaos_dedic;		/* C TRUE if dedicated ifc, else shared */
+  in_port_t dpchaos_port;	/* C port for CHUDP protocol */
   /* Chaos/IP mapping */
-  int dpchudp_chip_tlen;	/* C table length */
-  struct dpchudp_chip dpchudp_chip_tbl[DPCHUDP_CHIP_MAX];
+  int dpchaos_chip_tlen;	/* C table length */
+  struct dpchaos_chip dpchaos_chip_tbl[DPCHAOS_CHIP_MAX];
   // ARP table
   struct charp_ent charp_list[CHARP_MAX];  /* D arp table */
   int charp_len;		/* D arp table length */
@@ -112,25 +112,22 @@ struct chudp_header {
 #endif
 
 #include "dvch11.h"
-#define DPCHUDP_DATAOFFSET (sizeof(struct chudp_header))
-// room for CHUDP header + Chaos header + max Chaos data + Chaos hw trailer
-#define DPCHUDP_MAXLEN (DPCHUDP_DATAOFFSET+CHAOS_HEADERSIZE+CHAOS_MAXDATA+CHAOS_HW_TRAILERSIZE+42) /* some slack */
+#define DPCHAOS_CHUDP_DATAOFFSET (sizeof(struct chudp_header)) // 4 bytes
+#define DPCHAOS_ETHER_DATAOFFSET (sizeof(struct ether_header)) // 6+6+2=16 bytes
+// room for protocol header + Chaos header + max Chaos data + Chaos hw trailer
+#define DPCHAOS_MAXLEN (DPCHAOS_ETHER_DATAOFFSET+CHAOS_HEADERSIZE+CHAOS_MAXDATA+CHAOS_HW_TRAILERSIZE+42) /* some slack */
 
-#ifndef DPCHUDP_DO_ROUTING
-# define DPCHUDP_DO_ROUTING 1
-#endif
-#define DEFAULT_CHAOS_ROUTER 03040 /* default router (MX-11.LCS.MIT.EDU) */
-#define DPCHUDP_CH_DESTOFF 4	/* offset to dest addr in chaos pkt */
-#define DPCHUDP_CH_FC 2		/* offset to forwarding count */
+#define DPCHAOS_CH_DESTOFF 4	/* offset to dest addr in chaos pkt */
+#define DPCHAOS_CH_FC 2		/* offset to forwarding count */
 
 /* Commands to and from DP and KLH10 CH11 driver */
 
 	/* From 10 to DP */
-#define DPCHUDP_RESET	0	/* Reset DP */
-#define DPCHUDP_SPKT	1	/* Send data packet to ethernet */
+#define DPCHAOS_RESET	0	/* Reset DP */
+#define DPCHAOS_SPKT	1	/* Send data packet to ethernet */
 
 	/* From DP to 10 */
-#define DPCHUDP_INIT	1	/* DP->10 Finished init */
-#define DPCHUDP_RPKT	2	/* DP->10 Received data packet from net */
+#define DPCHAOS_INIT	1	/* DP->10 Finished init */
+#define DPCHAOS_RPKT	2	/* DP->10 Received data packet from net */
 
 #endif	/* ifndef DPCHUDP_INCLUDED */
