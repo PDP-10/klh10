@@ -886,6 +886,8 @@ vmt_rdmount(register struct vmtape *t,
 	    return FALSE;
 	}
 	dfn = ta->vmta_path;
+	fclose(df);
+	df = NULL;
     }
  havefmt:
     if (vmtfmttab[fmt].tf_flags & (VMTFF_CTL | VMTFF_XCTL)) {
