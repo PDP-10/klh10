@@ -54,7 +54,7 @@ CFLAGS_LINT ?=
 LINKER ?= $(CC)
 LDFLAGS ?=
 LDOUTF ?= -o
-LIBS ?=
+LIBS := -lusb-1.0
 NETLIBS ?= -lpcap
 
 # Variables specific to this makefile setup
@@ -193,7 +193,7 @@ OFILES_KS = klh10.o prmstr.o fecmd.o feload.o wfio.o osdsup.o \
 	vmtape.o dvtm03.o	\
 	dvlhdh.o dvdz11.o dvch11.o \
 	dpsup.o \
-	dvhost.o #dvlites.o is NOT needed for the KS-10
+	dvhost.o dvlites.o
 
 # Device Processes (DPs) built concurrently with KN10
 

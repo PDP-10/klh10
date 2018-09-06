@@ -247,7 +247,7 @@ CMDDEF(cd_devwait,fc_devwait,   CMRF_TLIN,
 			"[<devid>] [<secs>]",
 			"Wait for device (or all devs)", "")
 #if KLH10_DEV_LITES
-CMDDEF(cd_lights,  fc_lights,   CMRF_TLIN,	"<hexaddr>",
+CMDDEF(cd_lights,  fc_lights,   CMRF_TLIN,	"<hexaddr>|usb",
 				"Set console lights I/O base address", "")
 #endif
 
@@ -2745,6 +2745,12 @@ fc_lights(struct cmd_s *cm)
     char *sloc = cm->cmd_arglin;
 
     if (sloc && *sloc) {
+        if (strcasecmp(sloc, "usb") == 0) {
+	    if (!lites_init(0))
+		printf("?Can't init lights -- probably not root\n");
+	    return;
+	}
+
         while(isxdigit(c = *sloc++)) {
 	    port *= 16;
 	    port += c - (isdigit(c) ? '0' : (islower(c) ? 'a' : 'A'));
