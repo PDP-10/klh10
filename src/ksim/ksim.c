@@ -36,15 +36,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 
-#include <inttypes.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
 #include <termios.h>
 #include <unistd.h>
+#include "ksim.h"
 
 // The following definition is used to suppress warnings about unused
 // function parameters, but might not work with compilers other than
@@ -52,9 +51,9 @@
 // declared with an empty defnition.
 #define UNUSED __attribute__((unused))
 
-char *progname;
+static char *progname;
 
-void usage (FILE *f)
+static void usage (FILE *f)
 {
   fprintf (f, "usage: %s [options...] <bootstrap>\n", progname);
   fprintf (f, "options:\n");
@@ -65,9 +64,7 @@ void usage (FILE *f)
 }
 
 // generate fatal error message to stderr, doesn't return
-void fatal (int ret, char *format, ...) __attribute__ ((noreturn));
-
-void fatal (int ret, char *format, ...)
+void ksim_fatal (int ret, char *format, ...)
 {
   va_list ap;
 
@@ -89,7 +86,7 @@ FILE *trace_f = NULL;
 struct termios tty_cooked;
 struct termios tty_raw;
 
-void console_init (void)
+static void console_init (void)
 {
   tcgetattr (STDIN_FILENO, & tty_cooked);
   tcgetattr (STDIN_FILENO, & tty_raw);
@@ -101,7 +98,7 @@ void console_init (void)
   tcsetattr (STDIN_FILENO, TCSAFLUSH, & tty_raw);
 }
 
-void console_cleanup (void)
+static void console_cleanup (void)
 {
   tcsetattr (STDIN_FILENO, TCSAFLUSH, & tty_cooked);
 }
@@ -143,7 +140,7 @@ bool flag_cy;
 //       R = sign of result
 // For subtraction and comparisons, replace O2 with not O2.
 
-void set_f (uint8_t f_value)
+static void set_f (uint8_t f_value)
 {
   flag_sp_data = (f_value & 0x80) | (((f_value >> 5) ^ ~f_value) & 0x04);
 
@@ -159,7 +156,7 @@ void set_f (uint8_t f_value)
   flag_cy = f_value & 1;
 }
 
-uint8_t get_f (void)
+static uint8_t get_f (void)
 {
   return ((FLAG_S << 7) | (FLAG_Z << 6) | (FLAG_AC << 4) |
 	  (FLAG_P << 2) | (1 << 1)      | (FLAG_CY << 0));
@@ -204,7 +201,7 @@ uint8_t get_f (void)
 
 
 
-uint8_t mem [0x10000];
+static uint8_t mem [0x10000];
 
 static inline uint8_t mem_read (uint16_t addr)
 {
@@ -1003,7 +1000,7 @@ static void op_IN (uint8_t opcode UNUSED)
       timeout.tv_usec = 0;
       status = select (1, & read_fds, & write_fds, & except_fds, & timeout);
       if (status < 0)
-	fatal (EX_IOERR, "select() error %d", status);
+	ksim_fatal (EX_IOERR, "select() error %d", status);
       REG_A = FD_ISSET (STDIN_FILENO, & read_fds);
       break;
     case 0x01:
@@ -1079,7 +1076,7 @@ typedef struct
   addr_mode_t mode;
 } op_info_t;
 
-op_info_t op_tbl [256] =
+static op_info_t op_tbl [256] =
 {
   [0000] = {  4, op_NOP,     "NOP",             MODE_IMP },
   [0001] = { 10, op_LXI,     "LXI   BC,#%04xh", MODE_IMM2 },
@@ -1403,7 +1400,7 @@ op_info_t op_tbl [256] =
 };
 
 
-void disassemble_inst (FILE *f, uint16_t addr)
+static void disassemble_inst (FILE *f, uint16_t addr)
 {
   uint8_t opcode = mem_read (addr++);
   addr_mode_t mode = op_tbl [opcode].mode;
@@ -1423,11 +1420,11 @@ void disassemble_inst (FILE *f, uint16_t addr)
       fprintf (f, op_tbl [opcode].mnem, data);
       break;
     default:
-      fprintf (f, op_tbl [opcode].mnem);
+      fprintf (f, "%s", op_tbl [opcode].mnem);
     }
 }
 
-void execute_instruction (void)
+bool ksim_execute_instruction (void)
 {
   uint8_t opcode;
   uint16_t old_pc;
@@ -1446,13 +1443,14 @@ void execute_instruction (void)
       fprintf (trace_f, "        BC=%04x DE=%04x HL=%04x AF=%02x%02x\n",
 	       REG_PAIR_BC, REG_PAIR_DE, REG_PAIR_HL, REG_A, get_f ());
     }
+  return halted;
 }
 
-void reset_processor (void)
+void ksim_reset_processor (uint16_t a)
 {
   halted = false;
   interrupt_enabled = false;
-  pc = 0x0000;
+  pc = a;
 }
 
 
@@ -1475,7 +1473,7 @@ static void init_parity_table (void)
 }
 
 
-uint32_t hex_extract (char *p, int count)
+static uint32_t hex_extract (char *p, int count)
 {
   uint32_t data = 0;
   while (count--)
@@ -1492,10 +1490,9 @@ uint32_t hex_extract (char *p, int count)
   return data;
 }
 
-uint32_t start_addr = 0;
-
-void load_hex (char *fn)
+uint32_t ksim_load_hex (char *fn)
 {
+  uint32_t start_addr = 0;
   FILE *f;
   char buf [257];
 
@@ -1535,9 +1532,10 @@ void load_hex (char *fn)
     }
 
   fclose (f);
+  return start_addr;
 }
 
-void load_binary (char *fn)
+uint32_t ksim_load_binary (char *fn)
 {
   FILE *f;
 
@@ -1552,80 +1550,15 @@ void load_binary (char *fn)
   fread (mem, sizeof (mem), 1, f);
 
   fclose (f);
-
-  start_addr = 0x0000;
+  return 0x0000;
 }
 
-int main (int argc, char **argv)
+void ksim_init (char *x, bool b, FILE *f)
 {
-  bool hex_file = false;
-  bool bin_file = false;
-  char *fn = NULL;
-  char *trace_fn = NULL;
-
-  progname = argv [0];
-
+  progname = x;
+  bdos_sim = b;
+  trace_f = f;
   init_parity_table ();
-
-  while (--argc)
-    {
-      argv++;
-      if (argv [0][0] == '-')
-	{
-	  if (strcmp (argv [0], "-b") == 0)
-	    bin_file = true;
-	  else if (strcmp (argv [0], "-h") == 0)
-	    hex_file = true;
-	  else if (strcmp (argv [0], "-t") == 0)
-	    {
-	      if (! --argc)
-		fatal (EX_USAGE, "Missing argument for '-t' option.\n");
-	      if (trace_fn)
-		fatal (EX_USAGE, "Only one '-t' option may be specified.\n");
-	      trace_fn = argv [1];
-	      argv++;
-	    }
-	  else if (strcmp (argv [0], "--bdos") == 0)
-	    bdos_sim = true;
-	  else
-	    fatal (EX_USAGE, "Unknown option '%s'.\n", argv [0]);
-	}
-      else
-	{
-	  if (! fn)
-	    fn = argv [0];
-	  else
-	    fatal (EX_USAGE, "Only one bootstrap file may be specified.\n");
-	}
-    }
-
-  if (! fn)
-    fatal (EX_USAGE, "A bootstrap file must be specified.\n");
-
-  if (hex_file && bin_file)
-    fatal (EX_USAGE, "The -b and -h options are mutually exclusive.\n");
-
-  if (trace_fn)
-    {
-      trace_f = fopen (trace_fn, "w");
-      if (! trace_f)
-	fatal (EX_CANTCREAT, "Can't create trace file '%f'.\n", trace_fn);
-    }
-
-  if (hex_file)
-    load_hex (fn);
-  else if (bin_file)
-    load_binary (fn);
-
   console_init ();
   atexit (console_cleanup);
-
-  reset_processor ();
-
-  pc = start_addr;
-
-  while (! halted)
-    execute_instruction ();
-
-  return 0;
 }

@@ -4,6 +4,6 @@ LDFLAGS = -g
 all: ksim
 
 clean:
-	rm ksim.o ksim
+	rm ksim.o main.o ksim
 
-ksim: ksim.o
+ksim: ksim.o main.o
