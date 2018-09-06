@@ -626,7 +626,7 @@ iodef(IOINOP(0700, 07), NULL,    IO_SO_APR, io_so_apr, IF_IO)	/* SO APR, */
   iodef(IOINOP(0700, 012),"SBDIAG",IO_SBDIAG,io_sbdiag,IF_IO)	/* BO PI, */
 #endif
 	 /* DATAO PI, - (KA/KI: Disp data on console lites) */
-iodef(IOINOP(0700, 013), NULL, IO_DO_PI, io_do_pi, IF_IO)	/* DO PI, */
+iodef(IOINOP(0700, 013), "WRLI", IO_DO_PI, io_do_pi, IF_IO)	/* DO PI, */
 iodef(IOINOP(0700, 014), "WRPI", IO_WRPI, io_wrpi, IF_IO)	/* CO PI, */
 iodef(IOINOP(0700, 015), "RDPI", IO_RDPI, io_rdpi, IF_IO)	/* CI PI, */
 iodef(IOINOP(0700, 016), NULL, IO_SZ_PI, io_sz_pi, IF_IO)	/* SZ PI, */

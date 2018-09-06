@@ -1,7 +1,7 @@
 language: c
 dist: trusty
 sudo: required
-install: true
+install: sudo apt-get install libusb-1.0-0-dev
 script:
   - ./autogen.sh
   - mkdir tmp

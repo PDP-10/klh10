@@ -20,6 +20,8 @@
 **  and is used by permission.  
 */
 
+#include <stdio.h>
+#include <string.h>
 #include "klh10.h"
 
 #if !KLH10_DEV_LITES && CENV_SYS_DECOSF
@@ -31,6 +33,7 @@ static int decosfcclossage;
 
 #if KLH10_DEV_LITES		/* Moby conditional for entire file */
 
+#include <libusb-1.0/libusb.h>
 #include <sys/io.h>
 #include "dvlites.h"
 
@@ -171,7 +174,109 @@ static const unsigned char control[8] = {
 
 static int port = 0;		/* parallel port, normally LPT1 (0x378)  */
 static int unit = -1;		/* currently selected unit */
+static libusb_device_handle *lights_handle = NULL;
+static unsigned int lights_left = 0;
+static unsigned int lights_right = 0;
+static int lights_aux = 0;
 
+
+#define USB_CFG_VENDOR_ID       0xc0, 0x16
+#define USB_CFG_DEVICE_ID       0xdf, 0x05
+#define USB_CFG_DEVICE_NAME     'P','a','n','d','a',' ','D','i','s','p','l','a','y',
+#define USB_CFG_DEVICE_NAME_LEN 13
+
+static libusb_device_handle *get_panda_handle(libusb_device **devs)
+{
+    libusb_device *dev;
+    libusb_device_handle *handle = NULL;
+    int i = 0;
+    int r;
+
+    int found = 0;
+    int openable = 0;
+
+    unsigned char prod[256];
+    char devname[USB_CFG_DEVICE_NAME_LEN] = {USB_CFG_DEVICE_NAME};
+
+    unsigned char   rawVid[2] = {USB_CFG_VENDOR_ID};
+    unsigned char    rawPid[2] = {USB_CFG_DEVICE_ID};
+
+    int vid = rawVid[0] + 256 * rawVid[1];
+    int pid = rawPid[0] + 256 * rawPid[1];
+
+
+    while ((dev = devs[i++]) != NULL) {
+        struct libusb_device_descriptor desc;
+        libusb_get_device_descriptor(dev, &desc); /* this always succeeds */
+        // Do the VID and PID match?
+        if (desc.idVendor == vid && desc.idProduct == pid) {
+            found = 1;
+            r = libusb_open(dev, &handle);
+            // If we can't open it, keep trying.
+            // There may be a device with the same pid and vid but not a Panda Display
+            if (r < 0) {
+                continue;
+            }
+            openable = 1;
+            r = libusb_get_string_descriptor_ascii(handle, desc.iProduct, prod, sizeof prod);
+            if (r < 0) {
+                libusb_close(handle);
+                return NULL;
+            }
+            // Here we have something that matches the free
+            // VID and PID offered by Objective Development.
+            // Now we need to Check device name to see if it
+            // really is a Panda Display.
+            if ((0 == strncmp((char *)prod, devname, USB_CFG_DEVICE_NAME_LEN)) &&
+                (desc.idVendor == vid) &&
+                (desc.idProduct == pid)) {
+                return handle;
+            }
+            libusb_close(handle);
+        }
+    }
+
+    if (found) {
+        if (openable)
+                  fprintf (stderr, "Found USB device matching 16c0:05df, but it isn't a Panda Display\n");
+        else
+                  fprintf (stderr, "Found something that might be a Panda Display, but couldn't open it.\n");
+    }
+
+    return NULL;
+}
+
+static int lites_init_usb (void)
+{
+    libusb_device **devs;
+    libusb_context *ctx = NULL;
+    ssize_t cnt;
+    int r, i, pos;
+
+    if (lights_handle != NULL)
+        return 1;
+
+    r = libusb_init(&ctx);
+    if (r < 0)
+        return 0;
+
+    cnt = libusb_get_device_list(ctx, &devs);
+    if (cnt < 0)
+        return 0;
+
+    lights_handle = get_panda_handle(devs);
+    if (lights_handle == NULL)
+        return 0;
+
+    if (libusb_kernel_driver_active(lights_handle, 0) == 1)
+        libusb_detach_kernel_driver(lights_handle, 0);
+
+    r = libusb_claim_interface(lights_handle, 0);
+    if(r < 0)
+        return 0;
+
+    return 1;
+}
 
 /* One-time initialization
  * Accepts: port base register
@@ -182,6 +287,9 @@ int lites_init (unsigned int prt)
 {
   int ret;
   unsigned int i;
+
+  if (prt == 0)
+    return lites_init_usb ();
 				/* enable access to the port */
   if (ret = !ioperm (prt,PORT_MAX,ENABLE)) {
     port = prt;			/* access granted, note port */
@@ -277,6 +385,34 @@ static void lites_wreg (unsigned char reg,unsigned char data)
     outb (control[reg],port + PORT_CONTROL);
   }
 }
+
+static void lights_latch (void)
+{
+    unsigned char buffer[8];
+
+    if (lights_handle == NULL)
+        return;
+
+    buffer[0] =  (lights_left  >> 14) & 0037;
+    buffer[1] =  (lights_left  >>  6) & 0377;
+    buffer[2] =  (lights_left  <<  2) & 0374;
+    buffer[2] |= (lights_right >> 16) & 0003;
+    buffer[3] =  (lights_right >>  8) & 0377;
+    buffer[4] =   lights_right        & 0377;
+
+    buffer[5] = (lights_aux << 4) & 0340;
+    buffer[6] = 0;
+    buffer[7] = 0;
+
+    libusb_control_transfer(lights_handle,
+                            LIBUSB_REQUEST_TYPE_CLASS | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_OUT,
+                            LIBUSB_REQUEST_SET_CONFIGURATION,
+                            0x0000,
+                            0,
+                            buffer,
+                            sizeof buffer,
+                            5000);
+}
 
 /* Routines specific to the primary display lights */
 
@@ -291,6 +427,14 @@ static unsigned char byte0 = 0;	/* save of aux bits and high 4 pgm lites */
 void lights_pgmlites (unsigned long lh,unsigned long rh)
 {
   unsigned char data[5];
+
+  if (lights_handle) {
+    lights_left = lh;
+    lights_right = rh;
+    lights_latch ();
+    return;
+  }
+
   lites_setdisplay (UNIT_PGM);	/* select program display lights unit */
 				/* calculate MSB with aux bits */
   byte0 = data[0] = ((lh >> 14) & 0xf) | (byte0 & 0xe0);
