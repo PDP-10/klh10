@@ -871,6 +871,7 @@ vmt_rdmount(register struct vmtape *t,
 	}
 	/* Oops, doesn't look like a control file.  Try data. */
 	fclose(cf);
+	cf = NULL;
 	if (cfn != ta->vmta_path)
 	    free(cfn);
 	cfn = NULL;
