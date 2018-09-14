@@ -33,8 +33,19 @@ static int decosfcclossage;
 
 #if KLH10_DEV_LITES		/* Moby conditional for entire file */
 
+#if HAVE_LIBUSB_1_0
 #include <libusb-1.0/libusb.h>
+#endif
+/*
+ * For now, assume that having <sys/io.h> is equivalent to having
+ * outb(). That may not be exactly true but it's the code we have.
+ */
+#ifdef HAVE_SYS_IO_H
 #include <sys/io.h>
+#else
+static inline int ioperm(int a, int b, int c) { return -1; }
+static inline void outb(int a, int b) {}
+#endif
 #include "dvlites.h"
 
 

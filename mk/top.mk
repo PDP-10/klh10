@@ -25,6 +25,7 @@ CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
                 -Wmissing-declarations -Wredundant-decls
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
+CPULIBS = @CPULIBS@
 NETLIBS = @NETLIBS@
 
 prefix = @prefix@
