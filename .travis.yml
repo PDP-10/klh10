@@ -6,7 +6,7 @@ script:
   - ./autogen.sh
   - mkdir tmp
   - cd tmp
-  - ../configure
+  - ../configure --enable-lights
   - make base-kl
   - cd ../run/dfkfb
   - ../../tmp/bld-kl/kn10-kl dfkfb.ini

@@ -5,7 +5,7 @@ dnl This configure.ac script was created for Autoconf 2.69, but I
 dnl tried it with one as old as 2.61, and that seemed to work fine.
 
 AC_PREREQ([2.69])
-AC_INIT([klh10], [2.0k-Rhialto], [https://github.com/PDP-10/klh10],
+AC_INIT([klh10], [2.0l], [https://github.com/PDP-10/klh10],
 	[], [https://github.com/PDP-10/klh10])
 AC_CONFIG_SRCDIR([src/klh10.h])
 AC_CONFIG_HEADERS([src/config.h])
@@ -34,6 +34,25 @@ do
     esac
 done
 CFLAGS="$NEWCFLAGS -g3 -O3"
+
+# -------------------------------------------------------------------------
+# Check whether we want LIGHTS support
+# -------------------------------------------------------------------------
+
+AC_ARG_ENABLE(lights,
+    AS_HELP_STRING([--enable-lights],[enable Panda lights (which requires libusb-1.0)]))
+
+case "${enable_lights}" in
+    yes)
+        AC_MSG_NOTICE([Compiling with Panda lights support])
+        AC_DEFINE(KLH10_DEV_LITES, 1, [Set to 1 to enable Panda lights])
+        need_libusb=yes
+        ;;
+    no | "")
+        AC_DEFINE(KLH10_DEV_LITES, 0, [Set to 0 to disable Panda lights])
+        ;;
+    *)  AC_MSG_ERROR([bad value ${enable_lights} for --enable-lights]) ;;
+esac
 
 # -------------------------------------------------------------------------
 # Check whether we want VDE support
@@ -81,7 +100,23 @@ AC_CHECK_FUNC([nanosleep],
 	AC_CHECK_LIB([rt], [nanosleep])
     ])
 
-# -lsocket and -lpcap should go into NETLIBS
+case "${need_libusb}" in
+    yes)
+        # Check if libusb-1.0 is present, otherwise fail.
+        # CPULIBS is for libraries only needed by the CPU, not by other programs.
+        SAVE_LIBS="$LIBS"
+        LIBS=""
+        AC_CHECK_LIB([usb-1.0], [libusb_get_device_descriptor],
+                     [],
+                     [AC_MSG_ERROR([Lights require libusb-1.0, which I could not find.])]
+                    )
+        CPULIBS="$LIBS"
+        LIBS="$SAVE_LIBS"
+        ;;
+esac
+
+# -lsocket, -lpcap and -lvdeplug should go into NETLIBS.
+# NETLIBS is for libraries only needed by programs doing networking.
 SAVE_LIBS="$LIBS"
 LIBS=""
 AC_CHECK_LIB([socket], [if_nameindex])
@@ -100,7 +135,7 @@ AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h limits.h netinet/in.h sgtty.h \
 		  sys/socket.h sys/time.h termios.h unistd.h net/if_tun.h \
 		  linux/if_tun.h linux/if_packet.h net/if_tap.h sys/mtio.h \
 		  net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h \
-		  libvdeplug.h])
+		  sys/io.h libvdeplug.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -248,6 +283,7 @@ AC_SUBST([CPPFLAGS])
 AC_SUBST([DESTDIR])
 AC_SUBST([PREFIX])
 AC_SUBST([LIBS])
+AC_SUBST([CPULIBS])
 AC_SUBST([NETLIBS])
 AC_SUBST([MAKEFILE], [Makefile])
 AC_SUBST([CENVFLAGS])

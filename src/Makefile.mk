@@ -54,7 +54,8 @@ CFLAGS_LINT ?=
 LINKER ?= $(CC)
 LDFLAGS ?=
 LDOUTF ?= -o
-LIBS := -lusb-1.0
+LIBS ?=
+CPULIBS ?=
 NETLIBS ?= -lpcap
 
 # Variables specific to this makefile setup
@@ -108,6 +109,7 @@ showdefs:
 	@echo "CPPFLAGS= $(CPPFLAGS)"
 	@echo "LDFLAGS = $(LDFLAGS)"
 	@echo "LIBS = $(LIBS)"
+	@echo "CPULIBS = $(CPULIBS)"
 	@echo "NETLIBS = $(NETLIBS)"
 	@echo "CENVFLAGS = $(CENVFLAGS)"
 	@echo "CONFFLAGS = $(CONFFLAGS)"
@@ -252,13 +254,13 @@ DINTFLAGS  = \
 ##
 
 kn10-ks: $(OFILES_KS)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks $(OFILES_KS) $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks $(OFILES_KS) $(LIBS) $(CPULIBS)
 
 kn10-ks-its: $(OFILES_KS)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks-its $(OFILES_KS) $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks-its $(OFILES_KS) $(LIBS) $(CPULIBS)
 
 kn10-kl: $(OFILES_KL)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-kl $(OFILES_KL) $(LIBS)
+	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-kl $(OFILES_KL) $(LIBS) $(CPULIBS)
 
 
 ####################################################################
@@ -325,6 +327,7 @@ base-ks-its:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
@@ -355,6 +358,7 @@ base-ks:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
@@ -381,6 +385,7 @@ base-kl:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
@@ -434,6 +439,7 @@ lint-ks-its:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
@@ -446,6 +452,7 @@ lint-ks:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
@@ -458,6 +465,7 @@ lint-kl:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
@@ -480,6 +488,7 @@ port-ks:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
@@ -507,6 +516,7 @@ kl0i-sync:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
@@ -533,6 +543,7 @@ kl0i-rtmopt:
 	    "CPPFLAGS = $(CPPFLAGS)" \
 	    "LDFLAGS = $(LDFLAGS)" \
 	    "LIBS = $(LIBS)" \
+	    "CPULIBS = $(CPULIBS)" \
 	    "NETLIBS = $(NETLIBS)" \
 	    "CENVFLAGS = $(CENVFLAGS)" \
 	    "CONFFLAGS = \
