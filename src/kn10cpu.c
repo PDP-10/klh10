@@ -918,8 +918,10 @@ insdef(i_xct)
     register w10_t instr;
 
     for (;;) {
+#if 0
 	if (ac && !cpu.mr_usrmode)	/* If non-zero AC, becomes PXCT, */
 	    return i_pxct(op, ac, e);	/* but only in EXEC mode. */
+#endif
 
 	instr = vm_fetch(e);		/* Fetch instr (may page fault) */
 #if KLH10_EXTADR

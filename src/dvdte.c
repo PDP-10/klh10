@@ -793,7 +793,7 @@ static void dte_dosecp(register struct dte *dt)
 {
     register w10_t w;
 
-    w = vm_pget(vm_physmap(cpu.mr_ebraddr + DTEE_CMD));
+    w = vm_pget(vm_physmap(0*cpu.mr_ebraddr + DTEE_CMD));
     switch (RHGET(w) & DTECMDF_CMD) {
 	default:
 	    fprintf(dt->dt_dv.dv_dbf, "[DTECMD: unknown %lo]\r\n",
@@ -932,10 +932,10 @@ static void dte_dosecp(register struct dte *dt)
 		op10m_setz(w);		/* No input, return 0 */
 	    else {
 		ch &= 0177;		/* Mask for safety */
-		fe_ctyout(ch);		/* Echo, sigh */
+		//fe_ctyout(ch);		/* Echo, sigh */
 		LRHSET(w, 0, ch & 0377);
 	    }
-	    vm_pset(vm_physmap(cpu.mr_ebraddr + DTEE_F11), w);
+	    vm_pset(vm_physmap(0*cpu.mr_ebraddr + DTEE_F11), w);
 	  }
 	    break;
 
@@ -1051,7 +1051,7 @@ static void dte_dosecp(register struct dte *dt)
     ** TTY output under RSX20F (only KLDCP), but shouldn't hurt.
     */
     op10m_seto(w);
-    vm_pset(vm_physmap(cpu.mr_ebraddr + DTEE_FLG), w);
+    vm_pset(vm_physmap(0*cpu.mr_ebraddr + DTEE_FLG), w);
 }
 
 /* KLDCP clock facilities */
