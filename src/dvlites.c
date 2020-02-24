@@ -34,7 +34,7 @@ static int decosfcclossage;
 #if KLH10_DEV_LITES		/* Moby conditional for entire file */
 
 #if HAVE_LIBUSB_1_0
-#include <libusb-1.0/libusb.h>
+#include <libusb.h>
 #endif
 /*
  * For now, assume that having <sys/io.h> is equivalent to having

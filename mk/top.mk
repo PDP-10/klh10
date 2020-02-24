@@ -18,14 +18,14 @@
 SRC = @top_srcdir@/src
 BLDSRC = @top_builddir@/src
 CC = @CC@
-CFLAGS = -c @CFLAGS@
+CFLAGS = -c @CFLAGS@ @libusb_CFLAGS@
 CPPFLAGS = @CPPFLAGS@ -I$(BLDSRC) -I$(SRC)
 CFLAGS_LINT = -ansi -pedantic -Wall -Wshadow \
                 -Wstrict-prototypes -Wmissing-prototypes \
                 -Wmissing-declarations -Wredundant-decls
 LDFLAGS = @LDFLAGS@
 LIBS = @LIBS@
-CPULIBS = @CPULIBS@
+CPULIBS = @CPULIBS@ @libusb_LIBS@
 NETLIBS = @NETLIBS@
 
 prefix = @prefix@
