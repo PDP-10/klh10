@@ -19,6 +19,7 @@ builddir=$(pwd)
 cd "$srcdir"
 srcdir=$(pwd)
 
+aclocal         # creates aclocal.m4 from configure.ac
 autoconf	# creates configure from configure.ac
 autoheader	# creates src/config.h.in from configure.ac
 

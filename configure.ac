@@ -103,15 +103,10 @@ AC_CHECK_FUNC([nanosleep],
 case "${need_libusb}" in
     yes)
         # Check if libusb-1.0 is present, otherwise fail.
-        # CPULIBS is for libraries only needed by the CPU, not by other programs.
-        SAVE_LIBS="$LIBS"
-        LIBS=""
-        AC_CHECK_LIB([usb-1.0], [libusb_get_device_descriptor],
-                     [],
-                     [AC_MSG_ERROR([Lights require libusb-1.0, which I could not find.])]
-                    )
-        CPULIBS="$LIBS"
-        LIBS="$SAVE_LIBS"
+        PKG_CHECK_MODULES([libusb], [libusb-1.0],
+                          [AC_DEFINE([HAVE_LIBUSB_1_0], [1],
+                                     [Define if you have libusb-1.0.])],
+                          [AC_MSG_ERROR([Lights require libusb-1.0, which I could not find.])])
         ;;
 esac
 
@@ -287,6 +282,8 @@ AC_SUBST([CPULIBS])
 AC_SUBST([NETLIBS])
 AC_SUBST([MAKEFILE], [Makefile])
 AC_SUBST([CENVFLAGS])
+AC_SUBST([libusb_CFLAGS])
+AC_SUBST([libusb_LIBS])
 
 # -------------------------------------------------------------------------
 # Output section. State which files are going to be constructed.
