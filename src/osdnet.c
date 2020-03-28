@@ -163,7 +163,6 @@ ip_adrsprint(char *cp, unsigned char *ia)
 
 /* Our own internal table of interface entries.
  */
-static int iftab_initf = 0;
 static int iftab_nifs = 0;
 static struct ifent iftab[NETIFC_MAX];
 
@@ -448,6 +447,9 @@ osn_iflookup(char *ifnam)
 {
     int i = 0;
     struct ifent *ife = iftab;
+
+    if (!ifnam)
+	return NULL;
 
     for (; i < iftab_nifs; ++i, ++ife)
 	if (strcmp(ifnam, ife->ife_name) == 0)
@@ -895,7 +897,7 @@ osn_ifeaget2(char *ifnam,	/* Interface name */
 }
 
 static struct eth_addr emguest_ea = 	/* Emulated guest ether addr for tap */
-    { 0xf2, 0x0b, 0xa4, 0xff, 0xff, 0xff };
+    {{ 0xf2, 0x0b, 0xa4, 0xff, 0xff, 0xff }};
 
 static
 void
@@ -918,8 +920,6 @@ osn_pfeaget(struct pfdata *pfdata,	/* Packetfilter data */
 	    char *ifnam,	/* Interface name (sometimes needed) */
 	    unsigned char *eap)	/* Where to write ether address */
 {
-    int fd = pfdata->pf_fd;
-
     if (pfdata->pf_meth == PF_METH_TAP ||
 	pfdata->pf_meth == PF_METH_VDE) {
 
@@ -1331,8 +1331,6 @@ osn_ifmcset(struct pfdata *pfdata,
 	}
     } else {
 	/* Doing promiscuous stuff */
-	int flags;
-
 	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
 	    syserr(errno, "SIOCGIFFLAGS failed for interface \"%s\"", ifnam);
 	    goto bad;
@@ -2056,9 +2054,7 @@ pfopen_create(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf
     int tapfd;
     int res;
     char cmdbuff[128];
-    struct ifent *ife;
     int s;
-    int i;
     char *ifnam = osnpf->osnpf_ifnam;
 
     if (DP_DBGFLG)
@@ -2172,16 +2168,16 @@ void
 tap_bridge_close(struct tuntap_context *tt_ctx)
 {
     if (tt_ctx->my_tap) {
-	int s, res;
+	int s;
 
 	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 	    esfatal(1, "tap_bridge_close: socket() failed");
 	}
 
 	/* Destroy bridge */
-	res = ioctl(s, SIOCIFDESTROY, &tt_ctx->br_ifr);
+	ioctl(s, SIOCIFDESTROY, &tt_ctx->br_ifr);
 	/* Destroy tap */
-	res = ioctl(s, SIOCIFDESTROY, &tt_ctx->tap_ifr);
+	ioctl(s, SIOCIFDESTROY, &tt_ctx->tap_ifr);
 
 	close(s);
     }

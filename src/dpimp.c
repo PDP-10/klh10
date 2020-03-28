@@ -637,7 +637,7 @@ void
 net_init(struct dpimp_s *dpimp)
 {
     struct ifreq ifr;
-    char *ifnam_for_ipaddr;	/* which interface to ask IP addr/netmask */
+    char *ifnam_for_ipaddr = NULL;/* which interface to ask IP addr/netmask */
 
     if (osn_iftab_init() <= 0)
 	esfatal(0, "Couldn't find interface information");
@@ -824,7 +824,6 @@ struct bpf_program *
 pfbuild(void *arg, struct in_addr *ipa)
 {
     struct dpimp_s *dpimp = (struct dpimp_s *)arg;
-    unsigned char *ucp = (unsigned char *)ipa;
     struct bpf_program *pfp = &bpf_pfilter;
     struct bpf_insn *p;
 
@@ -1183,12 +1182,11 @@ arp_req(struct in_addr *ipa)
     static int ethbuild = 0, arpbuild = 0;
     static struct eth_header eh;
     static struct offset_ether_arp arp;
-    struct arpent *at;
     struct ether_addr ea;
 
     /* Store request in cache */
     memset((char *)&ea, 0, sizeof(ea));
-    at = arp_tnew(*ipa, &ea, 0);	/* Say incomplete with 0 flag */
+    arp_tnew(*ipa, &ea, 0);		/* Say incomplete with 0 flag */
 
     /* Build ethernet header if haven't already */
     if (!ethbuild) {
@@ -1711,6 +1709,8 @@ hosttoimp(struct dpimp_s *dpimp)
 		    kill(cpupid, swurgsig);	/* Wake host (cpu) up */
 	    }
 # endif
+#else
+	    (void)res;
 #endif
 	    break;
 
