@@ -1208,7 +1208,7 @@ arp_req(struct in_addr *ipa)
 	arp.arp.arp_op = htons(ARPOP_REQUEST);	/* Type REQUEST */
 	ea_set(arp.arp.arp_sha, &ihost_ea);		/* Sender hdw addr */
 	memcpy((char *)arp.arp.arp_spa,		/* Sender IP addr */
-		(char *)&ihost_ip, sizeof(arp.arp.arp_sha));
+		(char *)&ihost_ip, sizeof(arp.arp.arp_spa));
 	arpbuild = TRUE;
     }
 
