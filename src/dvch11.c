@@ -1081,6 +1081,13 @@ ch_ogo(register struct ch11 *ch)
 static void
 ch_odone(register struct ch11 *ch)
 {
+    struct dpchaos_s *dpc = (struct dpchaos_s *)ch->ch_dp.dp_adr;
+
+    // note we consumed the buffer
+    if (ch->ch_sbuf)
+      ch->ch_optr = ch->ch_sbuf + dpc->dpchaos_outoff;  // DPCHUDP_DATAOFFSET;
+    else
+      ch->ch_optr = NULL;
     REG(ch) |= CH_TDN;		/* Note it's done */
     ch->ch_outactf = TRUE;	/* OK to send another */
     ch_oint(ch);			/* Send output interrupt! */
