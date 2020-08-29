@@ -893,7 +893,7 @@ ch11_write(struct device *d, uint18 addr, register dvureg_t val)
     chaos_start(ch);
 
   switch (addr) {
-/*  case UB_CHMYN:		/* My chaos address (read only) = CHWBF */
+/*  case UB_CHMYN:		/ * My chaos address (read only) = CHWBF */
   case UB_CHRBF:		/* Read buffer (read only) */
   case UB_CHRBC:		/* Receive bit counter (read only) */
   case UB_CHXMT:		/* Initiate transmit (read only) */
