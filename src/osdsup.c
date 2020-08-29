@@ -913,7 +913,7 @@ os_rtmget(register osrtm_t *art)
 {
 #if HAVE_SETITIMER /* && HAVE_GETTIMEOFDAY ; implied */
     static osrtm_t os_last_rtm = {0,0};
-    if (!gettimeofday(art, (struct timezone *)NULL) == 0)
+    if (gettimeofday(art, (struct timezone *)NULL) != 0)
 	return FALSE;
 				/* did time go backwards? */
     if ((os_last_rtm.tv_sec > art->tv_sec) ||

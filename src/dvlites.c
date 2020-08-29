@@ -302,7 +302,7 @@ int lites_init (unsigned int prt)
   if (prt == 0)
     return lites_init_usb ();
 				/* enable access to the port */
-  if (ret = !ioperm (prt,PORT_MAX,ENABLE)) {
+  if ((ret = !ioperm (prt,PORT_MAX,ENABLE))) {
     port = prt;			/* access granted, note port */
     outb (0,port+PORT_CONTROL);	/* initialize the displays */
     for (i = 0; i <= UNIT_MAX; --i) {

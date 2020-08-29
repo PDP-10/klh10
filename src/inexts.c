@@ -261,7 +261,9 @@ insdef(i_extend)
 
 #elif KLH10_CPU_KS
 # if (IX_N == 040 || IX_N == 020)	/* Faster check if power of 2 */
-    if (LHGET(xw) & (((~(IX_N-1))<<9) | (AC_MASK<<5)))	/* Check op and AC fields */
+#  define IX_MASK ((~(unsigned int)(IX_N-1))<<9)
+    if (LHGET(xw) & (IX_MASK | (AC_MASK<<5)))	/* Check op and AC fields */
+#  undef IX_MASK
 # else
     if (xop >= IX_N || (LHGET(xw) & (AC_MASK<<5)))	/* Check op, AC field */
 # endif

@@ -423,7 +423,7 @@ void net_init_pf(struct dpchaos_s *dpchaos)
       dbprintln("Can't find EA for \"%s\"", npf.osnpf_ifnam);
       if (ife) {
 	dbprintln("Found interface '%s', ea %s", ife->ife_name,
-		  (ife->ife_ea != NULL && memcmp(ife->ife_ea,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) ? "found" : "not found");
+		  (memcmp(ife->ife_ea,"\0\0\0\0\0\0", ETHER_ADDR_LEN) == 0) ? "found" : "not found");
       } else
 	dbprintln("Can't find interface '%s'!", npf.osnpf_ifnam);
     } else {
@@ -1287,7 +1287,7 @@ pfbuild(void *arg, struct in_addr *ipa)
   // Check the ethernet type field
 #if KLH10_NET_PCAP
 #define MAX_PFLEN 136 // really need only 130
-  u_char bpfilter[MAX_PFLEN];
+  char bpfilter[MAX_PFLEN];
   char eastr[OSN_EASTRSIZ];
   // must also check for address since interface may be in promisc mode although we didn't ask for it
   sprintf(bpfilter,

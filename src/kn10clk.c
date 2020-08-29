@@ -1092,6 +1092,8 @@ clk_itusset(int32 usec)
 	case CLKENT_ST_MQUIET:
 	    ce->cke_oticks = clk_usec2tick(ce->cke_usec);
 	    break;
+	default:
+	    break;
 	}
     }
 
