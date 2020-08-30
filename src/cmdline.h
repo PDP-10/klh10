@@ -1,7 +1,7 @@
 /* CMDLINE.H - header file for command line processing functions
 */
 /*  Copyright © 1992, 1993, 2001 Kenneth L. Harrenstien
-/*  Copyright © 2017 Olaf Seibert
+**  Copyright © 2017 Olaf Seibert
 **  All Rights Reserved
 **
 **  This file is part of the KLH10 Distribution.  Use, modification, and

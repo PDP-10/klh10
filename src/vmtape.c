@@ -1804,6 +1804,9 @@ vmt_rspace(register struct vmtape *t,
 	    while (tpc_recfwd(t) > 0
 		&& !t->mt_eof && !t->mt_eot && --cnt) ;
 	break;
+    default:
+	/* Unexpected tape format value */
+	break;
     }
     t->mt_frames = origcnt - cnt;
     return TRUE;
@@ -3070,6 +3073,10 @@ vmt_rput(register struct vmtape *t,
 	    return FALSE;
 	}
 	break;
+
+    default:
+	/* Unexpected tape format value */
+	break;
     }
     return vmt_ioend(t);
 }
@@ -3098,6 +3105,9 @@ vmt_eput(register struct vmtape *t,
     case VMT_FMT_TPE:
     case VMT_FMT_TPS:
 	/* Possible but not implemented yet */
+	break;
+    default:
+	/* Unexpected tape format value */
 	break;
     }
     return TRUE;

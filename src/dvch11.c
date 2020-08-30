@@ -592,7 +592,7 @@ ch11_cmd_status(struct ch11 *ch, FILE *of)
   if (dpc->dpchaos_ifmeth_chudp)
     fprintf(of, " CHUDP port: %d.\n", ch->ch_chudp_port);
   else {
-    if (dpc->dpchaos_ifnam)
+    if (dpc->dpchaos_ifnam[0])
       fprintf(of, " Using ifc=\"%s\"", dpc->dpchaos_ifnam);
     fprintf(of, " ether addr %02X:%02X:%02X:%02X:%02X:%02X\n",
 	    dpc->dpchaos_eth[0],dpc->dpchaos_eth[1],dpc->dpchaos_eth[2],
@@ -627,12 +627,12 @@ ch11_cmd_status(struct ch11 *ch, FILE *of)
 	  (int)dp_xrcmd(dp_dpxfr(&ch->ch_dp)), (int)dp_xrcnt(dp_dpxfr(&ch->ch_dp)));
   fprintf(of,"Input buffer: ");
   if (ch->ch_iptr)
-    fprintf(of,"%d chars\n",ch->ch_iptr - ch->ch_rbuf);
+    fprintf(of,"%d chars\n", (int)(ch->ch_iptr - ch->ch_rbuf));
   else
     fprintf(of,"none\n");
   fprintf(of,"Output buffer: ");
   if (ch->ch_optr)
-    fprintf(of,"%d chars\n",ch->ch_optr - ch->ch_sbuf);
+    fprintf(of,"%d chars\n", (int)(ch->ch_optr - ch->ch_sbuf));
   else
     fprintf(of,"none\n");
   fprintf(of,"Receive count: %d\n", ch->ch_rcnt);  
@@ -815,7 +815,7 @@ ch11_read(struct device *d, register uint18 addr)
     chaos_start(ch);
 
   switch (addr) {
-/*  case UB_CHWBF:		/* Write buffer (write only) = CHMYN */
+/*  case UB_CHWBF:		/ * Write buffer (write only) = CHMYN */
 /*     break; */
   case UB_CHMYN:		/* My chaos address (read only) */
     val = ch->ch_myaddr;
@@ -893,7 +893,7 @@ ch11_write(struct device *d, uint18 addr, register dvureg_t val)
     chaos_start(ch);
 
   switch (addr) {
-/*  case UB_CHMYN:		/* My chaos address (read only) = CHWBF */
+/*  case UB_CHMYN:		/ * My chaos address (read only) = CHWBF */
   case UB_CHRBF:		/* Read buffer (read only) */
   case UB_CHRBC:		/* Receive bit counter (read only) */
   case UB_CHXMT:		/* Initiate transmit (read only) */
