@@ -649,7 +649,7 @@ void chaostohost_pf_ether(struct dpchaos_s *dpchaos, unsigned char *buffp, int c
     return;
   }
   // Chaos data length
-  int ccnt = ((pp[3] & 0xf) << 4) | pp[2];  /* un-swapped */
+  int ccnt = ((pp[3] & 0xf) << 8) | pp[2];  /* un-swapped */
 
   if (DBGFLG & 1) {
     dbprintln("Read Chaos pkt len %d (incl EH), offset %d, %d (pkt len), %d (Chaos data len)",
@@ -836,7 +836,7 @@ void chaostohost_chudp(struct dpchaos_s *dpchaos, unsigned char *buffp)
   {
     /* check that the packet is complete:
        4 bytes CHUDP header, Chaos header, add Chaos pkt length, plus 6 bytes trailer */
-    int chalen = ((buffp[DPCHAOS_CHUDP_DATAOFFSET+2] & 0xf)<<4) | buffp[DPCHAOS_CHUDP_DATAOFFSET+3];
+    int chalen = ((buffp[DPCHAOS_CHUDP_DATAOFFSET+2] & 0xf)<<8) | buffp[DPCHAOS_CHUDP_DATAOFFSET+3];
     int datalen = (DPCHAOS_CHUDP_DATAOFFSET + CHAOS_HEADERSIZE + chalen);
     int chafrom = (buffp[cnt-4]<<8) | buffp[cnt-3];
     char *ip = inet_ntoa(ip_sender.sin_addr);
@@ -1031,7 +1031,7 @@ hosttochaos(register struct dpchaos_s *dpchaos)
 	}
 
 	/* Come here to handle output packet */
-	int chlen = ((buff[dpchaos->dpchaos_outoff+2] & 0xf) << 4) | buff[dpchaos->dpchaos_outoff+3]; // DPCHAOS_CHUDP_DATAOFFSET
+	int chlen = ((buff[dpchaos->dpchaos_outoff+2] & 0xf) << 8) | buff[dpchaos->dpchaos_outoff+3]; // DPCHAOS_CHUDP_DATAOFFSET
 
 	if ((chlen+(chlen%2) + CHAOS_HEADERSIZE + dpchaos->dpchaos_outoff + CHAOS_HW_TRAILERSIZE) > rcnt) {
 	  if (1 || DBGFLG)
@@ -1528,7 +1528,7 @@ dumppkt(unsigned char *ucp, int cnt)
   cnt -= off;
     fprintf(stderr,"Opcode: %#o (%s), unused: %o\r\nFC: %d, Nbytes %d.\r\n",
 	    ucp[0], ch_opcode(ucp[0]),
-	    ucp[1], ucp[2]>>4, ((ucp[2]&0xf)<<4) | ucp[3]);
+	    ucp[1], ucp[2]>>4, ((ucp[2]&0xf)<<8) | ucp[3]);
     fprintf(stderr,"Dest host: %#o, index %#o\r\nSource host: %#o, index %#o\r\n",
 	    (ucp[4]<<8)|ucp[5], (ucp[6]<<8)|ucp[7], 
 	    (ucp[8]<<8)|ucp[9], (ucp[10]<<8)|ucp[11]);
