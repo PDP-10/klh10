@@ -1162,7 +1162,7 @@ showpkt(FILE *f, char *id, unsigned char *ucp, int cnt)
   fprintf(stderr,"%s pkt dump, len %d\r\n", id, cnt);
   fprintf(stderr,"Opcode: %#o (%s), unused: %o\r\nFC: %d., Nbytes %d.\r\n",
 	  ucp[0], ch_opcode(ucp[0]),
-	  ucp[1], ucp[2]>>4, ((ucp[2]&0xf)<<4) | ucp[3]);
+	  ucp[1], ucp[2]>>4, ((ucp[2]&0xf)<<8) | ucp[3]);
   fprintf(stderr,"Dest host: %#o, index %#o\r\nSource host: %#o, index %#o\r\n",
 	  (ucp[4]<<8)|ucp[5], (ucp[6]<<8)|ucp[7], 
 	  (ucp[8]<<8)|ucp[9], (ucp[10]<<8)|ucp[11]);
@@ -1432,7 +1432,7 @@ chaos_outxfer(register struct ch11 *ch)
 
     /* Output xfer requested! */
 #if 1 /* #### Debug */
-    int chlen = ((ch->ch_sbuf[dpc->dpchaos_outoff+2] & 0xf) << 4) | ch->ch_sbuf[dpc->dpchaos_outoff+3]; // DPCHUDP_DATAOFFSET
+    int chlen = ((ch->ch_sbuf[dpc->dpchaos_outoff+2] & 0xf) << 8) | ch->ch_sbuf[dpc->dpchaos_outoff+3]; // DPCHUDP_DATAOFFSET
 #endif
     cnt = (ch->ch_optr - ch->ch_sbuf) - dpc->dpchaos_outoff; // DPCHUDP_DATAOFFSET
 #if 1 /* #### Debug */
@@ -1523,7 +1523,7 @@ chaos_inxfer(register struct ch11 *ch)
 
     /* check hw trailer: dest, checksum */
     // byte order warning...
-    u_short chlen = ((pp[2] & 0xf) << 4) | pp[3];
+    u_short chlen = ((pp[2] & 0xf) << 8) | pp[3];
     u_short trdest = ((pp[cnt-6]<<8) | pp[cnt-5]);
     u_short hddest = (pp[4] << 8) | pp[5];
     u_short cksm = (pp[cnt-2]<<8) | pp[cnt-1];
