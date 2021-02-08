@@ -92,7 +92,7 @@ Ideas for future work:
 - Implement Chaos-over-DTLS to get some security, on this modern Internet.
 
 More info:
-- see https://aosnet.ch
+- see https://chaosnet.net
 
 Cheers,
 
