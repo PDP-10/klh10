@@ -622,7 +622,7 @@ ch11_cmd_status(struct ch11 *ch, FILE *of)
   fprintf(of,"Input possible: %d, Output possible: %d\n", ch->ch_inactf, ch->ch_outactf);
   fprintf(of, "DP status: %d\n", ch->ch_dpstate);
   fprintf(of, "DP Rtest: %d, Stest: %d\n",
-	  (int)dp_xrtest(dp_dpxfr(&ch->ch_dp)), (int)dp_xstest(dp_dpxfr(&ch->ch_dp)));
+	  (int)dp_xrtest(dp_dpxfr(&ch->ch_dp)), (int)dp_xstest(dp_dpxto(&ch->ch_dp)));
   fprintf(of, "DP rcmd: %d, rcnt: %d\n",
 	  (int)dp_xrcmd(dp_dpxfr(&ch->ch_dp)), (int)dp_xrcnt(dp_dpxfr(&ch->ch_dp)));
   fprintf(of,"Input buffer: ");
@@ -961,7 +961,7 @@ ch11_write(struct device *d, uint18 addr, register dvureg_t val)
     /* AIM628: when both xDN and xEN are set, the computer is interrupted */
     if ((val & CH_TEN) && (val & CH_REN)) {
       /* try to be clever */
-      if (dp_xstest(dp_dpxfr(&ch->ch_dp))) {
+      if (dp_xstest(dp_dpxto(&ch->ch_dp))) {
 	ch_ogo(ch);		/* sender's turn, process output first */
 	ch_igo(ch);
       } else {
