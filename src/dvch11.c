@@ -838,6 +838,8 @@ ch11_read(struct device *d, register uint18 addr)
 	  fprintf(DVDBF(ch), "[CH11 reading last word, clearing RDN]\r\n");
 	ch->ch_rcnt = -1;	/* read last word */
 	REG(ch) &= ~CH_RDN;	/* Done receiving? */
+	ch->ch_inactf = TRUE;	/* OK to read another */
+	dp_xrdone(dp_dpxfr(&ch->ch_dp)); /* Done, can now ACK */
       }
       break;
     }
@@ -1548,8 +1550,6 @@ chaos_inxfer(register struct ch11 *ch)
       }
       REG(ch) |= CH_RDN;		/* Note it's done! */
     }
-    ch->ch_inactf = TRUE;	/* OK to read another */
-    dp_xrdone(dpx);		/* Done, can now ACK */
 }
 
 #endif /* KLH10_DEV_CH11 */
