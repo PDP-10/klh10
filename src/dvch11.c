@@ -622,7 +622,7 @@ ch11_cmd_status(struct ch11 *ch, FILE *of)
   fprintf(of,"Input possible: %d, Output possible: %d\n", ch->ch_inactf, ch->ch_outactf);
   fprintf(of, "DP status: %d\n", ch->ch_dpstate);
   fprintf(of, "DP Rtest: %d, Stest: %d\n",
-	  (int)dp_xrtest(dp_dpxfr(&ch->ch_dp)), (int)dp_xstest(dp_dpxfr(&ch->ch_dp)));
+	  (int)dp_xrtest(dp_dpxfr(&ch->ch_dp)), (int)dp_xstest(dp_dpxto(&ch->ch_dp)));
   fprintf(of, "DP rcmd: %d, rcnt: %d\n",
 	  (int)dp_xrcmd(dp_dpxfr(&ch->ch_dp)), (int)dp_xrcnt(dp_dpxfr(&ch->ch_dp)));
   fprintf(of,"Input buffer: ");
@@ -838,6 +838,8 @@ ch11_read(struct device *d, register uint18 addr)
 	  fprintf(DVDBF(ch), "[CH11 reading last word, clearing RDN]\r\n");
 	ch->ch_rcnt = -1;	/* read last word */
 	REG(ch) &= ~CH_RDN;	/* Done receiving? */
+	ch->ch_inactf = TRUE;	/* OK to read another */
+	dp_xrdone(dp_dpxfr(&ch->ch_dp)); /* Done, can now ACK */
       }
       break;
     }
@@ -961,7 +963,7 @@ ch11_write(struct device *d, uint18 addr, register dvureg_t val)
     /* AIM628: when both xDN and xEN are set, the computer is interrupted */
     if ((val & CH_TEN) && (val & CH_REN)) {
       /* try to be clever */
-      if (dp_xstest(dp_dpxfr(&ch->ch_dp))) {
+      if (dp_xstest(dp_dpxto(&ch->ch_dp))) {
 	ch_ogo(ch);		/* sender's turn, process output first */
 	ch_igo(ch);
       } else {
@@ -1548,8 +1550,6 @@ chaos_inxfer(register struct ch11 *ch)
       }
       REG(ch) |= CH_RDN;		/* Note it's done! */
     }
-    ch->ch_inactf = TRUE;	/* OK to read another */
-    dp_xrdone(dpx);		/* Done, can now ACK */
 }
 
 #endif /* KLH10_DEV_CH11 */
