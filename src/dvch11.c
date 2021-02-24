@@ -625,14 +625,14 @@ ch11_cmd_status(struct ch11 *ch, FILE *of)
 	  (int)dp_xrtest(dp_dpxfr(&ch->ch_dp)), (int)dp_xstest(dp_dpxto(&ch->ch_dp)));
   fprintf(of, "DP rcmd: %d, rcnt: %d\n",
 	  (int)dp_xrcmd(dp_dpxfr(&ch->ch_dp)), (int)dp_xrcnt(dp_dpxfr(&ch->ch_dp)));
-  fprintf(of,"Input buffer: ");
+  fprintf(of,"Input buffer (offset %d): ", dpc->dpchaos_inoff);
   if (ch->ch_iptr)
-    fprintf(of,"%d chars\n", (int)(ch->ch_iptr - ch->ch_rbuf));
+    fprintf(of,"%d chars\n", (int)(ch->ch_iptr - ch->ch_rbuf)-dpc->dpchaos_inoff);
   else
     fprintf(of,"none\n");
-  fprintf(of,"Output buffer: ");
+  fprintf(of,"Output buffer (offset %d): ", dpc->dpchaos_outoff);
   if (ch->ch_optr)
-    fprintf(of,"%d chars\n", (int)(ch->ch_optr - ch->ch_sbuf));
+    fprintf(of,"%d chars\n", (int)(ch->ch_optr - ch->ch_sbuf)-dpc->dpchaos_outoff);
   else
     fprintf(of,"none\n");
   fprintf(of,"Receive count: %d\n", ch->ch_rcnt);  
@@ -1134,10 +1134,10 @@ ch_opcode(int op)
     char buf[7];
     if (op < 017 && op > 0)
       return ch_opc[op];
-    else if (op == 0200)
-      return "DAT";
-    else if (op == 0300)
+    else if (op >= 0300)
       return "DWD";
+    else if (op >= 0200)
+      return "DAT";
     else
       return "bogus";
   }

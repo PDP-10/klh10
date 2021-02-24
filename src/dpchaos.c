@@ -640,7 +640,9 @@ void chaostohost_pf_arp(struct dpchaos_s *dpchaos, unsigned char *buffp, int cnt
 void chaostohost_pf_ether(struct dpchaos_s *dpchaos, unsigned char *buffp, int cnt) 
 {
 
+  // actual Chaos packet ptr
   u_char *pp = buffp+sizeof(struct ether_header);
+  // Chaos packet length
   int pcnt = cnt - sizeof(struct ether_header);
   if ((pcnt - CHAOS_HEADERSIZE) < 0) {
     // not even a Chaosnet header was read
@@ -671,7 +673,7 @@ void chaostohost_pf_ether(struct dpchaos_s *dpchaos, unsigned char *buffp, int c
 	      pcnt, CHAOS_HEADERSIZE, ccnt, CHAOS_HEADERSIZE+ccnt);
     return;
   }
-      
+
   // ITS expects (and delivers) the Chaosnet hardware trailer (destination, source, checksum).
   // On Ethernet, this is not needed since it is replaced by the
   // Ethernet packet data (e.g. Ether addresses, CRC.)
@@ -685,24 +687,21 @@ void chaostohost_pf_ether(struct dpchaos_s *dpchaos, unsigned char *buffp, int c
   if ((ccnt % 2) == 1) {
     if (DBGFLG & 1)
       dbprintln("Odd Chaos data len %d, rounding up and zeroing extra byte", ccnt);
-    // @@@@ make sure this zeros the correct byte - this is OK on little-endian
-    buffp[sizeof(struct ether_header)+CHAOS_HEADERSIZE+ccnt] = '\0';
+    pp[CHAOS_HEADERSIZE+ccnt] = '\0';
   }
   if (DBGFLG & 1)
     dbprintln("Clearing/re-creating hw trailer at index %d, resetting size to %d",
 	      (sizeof(struct ether_header))+CHAOS_HEADERSIZE+ccnt+(ccnt%2),
 	      (CHAOS_HEADERSIZE + ccnt+(ccnt%2) + CHAOS_HW_TRAILERSIZE) + sizeof(struct ether_header));
-  memset(buffp+(sizeof(struct ether_header))+CHAOS_HEADERSIZE+ccnt+(ccnt%2), 0, CHAOS_HW_TRAILERSIZE);
+  memset(pp+CHAOS_HEADERSIZE+ccnt+(ccnt%2), 0, CHAOS_HW_TRAILERSIZE);
   // reset sizes
-  cnt = (CHAOS_HEADERSIZE + ccnt+(ccnt%2) + CHAOS_HW_TRAILERSIZE) + sizeof(struct ether_header);
   pcnt = (CHAOS_HEADERSIZE + ccnt+(ccnt%2) + CHAOS_HW_TRAILERSIZE);
+  cnt = pcnt + sizeof(struct ether_header);
 
   // Construct a trailer. Could find the actual hw sender from the Ethernet sender + ARP table,
   // but ITS doesn't care.
-  u_short *hddest = (u_short *)&pp[4];
-  u_short *hdsrc = (u_short *)&pp[8];
-  u_short *hdd = (u_short *)&pp[pcnt-CHAOS_HW_TRAILERSIZE]; *hdd = *hddest;
-  u_short *hds = (u_short *)&pp[pcnt-CHAOS_HW_TRAILERSIZE+2]; *hds = *hdsrc;
+  memcpy(&pp[pcnt-CHAOS_HW_TRAILERSIZE], &pp[4], 2);
+  memcpy(&pp[pcnt-CHAOS_HW_TRAILERSIZE+2], &pp[8], 2);
       
   u_short cks = ch_checksum(pp,pcnt-2);
   u_short *hdc = (u_short *)&pp[pcnt-CHAOS_HW_TRAILERSIZE+4]; *hdc = htons(cks);
@@ -713,7 +712,7 @@ void chaostohost_pf_ether(struct dpchaos_s *dpchaos, unsigned char *buffp, int c
   if (DBGFLG & 0x2) {
     dumppkt(buffp,cnt);
   }
-  // "assume we're already in shared buffer" (so buffp arg is not used)
+  // "assume we're already in shared buffer" (so buffp arg is not used, but inoff/outoff is)
   ihl_hhsend(dpchaos, cnt, buffp);
 
   return;
@@ -845,9 +844,8 @@ void chaostohost_chudp(struct dpchaos_s *dpchaos, unsigned char *buffp)
     int i, cks;
     if ((cks = ch_checksum(buffp+DPCHAOS_CHUDP_DATAOFFSET,cnt-DPCHAOS_CHUDP_DATAOFFSET)) != 0) {
       if (1 || DBGFLG)
-	dbprintln("Bad checksum 0x%x",cks);
-      /* #### must free buffer first(?) */
-      /* 	    return; */
+	dbprintln("CHUDP: Bad checksum 0x%x",cks);
+      /* return; */
     }
     if (cnt < datalen + CHAOS_HW_TRAILERSIZE) {	/* may have a byte of padding */
       if (1 || DBGFLG) {
@@ -855,10 +853,8 @@ void chaostohost_chudp(struct dpchaos_s *dpchaos, unsigned char *buffp)
 		  cnt, datalen + CHAOS_HW_TRAILERSIZE, chalen, errno);
 	dumppkt(buffp, cnt);
       }
-      /* #### must free buffer first(?) */
-      /* 	    return; */
+      /* return; */
     }
-    if (dpchaos->dpchaos_ifmeth_chudp) {
 #if 0
       if (DBGFLG) {
 	dbprintln("Rcv from chaos %o = ip %s port %d., %d. bytes (datalen %d)",
@@ -912,7 +908,6 @@ void chaostohost_chudp(struct dpchaos_s *dpchaos, unsigned char *buffp)
       else if ((dpchaos->dpchaos_chip_tlen >= DPCHAOS_CHIP_MAX) && DBGFLG) {
 	dbprintln("CHIP table full - cannot add %o", chafrom);
       }
-    }
   }
 
   ihl_hhsend(dpchaos, cnt, buffp);
