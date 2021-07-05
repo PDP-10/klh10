@@ -452,8 +452,8 @@ ch11_conf(FILE *f, char *s, struct ch11 *ch)
       fprintf(f, "CH11 assuming \"chudp\" interface method\n");
       ch->ch_ifmeth = s_dup("chudp");
     } else {
-      fprintf(f, "CH11 does not know which interface method to use, none specified?\n");
-      return FALSE;
+      fprintf(f, "CH11 assuming \"pcap\" interface method since no chudp parameters given\n");
+      ch->ch_ifmeth = s_dup("pcap");
     }
 
     return ret;
