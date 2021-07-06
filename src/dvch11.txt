@@ -62,7 +62,8 @@ For "chudp":
 	Global Chaosnet and just list its central router. See
 	https://chaosnet.net.)
 
-If chudpport or chip parameters are given, the ifmeth defaults to chudp.
+If chudpport or chip parameters are given, the ifmeth defaults to chudp,
+otherwise to pcap.
 
 If a CHUDP packet is received from an unknown host, a Chaos/IP mapping
 is dynamically added to the table, so return traffic can find its way. 
