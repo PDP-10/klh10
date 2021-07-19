@@ -170,32 +170,6 @@ CONFS = cenv.h klh10.h word10.h wfio.h fecmd.h feload.h \
 	dvrh20.h dvrpxx.h dvtm03.h dvni20.h dvhost.h dvlites.h \
 	vmtape.h vdisk.h config.h
 
-# Modules needed for KL10 version.
-
-OFILES_KL = klh10.o prmstr.o fecmd.o feload.o wfio.o osdsup.o \
-	kn10cpu.o kn10pag.o kn10clk.o opdata.o kn10ops.o \
-	inmove.o inhalf.o inblsh.o intest.o \
-	infix.o  inflt.o  inbyte.o injrst.o \
-	inexts.o inio.o   kn10dev.o 	\
-	dvcty.o  dvdte.o	\
-	vdisk.o  dvrpxx.o dvrh20.o	\
-	vmtape.o dvtm03.o	\
-	dvni20.o dpsup.o	\
-	dvhost.o dvlites.o
-
-# Modules needed for KS10 version.
-
-OFILES_KS = klh10.o prmstr.o fecmd.o feload.o wfio.o osdsup.o \
-	kn10cpu.o kn10pag.o kn10clk.o opdata.o kn10ops.o \
-	inmove.o inhalf.o inblsh.o intest.o \
-	infix.o  inflt.o  inbyte.o injrst.o \
-	inexts.o inio.o   kn10dev.o dvuba.o  \
-	dvcty.o  			\
-	vdisk.o  dvrpxx.o dvrh11.o	\
-	vmtape.o dvtm03.o	\
-	dvlhdh.o dvdz11.o dvch11.o \
-	dpsup.o \
-	dvhost.o dvlites.o
 
 # Device Processes (DPs) built concurrently with KN10
 
@@ -249,21 +223,6 @@ DINTFLAGS  = \
 
 
 ####################################################################
-##
-##	Basic KN10 configurations
-##
-
-kn10-ks: $(OFILES_KS)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks $(OFILES_KS) $(LIBS) $(CPULIBS)
-
-kn10-ks-its: $(OFILES_KS)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-ks-its $(OFILES_KS) $(LIBS) $(CPULIBS)
-
-kn10-kl: $(OFILES_KL)
-	$(LINKER) $(LDFLAGS) $(LDOUTF) kn10-kl $(OFILES_KL) $(LIBS) $(CPULIBS)
-
-
-####################################################################
 ##	Auxiliary action targets
 
 clean:
@@ -311,98 +270,6 @@ install:
 	@if [ -x wxtest   ]; then cp -p wxtest   ${KLH10_HOME}/; fi
 	@echo "Done!"
 
-####################################################################
-##	Specific KLH10 configurations
-##	
-##	Provided as a convenience, not intended to satisfy all
-##	possible platforms or configurations.
-
-# Standard setup for KS ITS
-#
-base-ks-its:
-	$(MAKER) kn10-ks-its $(DPROCS_KSITS) $(BASE_UTILS) udlconv \
-	    "SRC = $(SRC)" \
-	    "CC = $(CC)" \
-	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
-	    "CPPFLAGS = $(CPPFLAGS)" \
-	    "LDFLAGS = $(LDFLAGS)" \
-	    "LIBS = $(LIBS)" \
-	    "CPULIBS = $(CPULIBS)" \
-	    "NETLIBS = $(NETLIBS)" \
-	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = \
-		-DKLH10_CPU_KS=1	\
-		-DKLH10_SYS_ITS=1	\
-		-DKLH10_EVHS_INT=1	\
-			-DKLH10_DEV_DPTM03=1 \
-			-DKLH10_DEV_DPRPXX=1 \
-			-DKLH10_DEV_DPIMP=1 \
-		-DKLH10_SIMP=0 \
-		-DKLH10_MEM_SHARED=1 \
-		$(TINTFLAGS) \
-		$(DINTFLAGS) \
-		-DKLH10_APRID_SERIALNO=4097 \
-		-DKLH10_CLIENT=\\\"MyITS\\\" \
-		$(CONFFLAGS_AUX) \
-		$(CONFFLAGS_USR) \
-		-DVMTAPE_ITSDUMP=1 "
-
-
-# Standard setup for KS (TOPS-20, maybe TOPS-10)
-#
-base-ks:
-	$(MAKER) kn10-ks $(DPROCS_KS) $(BASE_UTILS) \
-	    "SRC = $(SRC)" \
-	    "CC = $(CC)" \
-	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
-	    "CPPFLAGS = $(CPPFLAGS)" \
-	    "LDFLAGS = $(LDFLAGS)" \
-	    "LIBS = $(LIBS)" \
-	    "CPULIBS = $(CPULIBS)" \
-	    "NETLIBS = $(NETLIBS)" \
-	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = \
-		-DKLH10_CPU_KS=1	\
-		-DKLH10_SYS_T20=1	\
-		-DKLH10_EVHS_INT=1	\
-			-DKLH10_DEV_DPTM03=1 \
-			-DKLH10_DEV_DPRPXX=1 \
-		-DKLH10_MEM_SHARED=1 \
-		$(TINTFLAGS) \
-		$(DINTFLAGS) \
-		-DKLH10_APRID_SERIALNO=4097 \
-		-DKLH10_CLIENT=\\\"MyKS\\\" \
-		$(CONFFLAGS_AUX) \
-		$(CONFFLAGS_USR) "
-
-# Standard setup for KL (TOPS-10 and TOPS-20)
-#
-base-kl:
-	$(MAKER) kn10-kl $(DPROCS_KL) $(BASE_UTILS) uexbconv \
-	    "SRC = $(SRC)" \
-	    "CC = $(CC)" \
-	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX)" \
-	    "CPPFLAGS = $(CPPFLAGS)" \
-	    "LDFLAGS = $(LDFLAGS)" \
-	    "LIBS = $(LIBS)" \
-	    "CPULIBS = $(CPULIBS)" \
-	    "NETLIBS = $(NETLIBS)" \
-	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = \
-		-DKLH10_CPU_KLX=1	\
-		-DKLH10_SYS_T20=1	\
-		-DKLH10_EVHS_INT=1	\
-			-DKLH10_DEV_DPNI20=1 \
-			-DKLH10_DEV_DPTM03=1 \
-			-DKLH10_DEV_DPRPXX=1 \
-		-DKLH10_MEM_SHARED=1	\
-		-DKLH10_RTIME_OSGET=1	\
-		-DKLH10_ITIME_INTRP=1	\
-		-DKLH10_CTYIO_INT=1	\
-		-DKLH10_APRID_SERIALNO=3600 \
-		-DKLH10_CLIENT=\\\"MyKL\\\" \
-		$(CONFFLAGS_AUX) \
-		$(CONFFLAGS_USR) "
 
 ###
 # On Sat, 26 Dec 2009, Jean-Marc Bourguet posted:
@@ -427,48 +294,6 @@ base-kl:
 # on other systems, but will eat up CPU unnecessarily.
 #
 # -- Mark --
-
-####################################################################
-##	Lintish versions to see how many compiler warnings we can generate
-##
-lint-ks-its:
-	$(MAKER) kn10-ks-its $(DPROCS_KSITS) $(BASE_UTILS) udlconv \
-	    "SRC = $(SRC)" \
-	    "CC = $(CC)" \
-	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
-	    "CPPFLAGS = $(CPPFLAGS)" \
-	    "LDFLAGS = $(LDFLAGS)" \
-	    "LIBS = $(LIBS)" \
-	    "CPULIBS = $(CPULIBS)" \
-	    "NETLIBS = $(NETLIBS)" \
-	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
-
-lint-ks:
-	$(MAKER) kn10-ks $(DPROCS_KS) $(BASE_UTILS) \
-	    "SRC = $(SRC)" \
-	    "CC = $(CC)" \
-	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
-	    "CPPFLAGS = $(CPPFLAGS)" \
-	    "LDFLAGS = $(LDFLAGS)" \
-	    "LIBS = $(LIBS)" \
-	    "CPULIBS = $(CPULIBS)" \
-	    "NETLIBS = $(NETLIBS)" \
-	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
-
-lint-kl:
-	$(MAKER) kn10-kl $(DPROCS_KL) $(BASE_UTILS) uexbconv \
-	    "SRC = $(SRC)" \
-	    "CC = $(CC)" \
-	    "CFLAGS = $(CFLAGS) $(CFLAGS_AUX) $(CFLAGS_LINT)" \
-	    "CPPFLAGS = $(CPPFLAGS)" \
-	    "LDFLAGS = $(LDFLAGS)" \
-	    "LIBS = $(LIBS)" \
-	    "CPULIBS = $(CPULIBS)" \
-	    "NETLIBS = $(NETLIBS)" \
-	    "CENVFLAGS = $(CENVFLAGS)" \
-	    "CONFFLAGS = $(CONFFLAGS) $(CONFFLAGS_AUX) $(CONFFLAGS_USR)"
 
 
 ####################################################################
