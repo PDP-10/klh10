@@ -322,6 +322,7 @@ void ether_write(struct eth_header *, unsigned char *, int);
 
 void ihl_frag(int, unsigned char *);
 void ihl_hhsend(struct dpimp_s *, int, unsigned char *);
+static void ihl_hhsend_nop(struct dpimp_s *dpimp);
 void dumppkt(unsigned char *, int);
 
 /* Error and diagnostic output */
@@ -1417,6 +1418,11 @@ imptohost(struct dpimp_s *dpimp)
 	ether_hdr_offset = ETHER_HDRSIZ;
     }
 
+    // wait here for first NOP received
+    dp_xswait(dpx);
+    // then send a NOP reply to host
+    ihl_hhsend_nop(dpimp);
+
     for (;;) {
 	/* Make sure that buffer is free before clobbering it */
 	dp_xswait(dpx);			/* Wait until buff free */
@@ -1539,6 +1545,57 @@ unsigned char ihobuf[SIH_HSIZ+SI_LDRSIZ] = {
 	SILNK_IP, 0, 0, 0		/* IMP->Host IP msg ID */
 };
 
+
+static void
+ihl_hhsend_nop(struct dpimp_s *dpimp)
+/* Send NOP response to host */
+{
+  struct dpx_s *dpx = dp_dpxfr(&dp);
+  size_t off, max;
+  unsigned int m;
+  int cnt, nmsiz = 0;
+  unsigned char *ea = (unsigned char *)&ehost_ip;
+  unsigned char *buff = dp_xsbuff(dpx, &max); /* get initial buffer ptr */
+  dp_xswait(dpx);			      /* wait until buff free */
+  off = 0;				      // hmm
+  memset(buff, 0, SIH_HSIZ+SI_LDRSIZ);
+  // fill buff with NOP leader with IP info
+  buff[SIH_HSIZ+SIL_FMT] = 017;  	// format
+  // could use SIL_HTY which is next to the rest, but this is easy to test IMP in ITS.
+  buff[SIH_HSIZ+SIL_NET] = ea[0]; // network, "currently set to zero"
+  buff[SIH_HSIZ+SIL_TYP] = SIMT_NOP;		    // message type
+  // source host and imp
+  buff[SIH_HSIZ+SIL_HST] = ea[1];
+  buff[SIH_HSIZ+SIL_IMP1] = ea[2];
+  buff[SIH_HSIZ+SIL_IMP0] = ea[3];
+  if (ihost_nm.s_addr == 0)
+    // the netmask for tun really shouldn't matter.
+    nmsiz = 24;
+  else {
+    // calculate netmask size - is there a cleverer way?
+    m = ihost_nm.s_addr;
+    if (m != 0) {
+      while ((m & 1) == 0) m >>= 1;
+    }
+    while (((m & 1) == 1) && (nmsiz < 32)) {
+      nmsiz++;
+      m >>= 1;
+    }
+  }
+  // abuse these bits which are not used by NOP normally (handling type)
+  buff[SIH_HSIZ+SIL_HTY] = nmsiz;
+  if (DBGFLG)
+    fprintf(stderr,"IMP: sending NOP (ehost %#x, imask %#x) with address %d.%d.%d.%d and mask size %d\r\n",
+            ntohl(ehost_ip.s_addr), ntohl(ihost_nm.s_addr),
+	    buff[SIH_HSIZ+SIL_NET], buff[SIH_HSIZ+SIL_HST], buff[SIH_HSIZ+SIL_IMP1], buff[SIH_HSIZ+SIL_IMP0], 
+	    buff[SIH_HSIZ+SIL_HTY]);
+  // send it off
+  cnt = SIH_HSIZ + SI_LDRSIZ;
+  dpimp->dpimp_inoff = off;
+  dp_xsend(dpx, DPIMP_RPKT, cnt+off);
+  if (DBGFLG)
+    fprintf(stderr, "[dpimp-R: sent NOP RPKT %d+%d]", (int)off, cnt);
+}
 
 void
 ihl_hhsend(struct dpimp_s *dpimp,
@@ -1726,6 +1783,10 @@ hosttoimp(struct dpimp_s *dpimp)
 	    /* A real IMP would examine this to see how much padding to
 	    ** add onto its leaders.  However, ITS never wants any.
 	    */
+	    if (DBGFLG) fprintf(stderr, "[dpimp-W: NOP]\r\n");
+	    // respond with a NOP including IP address and mask
+	    // #### NOTE: using dpxfr to let imptohost proceed, instead of dvlhdh doing it
+	    dp_xrdone(dp_dpxfr(&dp));
 	    break;
 
 	case SIMT_DERR:	/* Error in Data (has msg-id) */
