@@ -1293,7 +1293,9 @@ imp_incheck(register struct lhdh *lh)
 	switch (dp_xrcmd(dpx)) {
 	case DPIMP_INIT:
 	    /* Do stuff to turn on IMP ready line? */
+#if 0	    // #### NOTE: let hosttoimp do this when the first NOP arrives
 	    dp_xrdone(dpx);		/* ACK it */
+#endif
 	    return 0;			/* No actual input */
 
 	case DPIMP_RPKT:		/* Input packet ready! */

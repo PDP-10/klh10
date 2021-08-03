@@ -93,7 +93,7 @@
 
 /* Version of DPIMP-specific shared memory structure */
 
-#define DPIMP_VERSION ((1<<10) | (1<<5) | (3))	/* 1.1.3 */
+#define DPIMP_VERSION ((1<<10) | (1<<5) | (4))	/* 1.1.4 */
 
 #define IFNAM_LEN	16	/* at least IFNAMSIZ! */
 
