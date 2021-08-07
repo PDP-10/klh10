@@ -401,6 +401,27 @@ lhdh_conf(FILE *f, char *s, struct lhdh *lh)
 	return FALSE;
     }
 
+    // Default the interface method based on arguments given
+    if (lh->lh_ifmeth == NULL) {
+      if (lh->lh_tunadr[0] != '\0') {
+	fprintf(f, "IMP assuming \"tun\" interface method since \"tunaddr\" parameter given\n");
+	lh->lh_ifmeth = s_dup("tun");
+      }
+      else if (lh->lh_gwadr[0] != '\0') {
+	fprintf(f, "IMP assuming \"pcap\" interface method since \"gwaddr\" parameter given\n");
+	lh->lh_ifmeth = s_dup("pcap");
+      }
+    }
+    // The check for consistency
+    if ((lh->lh_gwadr[0] != '\0') && strcmp(lh->lh_ifmeth,"pcap") != 0) {
+      fprintf(f, "%%%% IMP: \"gwaddr\" parameter is only used with \"pcap\" interface method\n");
+      return FALSE;
+    }
+    else if ((lh->lh_tunadr[0] != '\0') && strcmp(lh->lh_ifmeth,"pcap") == 0) {
+      fprintf(f, "%%%% IMP: \"tunaddr\" parameter is not used with \"pcap\" interface method\n");
+      return FALSE;
+    }
+
     return ret;
 }
 
@@ -1074,7 +1095,7 @@ imp_init(register struct lhdh *lh, FILE *of)
     if (lh->lh_ifmeth)			/* Pass on interface method if any */
 	strncpy(dpc->dpimp_ifmeth, lh->lh_ifmeth, sizeof(dpc->dpimp_ifmeth)-1);
     else
-	dpc->dpimp_ifnam[0] = '\0';	/* No specific interface */
+	dpc->dpimp_ifmeth[0] = '\0';	/* No specific method */
     memcpy((char *)dpc->dpimp_ip,	/* Set our IP address for filter */
 		lh->lh_ipadr, 4);
     memcpy((char *)dpc->dpimp_gw,	/* Set our GW address for IMP */
