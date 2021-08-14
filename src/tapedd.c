@@ -46,6 +46,8 @@
 ** this; OSDTAP.C could complete it.
 */
 
+#include "cenv.h"
+
 #include <string.h>
 #include <fcntl.h>
 #include <signal.h>

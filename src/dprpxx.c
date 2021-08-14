@@ -39,13 +39,14 @@ size, and configuration.
 
 */
 
+#include "klh10.h"	/* For config params */
+
 #include <stdio.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>	/* For malloc */
 #include <stdarg.h>
 
-#include "klh10.h"	/* For config params */
 #include "word10.h"
 #include "dpsup.h"		/* General DP defs */
 #include "dprpxx.h"		/* RPXX specific defs */

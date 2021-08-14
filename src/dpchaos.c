@@ -68,6 +68,8 @@ are completely independent.
 // Make sure short construction by | is from known network order, otherwise use casting.
 // Try to check ARP best practices (e.g retrans intervals?)
 
+#include "klh10.h"	/* Get config params */
+
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -75,8 +77,6 @@ are completely independent.
 #include <stdarg.h>
 
 #include <arpa/inet.h>
-
-#include "klh10.h"	/* Get config params */
 
 /* This must precede any other OSD includes to ensure that DECOSF gets
    the right flavor sockaddr (sigh)

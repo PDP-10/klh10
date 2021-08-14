@@ -25,6 +25,8 @@
  *
  */
 
+#include "klh10.h"
+
 #include <stdio.h>
 #include <stdlib.h>	/* Malloc and friends */
 #include <string.h>
@@ -34,7 +36,6 @@
 #include <time.h>
 #include <stdarg.h>	/* For error-reporting functions */
 
-#include "klh10.h"
 #include "kn10mac.h"	/* FLD macros */
 #include "kn10def.h"
 #include "kn10dev.h"

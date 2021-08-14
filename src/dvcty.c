@@ -25,9 +25,10 @@
  *
  */
 
+#include "klh10.h"
+
 #include <stdio.h>
 
-#include "klh10.h"
 #include "kn10def.h"
 #include "kn10ops.h"
 #include "fecmd.h"

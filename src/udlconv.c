@@ -162,6 +162,8 @@ Lisp format, the -right- thing to do is to do this all from Maclisp!
 
 */
 
+#include "cenv.h"
+
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>

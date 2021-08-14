@@ -24,10 +24,11 @@
 
 #define EXTDEF		/* Definitions, not declarations! */
 
+#include "klh10.h"
+
 #include <stddef.h>	/* For NULL */
 #include <stdio.h>	/* For op_init error reporting */
 
-#include "klh10.h"
 #include "kn10def.h"
 #include "opdefs.h"
 

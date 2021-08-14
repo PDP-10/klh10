@@ -20,9 +20,10 @@
 **  and is used by permission.  
 */
 
+#include "klh10.h"
+
 #include <stdio.h>
 #include <string.h>
-#include "klh10.h"
 
 #if !KLH10_DEV_LITES && CENV_SYS_DECOSF
 	/* Stupid gubbish needed to prevent OSF/1 AXP compiler from

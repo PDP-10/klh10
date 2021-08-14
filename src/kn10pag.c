@@ -25,10 +25,11 @@
  *
  */
 
+#include "klh10.h"
+
 #include <stdio.h>
 #include <string.h>
 
-#include "klh10.h"
 #include "osdsup.h"
 #include "kn10def.h"
 #include "kn10ops.h"

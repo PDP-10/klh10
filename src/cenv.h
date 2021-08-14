@@ -37,10 +37,9 @@
 **	CENV_SYS_x  = target OS
 **	CENV_SYSF_x = target OS features 
 **
-** Note that the CPU and SYS are expected to be explicitly specified by
-** a command line definition.  If no setting is detected this code tries
-** a few simple checks, but it is not an error if nothing is set; the
-** includer may have portable defaults.
+** Note that most of the definitions in this file are, or should be,
+** obsolete. Where still relevant, they should be detected by the
+** configure script.
 */
 
 #ifndef CENV_INCLUDED

@@ -28,13 +28,14 @@
  *
  */
 
+#include "cenv.h"
+
 #include <stdio.h>
 #include <stdlib.h>	/* For malloc */
 #include <stdarg.h>
 #include <string.h>
 
 #include "rcsid.h"
-#include "cenv.h"
 #include "word10.h"
 #include "osdsup.h"
 #include "vdisk.h"

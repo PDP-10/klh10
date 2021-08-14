@@ -28,8 +28,8 @@
 
 /* See CODING.TXT for guidelines to coding instruction routines. */
 
-#include <stddef.h>
 #include "klh10.h"
+#include <stddef.h>
 #include "kn10def.h"	/* Machine defs */
 #include "kn10ops.h"	/* PDP-10 ops */
 

@@ -37,10 +37,11 @@
  *
  */
 
+#include "klh10.h"
+
 #include <stdio.h>
 #include <setjmp.h>	/* For setjmp, longjmp */
 
-#include "klh10.h"
 #include "osdsup.h"
 #include "kn10def.h"
 #include "kn10ops.h"

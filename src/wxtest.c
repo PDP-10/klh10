@@ -44,6 +44,8 @@ guaranteed to be complete or reliable, and it's time-consuming to do
 this for all possible variations.
 */
 
+#include "cenv.h"	/* Just in case of LFS */
+
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>

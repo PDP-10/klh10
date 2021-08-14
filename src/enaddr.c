@@ -50,13 +50,14 @@
 				+AB:0:0:2:0:0
 */
 
+#include "cenv.h"
+
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 
-#include "cenv.h"
 #include "rcsid.h"
 #include "osdnet.h"
 
