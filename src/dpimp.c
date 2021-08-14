@@ -208,13 +208,13 @@ default for every OS that implements /dev/tun.
 
 */
 
+#include "klh10.h"	/* Get config params */
+
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
-
-#include "klh10.h"	/* Get config params */
 
 /* This must precede any other OSD includes to ensure that DECOSF gets
    the right flavor sockaddr (sigh)

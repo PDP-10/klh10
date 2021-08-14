@@ -59,6 +59,8 @@ and output as bytes in the following order by the code at SAVGRC:
 <jrst>,,<saddr> => 0,,<addr> =>	<xxxx><B3><B2><B1><B0>	hi 4 bits dropped
 
 */
+#include "cenv.h"	/* Just in case of LFS */
+
 #include <stdio.h>
 
 #include "word10.h"

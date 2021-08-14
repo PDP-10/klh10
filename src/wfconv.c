@@ -40,6 +40,8 @@
 
 */
 
+#include "cenv.h"	/* Just in case of LFS */
+
 #include <stdio.h>
 #include <stdlib.h>	/* Malloc and friends */
 #include <string.h>

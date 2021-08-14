@@ -34,6 +34,8 @@
 **
 */
 
+#include "cenv.h"
+
 #include <string.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -44,7 +46,6 @@
 #include <sys/file.h>		/* For open() flags */
 
 #include "rcsid.h"
-#include "cenv.h"
 #include "osdsup.h"
 #include "vdisk.h"		/* Include virtual disk stuff */
 

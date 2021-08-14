@@ -105,6 +105,8 @@ hardware devices so as to finally provide a consistent interface.
 */
 
 
+#include "klh10.h"
+
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>	/* For malloc */
@@ -114,7 +116,6 @@ hardware devices so as to finally provide a consistent interface.
 #include <stdarg.h>	/* For error-reporting functions */
 #include <limits.h>
 
-#include "klh10.h"
 #include "osdsup.h"
 #include "word10.h"
 #include "wfio.h"	/* For word-based file i/o */

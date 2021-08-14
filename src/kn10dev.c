@@ -27,12 +27,13 @@
 ** definition that is used to help initialize other devices.
 */
 
+#include "klh10.h"
+
 #include <stdio.h>	/* For stderr */
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>	/* For malloc/free */
 
-#include "klh10.h"
 #include "osdsup.h"
 #include "kn10def.h"
 #include "kn10dev.h"

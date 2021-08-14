@@ -43,11 +43,12 @@
  *
  */
 
+#include "klh10.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>	/* For strrchr */
 
-#include "klh10.h"
 #include "kn10def.h"
 #include "osdsup.h"
 #include "kn10ops.h"

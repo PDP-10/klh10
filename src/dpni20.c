@@ -144,6 +144,8 @@ The following general situations are possible:
 			(Unsure yet if Solaris needs this)
 */
 
+#include "klh10.h"	/* For config params */
+
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -151,8 +153,6 @@ The following general situations are possible:
 #include <stdarg.h>
 #include <poll.h>	/* For NetBSD mainly */
 
-
-#include "klh10.h"	/* For config params */
 
 /* This must precede any other OSD includes to ensure that DECOSF gets
    the right flavor sockaddr (sigh)

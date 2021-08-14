@@ -207,13 +207,13 @@ So, algorithm (on DECOSF anyway) should be:
 			should remain HARDON.
 */
 
+#include "klh10.h"	/* For config params */
+
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
-
-#include "klh10.h"	/* For config params */
 
 #if CENV_SYS_UNIX
 # include <unistd.h>
