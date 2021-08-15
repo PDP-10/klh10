@@ -66,7 +66,7 @@ int prm_varset(char **acp,
 
     if (!(cp = strchr(cp, '='))) {
 	if (ef)
-	    fprintf(ef, "Bad syntax for \"%s\", must be <var>=<value>\n", cp);
+	    fprintf(ef, "Bad syntax for \"%s\", must be <var>=<value>\n", *acp);
 	return FALSE;
     }
 
