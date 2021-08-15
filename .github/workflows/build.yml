@@ -24,7 +24,7 @@ jobs:
           mkdir tmp
           cd tmp
           ../configure --enable-lights
-          make base-kl
+          make
       - name: Test
         run: |
           cd run/dfkfb
