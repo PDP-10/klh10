@@ -130,7 +130,8 @@ AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h limits.h netinet/in.h sgtty.h \
 		  sys/socket.h sys/time.h termios.h unistd.h net/if_tun.h \
 		  linux/if_tun.h linux/if_packet.h net/if_tap.h sys/mtio.h \
 		  net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h \
-		  sys/io.h libvdeplug.h, sys/ioctl_compat.h])
+		  sys/io.h libvdeplug.h, sys/ioctl_compat.h sys/stream.h \
+		  sys/times.h sys/resource.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -149,8 +150,8 @@ AC_FUNC_REALLOC
 AC_CHECK_FUNCS([alarm dup2 gettimeofday localtime_r memset socket strcasecmp \
 		strchr strcspn strerror strncasecmp strpbrk strrchr strtol \
 		getifaddrs if_nameindex sigaction nanosleep \
-		gettimeofday getrusage setitimer tcsetattr mlockall \
-		setpriority])
+		getrusage setitimer tcsetattr mlockall \
+		setpriority times])
 
 # Check for BSD TTY stuff as fallback for termios.
 AC_CHECK_MEMBER(struct tchars.t_intrc,

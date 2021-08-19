@@ -57,6 +57,10 @@
 # include <errno.h>
 #endif
 
+#if HAVE_UNISTD_H
+# include <unistd.h>		/* read, write, lseek */
+#endif
+
 #if CENV_SYS_UNIX
 #  include <sys/types.h>
 #  include <sys/stat.h>
@@ -73,37 +77,35 @@
 #    include <sys/resource.h>	/* BSD: For getrusage() */
 #  endif
 
-#  if CENV_SYS_SOLARIS
-#    include <sys/stream.h>
+#  if HAVE_SYS_STREAM_H
+#    include <sys/stream.h>	/* Solaris, mostly */
 #    include <sys/stropts.h>
 #  endif
-#  if CENV_SYS_SOLARIS || CENV_SYS_XBSD || CENV_SYS_LINUX
-#    if CENV_SYS_LINUX
-#      include <sys/ioctl.h>	/* For FIONREAD */
-#    else
-#      include <sys/filio.h>	/* For FIONREAD */
-#    endif
-#    include <sys/time.h>	/* BSD: For setitimer() */
+#  if HAVE_SYS_IOCTL_H
+#    include <sys/ioctl.h>	/* For FIONREAD, ioctl, stty, gtty */
+#  endif
+#  if HAVE_SYS_IOCTL_COMPAT_H
+#    include <sys/ioctl_compat.h>
+#  endif
+#  if HAVE_SYS_FILIO_H
+#    include <sys/filio.h>	/* For FIONREAD */
+#  endif
+#  if HAVE_SYS_TIME_H
+#    include <sys/time.h>	/* For setitimer(), gettimeofday */
+#  endif
+#  if HAVE_SYS_TIMES_H
 #    include <sys/times.h>	/* No getrusage(), use times() */
+#  endif
+#  if HAVE_LIMITS_H
 #    include <limits.h>		/* For CLK_TCK */
 #  endif
-
 #  if CENV_SYSF_TERMIOS
 #    include <termios.h>	/* SV4: For terminal stuff */
 #  else
-#    include <sgtty.h>
+#    include <sgtty.h>		/* fallback to BSDTTY */
 #  endif
-
-    /* Declare syscalls used */
-#  if CENV_SYS_UNIX && !CENV_SYS_V7
-#    include <unistd.h>		/* read, write, lseek */
-#    include <sys/ioctl.h>	/* ioctl, stty, gtty */
+#  if HAVE_SYS_RESOURCE_H
 #    include <sys/resource.h>	/* getrusage */
-				/* sys/stat.h: fstat */
-				/* sys/time.h: gettimeofday, setitimer */
-#  else
-    extern int gtty(), stty(), ioctl(), read(), write(), lseek(), fstat();
-    extern int gettimeofday(), setitimer(), getrusage();
 #  endif
 
 #elif CENV_SYS_MAC
@@ -942,17 +944,7 @@ os_rtmget(register osrtm_t *art)
 int
 os_vrtmget(register osrtm_t *art)
 {
-#if CENV_SYS_SOLARIS		/* Precision sucks, but it's all we have */
-    struct tms tms;
-
-    if (times(&tms) == 0) {
-	art->tv_sec = tms.tms_utime / CLK_TCK;
-	art->tv_usec = (tms.tms_utime % CLK_TCK)
-				* (1000000/CLK_TCK);	/* Turn into usec */
-	return TRUE;
-    }
-    return FALSE;
-#elif HAVE_GETRUSAGE
+#if HAVE_GETRUSAGE
     /* WARNING!!!  Some systems turn out not to report getrusage runtime in a
     ** monotonically increasing way!  This can result in negative deltas
     ** from one get to the next.
@@ -964,6 +956,16 @@ os_vrtmget(register osrtm_t *art)
 
     if (getrusage(RUSAGE_SELF, &rus) == 0) {
 	*art = rus.ru_utime;		/* Return user-time used */
+	return TRUE;
+    }
+    return FALSE;
+#elif HAVE_TIMES		/* Precision sucks, but it's all we have */
+    struct tms tms;
+
+    if (times(&tms) == 0) {
+	art->tv_sec = tms.tms_utime / CLK_TCK;
+	art->tv_usec = (tms.tms_utime % CLK_TCK)
+				* (1000000/CLK_TCK);	/* Turn into usec */
 	return TRUE;
     }
     return FALSE;
