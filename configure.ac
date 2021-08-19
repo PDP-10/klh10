@@ -130,7 +130,7 @@ AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h limits.h netinet/in.h sgtty.h \
 		  sys/socket.h sys/time.h termios.h unistd.h net/if_tun.h \
 		  linux/if_tun.h linux/if_packet.h net/if_tap.h sys/mtio.h \
 		  net/nit.h sys/dlpi.h net/if_dl.h net/if_types.h \
-		  sys/io.h libvdeplug.h])
+		  sys/io.h libvdeplug.h, sys/ioctl_compat.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -151,6 +151,30 @@ AC_CHECK_FUNCS([alarm dup2 gettimeofday localtime_r memset socket strcasecmp \
 		getifaddrs if_nameindex sigaction nanosleep \
 		gettimeofday getrusage setitimer tcsetattr mlockall \
 		setpriority])
+
+# Check for BSD TTY stuff as fallback for termios.
+AC_CHECK_MEMBER(struct tchars.t_intrc,
+		[AC_DEFINE(HAVE_STRUCT_TCHARS, [1], [struct tchars exists])],
+	        [],
+	        [
+[#if HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
+#if HAVE_SYS_IOCTL_COMPAT_H
+#include <sys/ioctl_compat.h>
+#endif]
+])
+AC_CHECK_MEMBER(struct ltchars.t_suspc,
+		[AC_DEFINE(HAVE_STRUCT_LTCHARS, [1], [struct ltchars exists])],
+	        [],
+	        [
+[#if HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
+#if HAVE_SYS_IOCTL_COMPAT_H
+#include <sys/ioctl_compat.h>
+#endif]
+])
 
 # Check for CPU.
 # This requires install-sh, config.sub, config.guess from automake.
