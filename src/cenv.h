@@ -180,71 +180,24 @@
 /* Large File Support (LFS)
  * See <http://ftp.sas.com/standards/large.file/x_open.20Mar96.html>
  *
- * DECOSF:  default 64-bit  (no macros); fseek 64-bit; no fseeko.
- * FREEBSD: default 64-bit  (no macros); fseek 32-bit; has fseeko.
- * LINUX:   default 32-bit (need macro); fseek 32-bit; has fseeko (need macro).
- * SOLARIS: default 32-bit (need macro); fseek 32-bit; has fseeko (need macro).
- * NETBSD:  default 64-bit  (no macros); fseek 32-bit; has fseeko.
- * MAC/OTH: ? Assume 32-bit OS only, 64 not possible.
+ * SIZEOF_OFF_T is discovered by configure, so the other defines
+ * can be based on it. Configure also makes sure that _FILE_OFFSET_BITS and
+ * _LARGE_FILES are defined when needed.
  */
 #ifndef  CENV_SYSF_LFS	/* Predefining this must predefine the rest */
 
-# if defined(SIZEOF_OFF_T)	/* system inspected by configure */
-#  if SIZEOF_OFF_T == 0 || SIZEOF_OFF_T == 4
-#   define CENV_SYSF_LFS 0		/* No off_t, use long */
-#   define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
-#  elif SIZEOF_OFF_T == 8
-#   define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
-#    if SIZEOF_OFF_T == SIZEOF_LONG
-#     define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
-#    elif SIZEOF_OFF_T == SIZEOF_LONG_LONG
-#     define CENV_SYSF_LFS_FMT	"ll"	/* printf format is signed long long */
-#    endif
-#  endif
-#  define CENV_SYSF_FSEEKO	HAVE_FSEEKO
-
-     /* FreeBSD defaults to 64-bit file off_t but calls the type "quad_t"
-      * instead of "long long".  Always has fseeko.
-      */
-# elif CENV_SYS_FREEBSD
-#  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
-#  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
-#  define CENV_SYSF_LFS_FMT "q"		/* printf format is quad_t */
-
-     /* Alpha OSF/DU/Tru64 use 64-bit longs
-      */
-# elif CENV_SYS_DECOSF
-#  define CENV_SYSF_LFS 64		/* off_t  exists and has 64 bits */
-#  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
-#  define fseeko fseek			/* off_t == long and no fseeko */
-#  define CENV_SYSF_LFS_FMT "l"	/* printf format is long */
-
-     /* Solaris/Linux do not default to 64-bit; must define these macros
-      * and make sure cenv.h comes before any other include files.
-      */
-# elif CENV_SYS_SOLARIS|CENV_SYS_LINUX
-#  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
-#  define CENV_SYSF_FSEEKO 1		/* And have some flavor of fseeko */
-#  ifndef _FILE_OFFSET_BITS
-#   define _FILE_OFFSET_BITS 64	/* Use 64-bit file ops */
-#  endif
-#  ifndef _LARGEFILE_SOURCE
-#   define _LARGEFILE_SOURCE		/* Include fseeko, ftello, etc */
-#  endif
-#  define CENV_SYSF_LFS_FMT "ll"	/* printf format is long long */
-
-     /* Unknown system, but check for existence of standard macros */
-# elif _FILE_OFFSET_BITS >= 64
-#  define CENV_SYSF_LFS _FILE_OFFSET_BITS	/* Assume off_t exists */
-#  define CENV_SYSF_FSEEKO 1		/* Also assume fseeko */
-#  define CENV_SYSF_LFS_FMT "ll"	/* printf fmt probably (!) long long */
-
-     /* Out of luck, using plain old longs (likely 32-bit) */
-# else
+# if SIZEOF_OFF_T == 0 || SIZEOF_OFF_T == 4
 #  define CENV_SYSF_LFS 0		/* No off_t, use long */
-#  define CENV_SYSF_FSEEKO 0		/* No fseeko (irrelevant) */
-#  define CENV_SYSF_LFS_FMT "l"		/* printf format is long */
+#  define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
+# elif SIZEOF_OFF_T == 8
+#  define CENV_SYSF_LFS 64		/* off_t exists and has 64 bits */
+#   if SIZEOF_OFF_T == SIZEOF_LONG
+#    define CENV_SYSF_LFS_FMT	"l"	/* printf format is signed long */
+#   elif SIZEOF_OFF_T == SIZEOF_LONG_LONG
+#    define CENV_SYSF_LFS_FMT	"ll"	/* printf format is signed long long */
+#   endif
 # endif
+# define CENV_SYSF_FSEEKO	HAVE_FSEEKO
 #endif /* ifndef CENV_SYSF_LFS */
 
 
