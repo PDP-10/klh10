@@ -54,23 +54,8 @@
 
 /* Machine architecture - alpha order */
 
-#ifndef  CENV_CPU_ALPHA		/* DEC Alpha AXP series */
-# define CENV_CPU_ALPHA 0
-#endif
-#ifndef  CENV_CPU_ARM		/* DEC/Intel ARM series */
-# define CENV_CPU_ARM 0
-#endif
-#ifndef  CENV_CPU_I386		/* Intel 386 and up series */
-# define CENV_CPU_I386 0
-#endif
-#ifndef  CENV_CPU_M68		/* Motorola MC680x0 series */
-# define CENV_CPU_M68 0
-#endif
 #ifndef  CENV_CPU_PDP10		/* DEC PDP10 series */
 # define CENV_CPU_PDP10 0
-#endif
-#ifndef  CENV_CPU_PPC		/* IBM/Motorola PowerPC series */
-# define CENV_CPU_PPC 0
 #endif
 #ifndef  CENV_CPU_SPARC		/* SUN SPARC series */
 # define CENV_CPU_SPARC 0
@@ -79,21 +64,8 @@
 /* If none of the above were set, try a few semi-standard checks,
  * but don't complain if nothing's found.
  */
-#if !(CENV_CPU_M68|CENV_CPU_SPARC|CENV_CPU_PDP10|CENV_CPU_I386 \
-     |CENV_CPU_ALPHA|CENV_CPU_PPC)
-# if defined(__alpha) || defined(__alpha__) || defined(__x86_64__) || defined(__amd64__)
-#  undef  CENV_CPU_ALPHA
-#  define CENV_CPU_ALPHA 1
-# elif defined(__arm) || defined(__arm__)
-#  undef  CENV_CPU_ARM
-#  define CENV_CPU_ARM 1
-# elif defined(__i386) || defined(__i386__)
-#  undef  CENV_CPU_I386
-#  define CENV_CPU_I386 1
-# elif defined(__ppc) || defined(__ppc__)
-#  undef  CENV_CPU_PPC
-#  define CENV_CPU_PPC 1
-# elif defined(__sparc) || defined(__sparc__)
+#if !(CENV_CPU_SPARC|CENV_CPU_PDP10)
+# if defined(__sparc) || defined(__sparc__)
 #  undef  CENV_CPU_SPARC
 #  define CENV_CPU_SPARC 1
 # elif defined(__COMPILER_KCC__)
@@ -101,22 +73,6 @@
 #  define CENV_CPU_PDP10 1
 # endif
 #endif
-
-/* Specific CPU Feature defs
-   This only has features of interest for KLH10 software.
-	Note: endian-ness cannot be assumed if CPU is unknown.
-	Note: PowerPC is inherently big-endian, but can support little-endian
-		memory addressing!  Platforms so far (Linux & MacOS) use
-		big-endian model, but NT/W2K may require little-endian.
- */
-#ifndef  CENV_CPUF_BIGEND	/* True if big-endian */
-# define CENV_CPUF_BIGEND (CENV_CPU_SPARC|CENV_CPU_M68|CENV_CPU_PDP10 \
-			  |CENV_CPU_PPC)
-#endif
-#ifndef  CENV_CPUF_LILEND	/* True if little-endian */
-# define CENV_CPUF_LILEND (CENV_CPU_I386|CENV_CPU_ALPHA|CENV_CPU_ARM)
-#endif
-
 
 /* Operating System - alpha order */
 
@@ -228,7 +184,7 @@
  * FREEBSD: default 64-bit  (no macros); fseek 32-bit; has fseeko.
  * LINUX:   default 32-bit (need macro); fseek 32-bit; has fseeko (need macro).
  * SOLARIS: default 32-bit (need macro); fseek 32-bit; has fseeko (need macro).
- * NETBSD:  default 64-bit  (no macros); fseek 32-bit; no fseeko. (ugh!)
+ * NETBSD:  default 64-bit  (no macros); fseek 32-bit; has fseeko.
  * MAC/OTH: ? Assume 32-bit OS only, 64 not possible.
  */
 #ifndef  CENV_SYSF_LFS	/* Predefining this must predefine the rest */
