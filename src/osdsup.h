@@ -92,7 +92,7 @@ extern int os_fdclose(osfd_t);
 /* Signal facilities.  Not provided on all environments.
 */
 
-#if CENV_SYS_UNIX || CENV_SYS_MAC
+#if HAVE_SIGNAL_H
 # include <signal.h>
 #endif
 
@@ -136,6 +136,8 @@ typedef struct {
     int ossa_sig;
 #if HAVE_SIGACTION
     struct sigaction ossa_sa;
+#elif HAVE_SIGVEC
+    struct sigvec ossa_sv;
 #else
     ossighandler_t *ossa_handler;
 #endif

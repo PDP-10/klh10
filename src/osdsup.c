@@ -1538,7 +1538,17 @@ osux_sigact(int sig, ossighandler_t *func, ossigact_t *ossa)
     if (ossa)
 	ossa->ossa_sig = sig;
     return sigaction(sig, &act, (ossa ? &ossa->ossa_sa : NULL));
-#elif CENV_SYS_BSD
+#elif HAVE_SIGVEC /* untested */
+    struct sigvec sv;
+
+    sv.sv_handler = func;
+    sv.sv_flags = 0;	/* not SV_INTERRUPT, not SV_RESETHAND */
+    sv.sv_mask = sigmask(sig);
+    if (ossa)
+	ossa->ossa_sig = sig;
+    return sigvec(sig, &act, (ossa ? &ossa->ossa_sv : NULL));
+#else
+# error "Unimplemented OS routine osux_sigact()"
     void (*ret)();
 
     ret = signal(sig, func);
@@ -1547,8 +1557,6 @@ osux_sigact(int sig, ossighandler_t *func, ossigact_t *ossa)
 	ossa->ossa_handler = func;
     }
     return (ret == SIG_ERR) ? -1 : 0;
-#else
-# error "Unimplemented OS routine osux_sigact()"
 #endif
 }
 
@@ -1558,11 +1566,13 @@ osux_sigrestore(ossigact_t *ossa)
 #if HAVE_SIGACTION
     return sigaction(ossa->ossa_sig,
 		     &ossa->ossa_sa, (struct sigaction *)NULL);
-#elif CENV_SYS_BSD
-    return (signal(ossa->ossa_sig, ossa->ossa_handler) == SIG_ERR)
-	? -1 : 0;
+#elif HAVE_SIGVEC /* untested */
+    return sigvec(ossa->ossa_sig,
+		     &ossa->ossa_sv, (struct sigvec *)NULL);
 #else
 # error "Unimplemented OS routine osux_sigrestore()"
+    return (signal(ossa->ossa_sig, ossa->ossa_handler) == SIG_ERR)
+	? -1 : 0;
 #endif
 }
 

@@ -704,11 +704,19 @@ dp_signal(int sig, void (*func)(int))
     sigemptyset(&act.sa_mask);
     sigaddset(&act.sa_mask, sig);	/* Suspend this sig during handler */
     return sigaction(sig, &act, &oact);
-#elif CENV_SYS_BSD
-    /* If really BSD, probably should use sigvec instead */
-    return (signal(sig, func) == (void (*)())-1) ? -1 : 0;
+#elif HAVE_SIGVEC /* untested */
+    struct sigvec sv, osv;
+
+    sv.sv_handler = func;
+    sv.sv_flags = SV_INTERRUPT;		/* not SV_RESETHAND */
+    sv.sv_mask = sigmask(sig);
+    if (ossa)
+	ossa->ossa_sig = sig;
+    return sigvec(sig, &sv, &osv);
 #else
-    *** ERROR *** need signal support
+    /* If really BSD, probably should use sigvec instead */
+    *** ERROR *** need reliable signal support
+    return (signal(sig, func) == (void (*)())-1) ? -1 : 0;
 #endif
 }
 

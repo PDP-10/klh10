@@ -109,19 +109,13 @@
 #ifndef  CENV_SYS_T20		/* DEC TOPS-20 */
 # define CENV_SYS_T20 0
 #endif
-#ifndef  CENV_SYS_V7		/* Basic vanilla Unix */
-# define CENV_SYS_V7 0
-#endif
-#ifndef  CENV_SYS_W2K		/* MS W2K */
-# define CENV_SYS_W2K 0
-#endif
 
 /* If none of the above were set, try a few semi-standard checks,
  * but don't complain if nothing's found.
  */
-#if !(CENV_SYS_V7|CENV_SYS_SUN|CENV_SYS_SOLARIS|CENV_SYS_NEXT|CENV_SYS_MAC \
+#if !(CENV_SYS_SUN|CENV_SYS_SOLARIS|CENV_SYS_NEXT|CENV_SYS_MAC \
      |CENV_SYS_BSDI|CENV_SYS_NETBSD|CENV_SYS_FREEBSD|CENV_SYS_OPENBSD \
-     |CENV_SYS_DECOSF|CENV_SYS_LINUX|CENV_SYS_W2K)
+     |CENV_SYS_DECOSF|CENV_SYS_LINUX)
 # if defined(__osf__) && defined(__digital__)
 #  undef  CENV_SYS_DECOSF
 #  define CENV_SYS_DECOSF 1
@@ -164,8 +158,7 @@
 		      |CENV_SYS_XBSD|CENV_SYS_NEXT|CENV_SYS_DECOSF \
 		      |CENV_SYS_LINUX)
 #endif
-#define CENV_SYS_SVR4 0	/* XXX Later: (CENV_SYS_SOLARIS|CENV_SYS_DECOSF) ? */
-#define CENV_SYS_UNIX (CENV_SYS_V7|CENV_SYS_BSD|CENV_SYS_SVR4)	/* Any Unix */
+#define CENV_SYS_UNIX __unix__				/* Any Unix */
 
 /* Specific OS Feature defs
    This only has features of interest for KLH10 software.
