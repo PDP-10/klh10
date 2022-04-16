@@ -104,7 +104,7 @@ function instruction.  In context:
 For a TOPS-10 monitor I would suggest replacing the instruction at
 NULCOD+1 in CLOCK1.MAC (a SOJG 6,1) with the "IDLE" function
 instruction.  However, this has not been well tested and there may be
-a more appropriate place.
+a more appropriate place. See Appendix A (below) for one way to do this.
 
 You can verify whether this function is working by observing the
 process CPU usage on the host system.  As long as the KN10 is not
@@ -116,3 +116,44 @@ perhaps 5%.  It will never be completely zero because all monitors
 always maintain a clock interrupt that drives periodic updates and
 scheduler checks.
 
+Appendix A
+
+Patching the TOPS-10 monitor
+
+# Patch of :system.exe[1,4]
+# Info at: https://alt.sys.pdp10.narkive.com/UCpN700h/how-to-rebuild-tops10-rel
+# Replace "SOJG 6,1" to "CONO 740,1"
+LOGIN 1,2
+SET TTY VT100
+.copy tops10.exe=dskb:system.exe[1,4]
+.r filddt
+File: tops10.exe/p
+[Patching file DSKB:TOPS10.EXE[1,2]]
+[36539 symbols loaded from file]
+[ACs copied from CRSHAC to 0-17]
+NULCOD+1/ SOJG W,P CONO 740,1
+^Z
+.rename [1,4].=tops10.exe
+Files renamed:
+DSKB:TOPS10.EXE
+.kjob
+^
+quit
+
+Notes: While on same line, after it displays: SOJG W,P
+type in on same line without pressing spacebar: CONO 740,1
+hit enter, CTRL Z to save and exit.
+
+Add this to your klh10 startup ini:
+vi twonky2.ini, and add this line after the last devdef:
+;To keep host cpu% for kn-10, apply the patch and use this line below.
+devdefine idler 740 host
+
+Then apply patch everytime you boot up by typing TOPS10.EXE at the first BOOT>
+./kn10-kl twonky2.ini
+KLH10> go
+Starting KN10 at loc 0703667...
+BOOT V4(100)
+
+BOOT>TOPS10.EXE
+[Loading from DSKB:TOPS10.EXE[1,4]]
