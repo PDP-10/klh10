@@ -1025,7 +1025,7 @@ The parameters for the NI20 driver are:
 	host OS.
 
 [TUNADDR=<d.d.d.d>]	Default: <none>
-	When using IFMETH=tun, this will set the host-side address of the
+	When using IFMETH=tun or tap, this will set the host-side address of the
 	tunnel. This should possibly be the address that the inner
 	operating system uses as its default gateway.
 
@@ -1271,7 +1271,7 @@ The parameters for the LHDH driver are:
 	is OK too.
 
 [TUNADDR=<d.d.d.d>]	Required (if IFMETH is "tun")
-	Must be given if IFMETH is "tun".  This sets the (emulated) host-side
+	Must be given if IFMETH is "tun".  This sets the host-side
 	address of the tunnel.
 
 [IFMETH=<tun|tap|tap+bridge|pcap|vde>] Required
