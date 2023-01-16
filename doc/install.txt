@@ -1263,12 +1263,16 @@ The parameters for the LHDH driver are:
 		mit-mc   10.3.0.44
 	(RFC 846 lists these and many other historic IP addresses)
 
-[GWADDR=<d.d.d.d>]	Required
-	Must always be given.  This tells the IMP where to send packets
+[GWADDR=<d.d.d.d>]	Required (if IFMETH is "pcap")
+	Must be given if IFMETH is "pcap".  This tells the IMP where to send packets
 	that are not addressed to the same network as the ITS system
 	(as defined by the IPADDR parameter).
 	Normally the host platform can be specified, but a real gateway
 	is OK too.
+
+[TUNADDR=<d.d.d.d>]	Required (if IFMETH is "tun")
+	Must be given if IFMETH is "tun".  This sets the (emulated) host-side
+	address of the tunnel.
 
 [IFMETH=<tun|tap|tap+bridge|pcap|vde>] Required
 	As with the NI20.
