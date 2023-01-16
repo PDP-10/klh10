@@ -1899,10 +1899,10 @@ osn_pfinit_tuntap(struct pfdata *pfdata, struct osnpf *osnpf, void *arg)
        It should probably match the same network as the local address,
        especially if planning to connect from other machines.
 
-       This is only needed for TUNNEL devices, not TAP devices.
+       This is only needed for TUNNEL devices, not tap+bridge devices.
     */
-#if CENV_SYS_LINUX		/* [BV: Linux tun device] */
-    if (pfdata->pf_ip4_only) {
+#if CENV_SYS_LINUX		/* [BV: Linux tun/tap device with tunaddr set] */
+    if (memcmp((char *)&ipremote, "\0\0\0\0", IP_ADRSIZ) != 0) {
 	char cmdbuff[128];	/* "Hacky" but simple method */
 	int res;
 
