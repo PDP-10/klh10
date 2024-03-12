@@ -1044,14 +1044,12 @@ hosttochaos(register struct dpchaos_s *dpchaos)
 
 	if (!dpchaos->dpchaos_ifmeth_chudp) {
 	  // Ethernet case
-	  u_char *ch = &buff[dpchaos->dpchaos_outoff]; // DPCHAOS_CHUDP_DATAOFFSET
-	  // length excluding trailer
-	  u_short cpklen = dpchaos->dpchaos_outoff+CHAOS_HEADERSIZE+chlen+(chlen%2);
-
 	  // Use hardware dest, which is based on ITS routing table.
-	  // But remove trailer before sending on Ethernet.
+	  u_short cpklen = dpchaos->dpchaos_outoff+CHAOS_HEADERSIZE+chlen+(chlen%2); // length excluding trailer
 	  u_short *hdchad = (u_short *)&buff[cpklen]; 
 	  u_short dchad = htons(*hdchad);
+
+	  // But remove trailer before sending on Ethernet.
 	  if (DBGFLG & 2)
 	    dbprintln("Found dest addr %#o (%#x) at offset %d+%d+%d+%d = %d",
 		      dchad, dchad, dpchaos->dpchaos_outoff, CHAOS_HEADERSIZE, chlen, chlen%2,
@@ -1076,11 +1074,22 @@ hosttochaos(register struct dpchaos_s *dpchaos)
 	    }
 	  }
 	} else {
-	  // CHUDP case
+	  // CHUDP case: send the whole pkt after adding CHUDP header
 	  memcpy(buff, (void *)&chuhdr, sizeof(chuhdr)); /* put in CHUDP hdr */
-	  /* find IP destination given chaos packet  */
-	  if (hi_iproute(&ipdest, &ipport, &buff[dpchaos->dpchaos_outoff], rcnt - dpchaos->dpchaos_outoff, dpchaos)) {
-	    ip_write(&ipdest, ipport, buff, rcnt, dpchaos);
+	  // Get dest address from Chaos header
+	  u_char *ch = &buff[sizeof(chuhdr)+DPCHAOS_CH_DESTOFF];
+	  u_short dchad = ch[0]<<8 | ch[1];
+	  if (dchad == 0) {	// Broadcast: send on all links
+	    for (int i = 0; i < dpchaos->dpchaos_chip_tlen; i++)  {
+	      memcpy(&ipport, &dpchaos->dpchaos_chip_tbl[i].dpchaos_chip_ipport, sizeof(in_port_t));
+	      memcpy(&ipdest, &dpchaos->dpchaos_chip_tbl[i].dpchaos_chip_ipaddr,
+		     sizeof(struct in_addr));
+	      ip_write(&ipdest, ipport, buff, rcnt, dpchaos);
+	    }
+	  } else {  // Unicast: find IP destination given chaos packet
+	    if (hi_iproute(&ipdest, &ipport, &buff[dpchaos->dpchaos_outoff], rcnt - dpchaos->dpchaos_outoff, dpchaos)) {
+	      ip_write(&ipdest, ipport, buff, rcnt, dpchaos);
+	    }
 	  }
 	}
 
