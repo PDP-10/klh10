@@ -8,8 +8,7 @@ The ch11 device in KLH10 for ITS, which was originally just a dummy
 inteface to keep ITS running, is now a functional Unibus Chaosnet
 device, which supports Chaosnet-on-Ethernet and Chaosnet-over-UDP.  
 It does not support SPY (promiscuous) mode, or LUP (loopback), but ITS
-doesn't seem to use/need these. It only supports broadcast on
-Ethernet, not on UDP. 
+doesn't seem to use/need these. 
 
 Latest update: 2021-02-23
 
