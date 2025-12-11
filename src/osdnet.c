@@ -1683,6 +1683,13 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     int fd;
     int i = 0;
 
+    if (strlen(osnpf->osnpf_ifnam) < BASENAMESIZE-1) {
+      strncpy(pfname, osnpf->osnpf_ifnam, BASENAMESIZE);
+    } else {
+      esfatal(1, "%s: ifname name %s too long for pfname size %d",
+	      __FUNCTION__, osnpf->osnpf_ifnam, BASENAMESIZE);
+    };
+    
     if (DP_DBGFLG)
 	dbprint("pfopen: ifnam=%s", osnpf->osnpf_ifnam);
 
