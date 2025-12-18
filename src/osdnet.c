@@ -1718,7 +1718,6 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     };
 
     tt_ctx->my_tap = TRUE;
-
     return fd;		/* Success! */
 }
 
