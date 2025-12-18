@@ -1683,13 +1683,6 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
     int fd;
     int i = 0;
 
-    if (strlen(osnpf->osnpf_ifnam) < BASENAMESIZE-1) {
-      strncpy(pfname, osnpf->osnpf_ifnam, BASENAMESIZE);
-    } else {
-      esfatal(1, "%s: ifname name %s too long for pfname size %d",
-	      __FUNCTION__, osnpf->osnpf_ifnam, BASENAMESIZE);
-    };
-    
     if (DP_DBGFLG)
 	dbprint("pfopen: ifnam=%s", osnpf->osnpf_ifnam);
 
@@ -1712,20 +1705,19 @@ pfopen(char *basename, struct tuntap_context *tt_ctx, struct osnpf *osnpf)
 	    (void) snprintf(pfname, BASENAMESIZE, "%s%d", basename, i++);
 	    fd = open(pfname, O_RDWR, 0);
 	} while (fd < 0 && errno == EBUSY);	/* If device busy, keep looking */
-    }
-
-    if (fd < 0) {
-	/* Note possible error meanings:
-	   ENOENT - no such filename
-	   ENXIO  - not configured in kernel
-	*/
-	esfatal(1, "Couldn't find or open packetfilter device, last tried %s",
-		pfname);
-    }
+	if (fd >= 0) {
+            basenamecpy(osnpf->osnpf_ifnam, pfname, IFNAM_LEN);
+	} else {	  
+  	    /* Note possible error meanings:
+	       ENOENT - no such filename
+	       ENXIO  - not configured in kernel
+	    */
+	    esfatal(1, "Couldn't find or open packetfilter device, last tried %s",
+	 	       pfname);
+	};
+    };
 
     tt_ctx->my_tap = TRUE;
-    basenamecpy(osnpf->osnpf_ifnam, pfname, IFNAM_LEN);
-
     return fd;		/* Success! */
 }
 
