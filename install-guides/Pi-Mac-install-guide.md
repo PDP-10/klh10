@@ -571,6 +571,8 @@ To mount a virtual magtape for writing (e.g., for backing up), in `/DEC20/klt20.
 
 **where the file `Temp.tap` is non-existent.**  klh10 won't let you write over an existing virtual tape file.  `@ assign mta0:` after you've logged in and then run DUMPER.
 
+It is possible to change tapes without rebooting TOPS-20 by halting the processor, giving the appropriate command, and continuing. See the example in the "DEVMOUNT" section of Harrenstien's `klh10/doc/cmdref.txt`.
+
 ## Quirks You May Or May Not See
 
 These are some problems I've seen arise while running klh10 with Panda. 
@@ -586,8 +588,7 @@ These are some problems I've seen arise while running klh10 with Panda.
 
 ## Unresolved Issues
  
-1. I have not been able to stop the klh10 program with CNTL-\\, use `devmount` to assign a different virtual tape to the drive, and continue.  It's not clear from Harrenstien's documentation whether it should be possible.  If you get it to work, please say how.
-2. It appears to have been possible to run `/DEC20/klt20` without having root privileges by having set `dpni20` +s and owned by root, but that no longer works.  If you find a solution, please say how.
+1. It appears to have been possible to run `/DEC20/klt20` without having root privileges by having set `dpni20` +s and owned by root, but that no longer works.  If you find a solution, please say how.
 
 ## Acknowldegement
 
